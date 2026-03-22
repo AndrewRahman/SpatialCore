@@ -1,0 +1,199 @@
+# SpatialCore Integration Guide
+
+How to build a new Spatial Media Library plugin using SpatialCore.
+
+## Prerequisites
+
+- JUCE 8 (C++17)
+- CMake 3.22+
+- A C++17 compiler (Clang on macOS, MSVC on Windows)
+
+## Step 1: Create Your Plugin Repository
+
+```bash
+mkdir OpenSpatialYourEffect
+cd OpenSpatialYourEffect
+git init
+```
+
+## Step 2: Add SpatialCore and JUCE as Submodules
+
+```bash
+git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+git submodule add https://github.com/juce-framework/JUCE.git JUCE
+```
+
+## Step 3: CMakeLists.txt
+
+```cmake
+cmake_minimum_required(VERSION 3.22)
+project(OpenSpatialYourEffect VERSION 0.1.0)
+
+# Add JUCE and SpatialCore
+add_subdirectory(JUCE)
+add_subdirectory(SpatialCore)
+
+# Create plugin target
+juce_add_plugin(OpenSpatialYourEffect
+    COMPANY_NAME "Spatial Media Lab"
+    PLUGIN_MANUFACTURER_CODE SMLb
+    PLUGIN_CODE YrFx
+    FORMATS VST3 AU
+    PRODUCT_NAME "OpenSpatialYourEffect"
+    IS_SYNTH FALSE          # TRUE for instruments (synth, sampler)
+    NEEDS_MIDI_INPUT FALSE  # TRUE for instruments
+)
+
+# Link SpatialCore
+target_link_libraries(OpenSpatialYourEffect PRIVATE SpatialCore)
+
+# Source files
+target_sources(OpenSpatialYourEffect PRIVATE
+    Source/PluginProcessor.cpp
+    Source/PluginEditor.cpp
+)
+```
+
+## Step 4: PluginProcessor — Using SpatialCore
+
+Your processor integrates SpatialCore by:
+1. **Keeping** all spatial parameters (outputFormat, algorithm, hrtfProfile, per-object azimuth/elevation/distance)
+2. **Adding** your effect-specific parameters (delay time, filter cutoff, etc.)
+3. **Implementing** your DSP in processBlock, calling SpatialCore for spatialization
+
+### Minimal Example
+
+```cpp
+#include <SpatialCore/SpatialCore.h>
+
+class YourProcessor : public juce::AudioProcessor {
+public:
+    // SpatialCore components (from framework)
+    spatialcore::BinauralRenderer binauralRenderer;
+    spatialcore::SpatializationAlgorithm* algorithms[6];
+    spatialcore::HRTFDatabase hrtfDb;
+
+    // Your effect-specific DSP
+    // ... (delay lines, filters, grain engines, etc.)
+
+    void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override {
+        // 1. Your effect-specific DSP per object
+        for (int obj = 0; obj < numEnabledObjects; ++obj) {
+            float monoSample = yourEffectProcess(obj);  // YOUR DSP
+
+            // 2. Get object position from parameters
+            spatialcore::SourcePosition pos = {
+                azimuthRad[obj], elevationRad[obj], distance[obj]
+            };
+
+            // 3. SpatialCore spatializes the object
+            // (binaural HRTF, surround gains, or Ambisonics encoding)
+            spatialize(obj, monoSample, pos);  // SPATIALCORE
+        }
+
+        // 4. Mix dry/wet and output
+        mixOutput(buffer);
+    }
+};
+```
+
+## Step 5: PluginEditor — Using SpatialCore UI
+
+```cpp
+#include <SpatialCore/UI/SpatialMapComponent.h>
+#include <SpatialCore/UI/SMLLookAndFeel.h>
+
+class YourEditor : public juce::AudioProcessorEditor {
+public:
+    spatialcore::SMLLookAndFeel smlLookAndFeel;
+    spatialcore::SpatialMapComponent spatialMap;
+
+    // Your effect-specific controls
+    // ... (knobs, buttons, etc.)
+
+    YourEditor(YourProcessor& p) : AudioProcessorEditor(p) {
+        setLookAndFeel(&smlLookAndFeel);
+        addAndMakeVisible(spatialMap);
+        // Add your controls...
+        setSize(820, 580);  // Standard SML plugin size
+    }
+};
+```
+
+## Step 6: Build and Test
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+The post-build script copies AU and VST3 to `~/Library/Audio/Plug-Ins/` on macOS.
+
+## Architecture Pattern
+
+Every SML plugin follows the same architecture:
+
+```
+┌─────────────────────────────────────────────┐
+│                YOUR PLUGIN                   │
+│  ┌────────────────────────────────────────┐  │
+│  │  Plugin-Specific DSP (32%)             │  │
+│  │  - Your effect engine                  │  │
+│  │  - Your parameters                     │  │
+│  │  - Your render methods                 │  │
+│  └────────────┬───────────────────────────┘  │
+│               │ calls                        │
+│  ┌────────────▼───────────────────────────┐  │
+│  │  SpatialCore (68%)                     │  │
+│  │  - 7 spatialization algorithms         │  │
+│  │  - HRTF binaural rendering             │  │
+│  │  - 22 output formats                   │  │
+│  │  - ADM-OSC send/receive                │  │
+│  │  - Trajectory engine                   │  │
+│  │  - Spatial map UI                      │  │
+│  │  - SML LookAndFeel                     │  │
+│  └────────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+## What to Keep vs Replace
+
+| Keep from SpatialCore | Replace with Your DSP |
+|----------------------|----------------------|
+| Output format detection & bus negotiation | Your effect engine |
+| Algorithm selection & dispatch | Your per-object processing |
+| HRTF profile loading & convolution | Your modulation/feedback/filters |
+| Speaker layout activation | Your tempo sync / timing |
+| ADM-OSC receive/send | Your effect-specific parameters |
+| Trajectory animation | Your UI controls (right panel, bottom panel) |
+| Spatial map component | |
+| LookAndFeel & shared widgets | |
+| Soft clipper & output limiter | |
+
+## Naming Convention
+
+All SML plugins follow this naming:
+- **Repository:** `OpenSpatial{Effect}` (e.g., `OpenSpatialChorus`)
+- **Plugin name:** `OpenSpatial{Effect}` (shown in DAW)
+- **Plugin code:** Unique 4-char code (e.g., `OsCh` for Chorus)
+- **Manufacturer code:** `SMLb` (Spatial Media Lab)
+
+## Testing
+
+Use Catch2 for unit tests:
+```cmake
+# In CMakeLists.txt
+FetchContent_Declare(Catch2 GIT_REPOSITORY https://github.com/catchorg/Catch2.git GIT_TAG v3.7.1)
+FetchContent_MakeAvailable(Catch2)
+
+add_executable(YourPluginTests tests/YourTests.cpp)
+target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
+```
+
+## Preset System
+
+Follow the OpenSpatialDelay pattern:
+- Store presets at `~/Library/Audio/Presets/OpenSpatial{Effect}/`
+- Use `PresetData` struct with JSON serialization
+- Factory presets in C++ source, installed via build-time CLI tool
+- User presets in `User/` subfolder, never overwritten
