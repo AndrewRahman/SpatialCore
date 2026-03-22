@@ -2,7 +2,12 @@
 
 Step-by-step instructions for getting [Conductor](https://www.conductor.build/) up and running to manage multi-plugin development across the Spatial Media Library suite.
 
-**Status:** Setup complete as of 2026-03-22. OpenSpatialDelay repo added, workspaces tested and working.
+**Status:** Setup complete as of 2026-03-22. Two repos added (OpenSpatialDelay, SpatialCore), three workspaces tested and working.
+
+**Important:** Conductor requires repos to have a GitHub remote (`origin`). If adding a local-only project, you must first:
+1. `git init && git add -A && git commit -m "Initial commit"`
+2. `gh repo create RepoName --private --source=. --push`
+Then add it to Conductor.
 
 ---
 
@@ -149,6 +154,17 @@ Once you're happy with the changes:
 | New workspace (with options) | **Cmd+Shift+N** |
 | Open workspace in IDE | **Cmd+O** |
 | Switch between workspaces | **Cmd+1**, **Cmd+2**, etc. |
+
+---
+
+## Current Conductor Setup (as of 2026-03-22)
+
+| Repo | GitHub Remote | Workspaces |
+|---|---|---|
+| **OpenSpatialDelay** | `github.com/AndrewRahman/OpenSpatialDelay` (private) | Valletta (Cmd+1), Brisbane (Cmd+2) |
+| **SpatialCore** | `github.com/AndrewRahman/SpatialCore` (private) | Tyler (Cmd+3) |
+
+Both repos are added to Conductor and verified working.
 
 ---
 
