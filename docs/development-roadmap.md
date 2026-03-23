@@ -6,7 +6,7 @@ Last updated: 2026-03-22
 
 ## Current State
 
-SpatialCore is currently a **documentation-only shell**. The architecture, components, and integration patterns are fully designed, but no source code has been extracted yet. All spatial audio code still lives inside OpenSpatialDelay v1.0.
+SpatialCore has a **complete scaffolding** with public API headers, stub implementations, build system, and test infrastructure. All interfaces are defined and the library compiles as a static library. Actual algorithm/rendering implementations will be extracted from OpenSpatialDelay after v1.0 ships.
 
 ### What Exists
 - Git repository with GitHub remote (`github.com/AndrewRahman/SpatialCore`)
@@ -15,12 +15,28 @@ SpatialCore is currently a **documentation-only shell**. The architecture, compo
 - docs/integration-guide.md (how plugins will consume SpatialCore)
 - docs/conductor-setup-guide.md (multi-plugin development workflow)
 - docs/workflow-tutorials.md (3 parallel development patterns)
+- **CMakeLists.txt** — builds SpatialCore as a static library with JUCE 8, libmysofa, zlib
+- **include/SpatialCore/** — full public API headers for all 7 modules:
+  - Core/ (Types, SourcePosition, BinauralGains)
+  - Algorithms/ (SpatializationAlgorithm base + 7 implementations)
+  - Binaural/ (HRTFDatabase, PartitionedConvolver, BinauralRenderer)
+  - IO/ (OutputFormat, OutputFormatRegistry with 22 formats, SpeakerLayout, AmbisonicsCodec)
+  - OSC/ (ADMOSCReceiver, ADMOSCSender)
+  - Trajectory/ (TrajectoryEngine with 13 shapes)
+  - DSP/ (softClip, outputLimiter — inline)
+  - UI/ (SpatialMapComponent, SMLLookAndFeel, ReverseSlider, IndicatorToggle, StyledButton)
+- **src/** — stub implementations for all modules (compile but return zeroed/default values)
+- **tests/** — Catch2 v3.7.1 test suite with 22 smoke tests (52 assertions), all passing
+- **include/SpatialCore/SpatialCore.h** — umbrella header for consumer plugins
 
 ### What Does NOT Exist Yet
-- No source code (no `.h` or `.cpp` files)
-- No CMakeLists.txt or build system
-- No tests
-- No HRTF data files
+- Real algorithm implementations (all `computeGains()` return zeroes)
+- Real HRTF/SOFA loading and convolution (stubs only)
+- Real speaker layout data (factory functions return empty layouts)
+- Real ADM-OSC parsing and trajectory animation
+- Real UI rendering (paint methods are stubs)
+- HRTF SOFA data files (5 profiles, Git LFS)
+- Font BinaryData for SMLLookAndFeel
 
 ---
 
@@ -93,10 +109,18 @@ class SpatializationAlgorithm {
 ```
 
 ### Deliverables
-- [ ] Modular directory structure (Algorithms/, Binaural/, IO/, OSC/, Trajectory/, DSP/, UI/)
-- [ ] CMakeLists.txt build system (static library)
-- [ ] Catch2 test suite (port existing tests from OpenSpatialDelay)
+- [x] Modular directory structure (Algorithms/, Binaural/, IO/, OSC/, Trajectory/, DSP/, UI/)
+- [x] CMakeLists.txt build system (static library)
+- [x] Public API headers with all interfaces defined
+- [x] Stub implementations that compile
+- [x] Catch2 test suite infrastructure (22 smoke tests passing)
+- [ ] Extract real algorithm implementations from OpenSpatialDelay
+- [ ] Extract real HRTF/binaural rendering from OpenSpatialDelay
+- [ ] Extract real speaker layout data and format registry
+- [ ] Extract real ADM-OSC parsing and trajectory engine
+- [ ] Extract real UI rendering code
 - [ ] HRTF data embedded as BinaryData (5 SOFA files)
+- [ ] Port existing tests from OpenSpatialDelay + add comprehensive coverage
 - [ ] All code verified lock-free and realtime-safe
 - [ ] OpenSpatialDelay refactored to consume SpatialCore as submodule
 
