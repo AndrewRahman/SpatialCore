@@ -1,0 +1,293 @@
+#include <SpatialCore/Core/SpatialMath.h>
+
+namespace spatialcore
+{
+
+//==============================================================================
+// Modular 3D Audio Core -- 6th-Order Ambisonics (ACN/SN3D)
+//==============================================================================
+
+float evalSH (int acn, float az, float el)
+{
+    // Real spherical harmonics, ACN ordering, SN3D normalization
+    // az = azimuth (radians), el = elevation (radians)
+    float cosAz  = std::cos (az);
+    float sinAz  = std::sin (az);
+    float cos2Az = std::cos (2.0f * az);
+    float sin2Az = std::sin (2.0f * az);
+    float cos3Az = std::cos (3.0f * az);
+    float sin3Az = std::sin (3.0f * az);
+    float sinEl  = std::sin (el);
+    float cosEl  = std::cos (el);
+    float sinEl2 = sinEl * sinEl;
+    float cosEl2 = cosEl * cosEl;
+
+    // Higher-order trig (computed only when needed via fallthrough to default check)
+    float cos4Az = 0.0f, sin4Az = 0.0f, cos5Az = 0.0f, sin5Az = 0.0f, cos6Az = 0.0f, sin6Az = 0.0f;
+    float cosEl3 = 0.0f, cosEl4 = 0.0f, cosEl5 = 0.0f, cosEl6 = 0.0f;
+    float sinEl4 = 0.0f;
+
+    if (acn >= 16)
+    {
+        cos4Az = std::cos (4.0f * az);  sin4Az = std::sin (4.0f * az);
+        cosEl3 = cosEl2 * cosEl;        cosEl4 = cosEl2 * cosEl2;
+        sinEl4 = sinEl2 * sinEl2;
+        if (acn >= 25)
+        {
+            cos5Az = std::cos (5.0f * az);  sin5Az = std::sin (5.0f * az);
+            cosEl5 = cosEl4 * cosEl;
+        }
+        if (acn >= 36)
+        {
+            cos6Az = std::cos (6.0f * az);  sin6Az = std::sin (6.0f * az);
+            cosEl6 = cosEl4 * cosEl2;
+        }
+    }
+
+    switch (acn)
+    {
+        // Order 0
+        case 0: return 1.0f;
+
+        // Order 1 (SN3D: no extra factor needed)
+        case 1: return sinAz * cosEl;              // Y1^-1
+        case 2: return sinEl;                       // Y1^0
+        case 3: return cosAz * cosEl;              // Y1^1
+
+        // Order 2 (SN3D normalization)
+        case 4: return std::sqrt (3.0f) * 0.5f * sin2Az * cosEl2;                     // Y2^-2
+        case 5: return std::sqrt (3.0f) * sinAz * sinEl * cosEl;                      // Y2^-1
+        case 6: return 0.5f * (3.0f * sinEl2 - 1.0f);                                 // Y2^0
+        case 7: return std::sqrt (3.0f) * cosAz * sinEl * cosEl;                      // Y2^1
+        case 8: return std::sqrt (3.0f) * 0.5f * cos2Az * cosEl2;                     // Y2^2
+
+        // Order 3 (SN3D normalization)
+        case  9: return std::sqrt (5.0f / 8.0f) * sin3Az * cosEl * cosEl2;            // Y3^-3
+        case 10: return std::sqrt (15.0f) * 0.5f * sin2Az * sinEl * cosEl2;           // Y3^-2
+        case 11: return std::sqrt (3.0f / 8.0f) * sinAz * cosEl * (5.0f * sinEl2 - 1.0f);  // Y3^-1
+        case 12: return 0.5f * sinEl * (5.0f * sinEl2 - 3.0f);                        // Y3^0
+        case 13: return std::sqrt (3.0f / 8.0f) * cosAz * cosEl * (5.0f * sinEl2 - 1.0f);  // Y3^1
+        case 14: return std::sqrt (15.0f) * 0.5f * cos2Az * sinEl * cosEl2;           // Y3^2
+        case 15: return std::sqrt (5.0f / 8.0f) * cos3Az * cosEl * cosEl2;            // Y3^3
+
+        // Order 4 (SN3D normalization)
+        case 16: return std::sqrt (35.0f) * 0.375f * sin4Az * cosEl4;                                  // Y4^-4
+        case 17: return std::sqrt (35.0f / 8.0f) * sin3Az * sinEl * cosEl3;                            // Y4^-3
+        case 18: return std::sqrt (5.0f) * 0.25f * sin2Az * cosEl2 * (7.0f * sinEl2 - 1.0f);          // Y4^-2
+        case 19: return std::sqrt (5.0f / 8.0f) * sinAz * sinEl * cosEl * (7.0f * sinEl2 - 3.0f);     // Y4^-1
+        case 20: return 0.125f * (35.0f * sinEl4 - 30.0f * sinEl2 + 3.0f);                             // Y4^0
+        case 21: return std::sqrt (5.0f / 8.0f) * cosAz * sinEl * cosEl * (7.0f * sinEl2 - 3.0f);     // Y4^1
+        case 22: return std::sqrt (5.0f) * 0.25f * cos2Az * cosEl2 * (7.0f * sinEl2 - 1.0f);          // Y4^2
+        case 23: return std::sqrt (35.0f / 8.0f) * cos3Az * sinEl * cosEl3;                            // Y4^3
+        case 24: return std::sqrt (35.0f) * 0.375f * cos4Az * cosEl4;                                  // Y4^4
+
+        // Order 5 (SN3D normalization)
+        case 25: return std::sqrt (63.0f / 8.0f) * sin5Az * cosEl5;                                                      // Y5^-5
+        case 26: return std::sqrt (315.0f) * 0.375f * sin4Az * sinEl * cosEl4;                                            // Y5^-4
+        case 27: return std::sqrt (35.0f / 16.0f) * sin3Az * cosEl3 * (9.0f * sinEl2 - 1.0f);                            // Y5^-3
+        case 28: return std::sqrt (105.0f / 8.0f) * sin2Az * sinEl * cosEl2 * (3.0f * sinEl2 - 1.0f);                    // Y5^-2
+        case 29: return std::sqrt (15.0f) * 0.125f * sinAz * cosEl * (21.0f * sinEl4 - 14.0f * sinEl2 + 1.0f);           // Y5^-1
+        case 30: return 0.125f * sinEl * (63.0f * sinEl4 - 70.0f * sinEl2 + 15.0f);                                       // Y5^0
+        case 31: return std::sqrt (15.0f) * 0.125f * cosAz * cosEl * (21.0f * sinEl4 - 14.0f * sinEl2 + 1.0f);           // Y5^1
+        case 32: return std::sqrt (105.0f / 8.0f) * cos2Az * sinEl * cosEl2 * (3.0f * sinEl2 - 1.0f);                    // Y5^2
+        case 33: return std::sqrt (35.0f / 16.0f) * cos3Az * cosEl3 * (9.0f * sinEl2 - 1.0f);                            // Y5^3
+        case 34: return std::sqrt (315.0f) * 0.375f * cos4Az * sinEl * cosEl4;                                            // Y5^4
+        case 35: return std::sqrt (63.0f / 8.0f) * cos5Az * cosEl5;                                                      // Y5^5
+
+        // Order 6 (SN3D normalization)
+        case 36: return std::sqrt (231.0f / 16.0f) * sin6Az * cosEl6;                                                    // Y6^-6
+        case 37: return std::sqrt (693.0f / 8.0f) * sin5Az * sinEl * cosEl5;                                              // Y6^-5
+        case 38: return std::sqrt (63.0f / 16.0f) * sin4Az * cosEl4 * (11.0f * sinEl2 - 1.0f);                           // Y6^-4
+        case 39: return std::sqrt (315.0f / 16.0f) * sin3Az * sinEl * cosEl3 * (11.0f * sinEl2 - 3.0f);                  // Y6^-3
+        case 40: return std::sqrt (105.0f / 16.0f) * sin2Az * cosEl2 * (33.0f * sinEl4 - 18.0f * sinEl2 + 1.0f) * 0.25f;// Y6^-2
+        case 41: return std::sqrt (21.0f / 16.0f) * sinAz * sinEl * cosEl * (33.0f * sinEl4 - 30.0f * sinEl2 + 5.0f);    // Y6^-1
+        case 42: return (231.0f * sinEl4 * sinEl2 - 315.0f * sinEl4 + 105.0f * sinEl2 - 5.0f) / 16.0f;                   // Y6^0
+        case 43: return std::sqrt (21.0f / 16.0f) * cosAz * sinEl * cosEl * (33.0f * sinEl4 - 30.0f * sinEl2 + 5.0f);    // Y6^1
+        case 44: return std::sqrt (105.0f / 16.0f) * cos2Az * cosEl2 * (33.0f * sinEl4 - 18.0f * sinEl2 + 1.0f) * 0.25f;// Y6^2
+        case 45: return std::sqrt (315.0f / 16.0f) * cos3Az * sinEl * cosEl3 * (11.0f * sinEl2 - 3.0f);                  // Y6^3
+        case 46: return std::sqrt (63.0f / 16.0f) * cos4Az * cosEl4 * (11.0f * sinEl2 - 1.0f);                           // Y6^4
+        case 47: return std::sqrt (693.0f / 8.0f) * cos5Az * sinEl * cosEl5;                                              // Y6^5
+        case 48: return std::sqrt (231.0f / 16.0f) * cos6Az * cosEl6;                                                    // Y6^6
+
+        default: return 0.0f;
+    }
+}
+
+//==============================================================================
+// v0.2: 2D VBAP for flat layouts (Quad, 5.1, 7.1) -- azimuth-only panning
+//==============================================================================
+void computeVBAPGains2D (const SpeakerLayout& layout,
+                         float azimuthRad, float* outGains)
+{
+    const int N = layout.numSpeakers;
+    for (int s = 0; s < N; ++s)
+        outGains[s] = 0.0f;
+
+    if (N < 2) return;
+
+    // Normalize azimuth to [-pi, pi]
+    while (azimuthRad > juce::MathConstants<float>::pi)  azimuthRad -= 2.0f * juce::MathConstants<float>::pi;
+    while (azimuthRad < -juce::MathConstants<float>::pi) azimuthRad += 2.0f * juce::MathConstants<float>::pi;
+
+    // Find the two speakers that span the source azimuth
+    // Sort speaker azimuths for efficient pair finding
+    struct SpkAz { int index; float az; };
+    SpkAz sorted[MAX_SPEAKERS];
+    for (int s = 0; s < N; ++s)
+    {
+        sorted[s].index = s;
+        sorted[s].az = layout.speakers[s].azimuthRad;
+        // Normalize to [-pi, pi]
+        while (sorted[s].az > juce::MathConstants<float>::pi)  sorted[s].az -= 2.0f * juce::MathConstants<float>::pi;
+        while (sorted[s].az < -juce::MathConstants<float>::pi) sorted[s].az += 2.0f * juce::MathConstants<float>::pi;
+    }
+    std::sort (sorted, sorted + N, [](const SpkAz& a, const SpkAz& b) { return a.az < b.az; });
+
+    // Find spanning pair
+    int leftIdx = -1, rightIdx = -1;
+    for (int s = 0; s < N; ++s)
+    {
+        int next = (s + 1) % N;
+        float az1 = sorted[s].az;
+        float az2 = sorted[next].az;
+
+        // Handle wrap-around
+        if (next == 0)
+            az2 += 2.0f * juce::MathConstants<float>::pi;
+
+        float srcAz = azimuthRad;
+        if (next == 0 && srcAz < az1)
+            srcAz += 2.0f * juce::MathConstants<float>::pi;
+
+        if (srcAz >= az1 && srcAz <= az2)
+        {
+            leftIdx = s;
+            rightIdx = next;
+            break;
+        }
+    }
+
+    if (leftIdx < 0)
+    {
+        // Fallback: nearest speaker
+        float minDist = 999.0f;
+        int nearest = 0;
+        for (int s = 0; s < N; ++s)
+        {
+            float d = std::abs (sorted[s].az - azimuthRad);
+            if (d > juce::MathConstants<float>::pi) d = 2.0f * juce::MathConstants<float>::pi - d;
+            if (d < minDist) { minDist = d; nearest = s; }
+        }
+        outGains[sorted[nearest].index] = 1.0f;
+        return;
+    }
+
+    float az1 = sorted[leftIdx].az;
+    float az2 = sorted[rightIdx].az;
+    float srcAz = azimuthRad;
+
+    // Handle wrap
+    if (rightIdx == 0)
+    {
+        az2 += 2.0f * juce::MathConstants<float>::pi;
+        if (srcAz < az1) srcAz += 2.0f * juce::MathConstants<float>::pi;
+    }
+
+    float span = az2 - az1;
+    if (span < 1e-6f)
+    {
+        outGains[sorted[leftIdx].index] = 1.0f;
+        return;
+    }
+
+    // Sine law panning (VBAP 2D)
+    float g1 = std::sin (az2 - srcAz) / std::sin (span);
+    float g2 = std::sin (srcAz - az1) / std::sin (span);
+
+    // Constant-power normalization
+    float power = g1 * g1 + g2 * g2;
+    if (power > 1e-12f)
+    {
+        float scale = 1.0f / std::sqrt (power);
+        g1 *= scale;
+        g2 *= scale;
+    }
+
+    outGains[sorted[leftIdx].index] = std::max (0.0f, g1);
+    outGains[sorted[rightIdx].index] = std::max (0.0f, g2);
+}
+
+//==============================================================================
+// v0.2: 3D VBAP for height layouts (7.1.4, 9.1.6) -- uses pre-computed triplets
+//==============================================================================
+void computeVBAPGains3D (const SpeakerLayout& layout,
+                         const std::vector<VBAPTriplet>& triplets,
+                         float azimuthRad, float elevationRad,
+                         float* outGains)
+{
+    const int N = layout.numSpeakers;
+    for (int s = 0; s < N; ++s)
+        outGains[s] = 0.0f;
+
+    // Source direction as unit Cartesian vector
+    float px = std::cos (elevationRad) * std::sin (azimuthRad);
+    float py = std::cos (elevationRad) * std::cos (azimuthRad);
+    float pz = std::sin (elevationRad);
+
+    float bestGainSum = 1e30f;   // Start high -- pick MINIMUM sum (tightest enclosing triangle)
+    int bestTri = -1;
+    float bestG[3] = {};
+
+    for (int t = 0; t < static_cast<int> (triplets.size()); ++t)
+    {
+        const auto& tri = triplets[static_cast<size_t> (t)];
+
+        float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;
+        float g1 = tri.inv[1][0] * px + tri.inv[1][1] * py + tri.inv[1][2] * pz;
+        float g2 = tri.inv[2][0] * px + tri.inv[2][1] * py + tri.inv[2][2] * pz;
+
+        if (g0 >= -1e-6f && g1 >= -1e-6f && g2 >= -1e-6f)
+        {
+            float sum = g0 + g1 + g2;
+            if (sum < bestGainSum)   // Min sum = tightest triangle (fixes L/R swap)
+            {
+                bestGainSum = sum;
+                bestTri = t;
+                bestG[0] = std::max (0.0f, g0);
+                bestG[1] = std::max (0.0f, g1);
+                bestG[2] = std::max (0.0f, g2);
+            }
+        }
+    }
+
+    if (bestTri >= 0)
+    {
+        float power = bestG[0] * bestG[0] + bestG[1] * bestG[1] + bestG[2] * bestG[2];
+        float scale = (power > 1e-12f) ? (1.0f / std::sqrt (power)) : 0.0f;
+
+        outGains[triplets[static_cast<size_t> (bestTri)].i] = bestG[0] * scale;
+        outGains[triplets[static_cast<size_t> (bestTri)].j] = bestG[1] * scale;
+        outGains[triplets[static_cast<size_t> (bestTri)].k] = bestG[2] * scale;
+    }
+    else
+    {
+        // Fallback: nearest speaker
+        float bestDot = -2.0f;
+        int bestSpeaker = 0;
+        for (int s = 0; s < N; ++s)
+        {
+            float sx = std::cos (layout.speakers[s].elevationRad) * std::sin (layout.speakers[s].azimuthRad);
+            float sy = std::cos (layout.speakers[s].elevationRad) * std::cos (layout.speakers[s].azimuthRad);
+            float sz = std::sin (layout.speakers[s].elevationRad);
+            float dot = px * sx + py * sy + pz * sz;
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                bestSpeaker = s;
+            }
+        }
+        outGains[bestSpeaker] = 1.0f;
+    }
+}
+
+} // namespace spatialcore

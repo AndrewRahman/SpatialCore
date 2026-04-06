@@ -40,6 +40,7 @@ namespace Layouts
     SpeakerLayout get5_1();
     SpeakerLayout get7_0();
     SpeakerLayout get7_1();
+    SpeakerLayout get9_1();
     SpeakerLayout getOctaphonic();
     SpeakerLayout get5_1_2();
     SpeakerLayout get5_1_4();
@@ -48,7 +49,11 @@ namespace Layouts
     SpeakerLayout get7_1_6();
     SpeakerLayout get9_1_4();
     SpeakerLayout get9_1_6();
+    SpeakerLayout getSML13_1();
     SpeakerLayout getVirtualBinaural16();
 } // namespace Layouts
+
+void buildVBAPTripletsForLayout(const SpeakerLayout& layout,
+                                std::vector<VBAPTriplet>& triplets);
 
 } // namespace spatialcore

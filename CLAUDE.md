@@ -15,8 +15,8 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 ### Core Components
 | Component | Headers | Description |
 |-----------|---------|-------------|
-| Algorithms | `Algorithms/*.h` | 7 spatialization algorithms: VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural |
-| Binaural | `Binaural/*.h` | HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
+| Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural |
+| Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
 | I/O | `IO/*.h` | OutputFormatRegistry (22 formats), SpeakerLayout (13 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
 | Trajectory | `Trajectory/*.h` | 13 shapes, origin-point architecture, forward/reverse |

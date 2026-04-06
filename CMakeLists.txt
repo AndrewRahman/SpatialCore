@@ -51,6 +51,9 @@ add_library(SpatialCore STATIC
     src/Algorithms/MDAPAlgorithm.cpp
     src/Algorithms/AmbisonicsAlgorithm.cpp
     src/Algorithms/DirectBinauralAlgorithm.cpp
+    src/Algorithms/ConstantPowerAlgorithm.cpp
+    # Core
+    src/Core/SpatialMath.cpp
     # Binaural
     src/Binaural/HRTFDatabase.cpp
     src/Binaural/PartitionedConvolver.cpp

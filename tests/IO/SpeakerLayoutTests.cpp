@@ -3,9 +3,9 @@
 
 using namespace spatialcore;
 
-TEST_CASE("OutputFormatRegistry: 22 formats registered", "[io]")
+TEST_CASE("OutputFormatRegistry: 23 formats registered", "[io]")
 {
-    REQUIRE(OutputFormatRegistry::getNumFormats() == 22);
+    REQUIRE(OutputFormatRegistry::getNumFormats() == 23);
 }
 
 TEST_CASE("OutputFormatRegistry: Binaural is 2 channels", "[io]")

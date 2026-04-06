@@ -18,6 +18,8 @@ public:
     static const SpeakerLayout& getLayoutForFormat(OutputFormat format);
     static const std::vector<VBAPTriplet>& getTripletsForFormat(OutputFormat format);
 
+    static const char* getDisplayName(OutputFormat format);
+
 private:
     static void initLayouts();
 };

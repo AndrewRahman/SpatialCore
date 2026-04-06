@@ -1,16 +1,18 @@
 #pragma once
 
 #include <cmath>
-#include <juce_core/juce_core.h>
 
 namespace spatialcore
 {
 namespace DSP
 {
 
+//==============================================================================
+// Soft Clipper (NaN-safe, preserves natural asymptotic curve for self-oscillation)
+//==============================================================================
 inline float softClip(float x)
 {
-    if (!std::isfinite(x))
+    if (! std::isfinite(x))
         return 0.0f;
 
     const float threshold = 0.8f;
@@ -21,16 +23,16 @@ inline float softClip(float x)
     return x;
 }
 
+//==============================================================================
+// Output Limiter -- tanh-based soft ceiling for speaker protection
+// C-infinity continuous (no derivative discontinuities), asymptotes to +/-threshold
+//==============================================================================
 inline float outputLimiter(float x)
 {
-    if (!std::isfinite(x))
+    if (! std::isfinite(x))
         return 0.0f;
-    const float ceiling = 1.2589f;  // +2 dB hard ceiling
-    if (x > ceiling)
-        return ceiling;
-    if (x < -ceiling)
-        return -ceiling;
-    return x;
+    const float threshold = 1.2589f;  // +2 dB
+    return threshold * std::tanh(x / threshold);
 }
 
 } // namespace DSP

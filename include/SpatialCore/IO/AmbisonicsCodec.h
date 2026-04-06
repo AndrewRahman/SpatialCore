@@ -1,5 +1,6 @@
 #pragma once
 
+#include <SpatialCore/Core/Types.h>
 #include <SpatialCore/Core/SourcePosition.h>
 
 namespace spatialcore

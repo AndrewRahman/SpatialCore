@@ -3,6 +3,9 @@
 namespace spatialcore
 {
 
+//==============================================================================
+// Source position for spatialization algorithm input
+//==============================================================================
 struct SourcePosition
 {
     float azimuthRad   = 0.0f;

@@ -4,6 +4,7 @@
 #include <SpatialCore/Core/Types.h>
 #include <SpatialCore/Core/SourcePosition.h>
 #include <SpatialCore/Core/BinauralGains.h>
+#include <SpatialCore/Core/SpatialMath.h>
 
 // Algorithms
 #include <SpatialCore/Algorithms/SpatializationAlgorithm.h>
@@ -14,8 +15,10 @@
 #include <SpatialCore/Algorithms/MDAPAlgorithm.h>
 #include <SpatialCore/Algorithms/AmbisonicsAlgorithm.h>
 #include <SpatialCore/Algorithms/DirectBinauralAlgorithm.h>
+#include <SpatialCore/Algorithms/ConstantPowerAlgorithm.h>
 
 // Binaural
+#include <SpatialCore/Binaural/SharedFFTCache.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
 #include <SpatialCore/Binaural/BinauralRenderer.h>

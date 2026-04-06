@@ -27,10 +27,11 @@ TEST_CASE("TrajectoryEngine: None shape returns base position", "[trajectory]")
     REQUIRE(result.dist  == Approx(0.8f));
 }
 
-TEST_CASE("TrajectoryEngine: stub returns base position for any shape", "[trajectory]")
+TEST_CASE("TrajectoryEngine: Circle at max distance returns base position (zero-radius degenerate)", "[trajectory]")
 {
+    // When baseDist=1.0, distScale=0.0, so circle radius=0 -> degenerates to a point
     auto result = TrajectoryEngine::compute(TrajectoryShape::Circle, 0.25f, 90.0f, 0.0f, 1.0f);
-    REQUIRE(result.azDeg == Approx(90.0f));
+    REQUIRE(result.azDeg == Approx(90.0f).margin(0.1f));
     REQUIRE(result.elDeg == Approx(0.0f));
     REQUIRE(result.dist  == Approx(1.0f));
 }

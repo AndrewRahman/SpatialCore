@@ -4,6 +4,7 @@
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <vector>
 
 namespace spatialcore
 {
@@ -32,6 +33,9 @@ public:
     void removeListener(Listener* l);
 
     void setObjectActivityLevel(int index, float level);
+    void setTrajectoryState(int index, const TrajectoryEngine::TrajectoryState& ts);
+    void advanceStarAnimation(float dt) { starTime += dt; }
+    void advancePulsePhases(float dt);
 
     static const juce::Colour objectColours[MAX_SOURCES];
 
@@ -45,11 +49,26 @@ private:
     };
 
     std::array<ObjectInfo, MAX_SOURCES> objects = {};
+    std::array<TrajectoryEngine::TrajectoryState, MAX_SOURCES> trajectoryStates = {};
     std::array<bool, MAX_SOURCES> oscOverride   = {};
     std::array<float, MAX_SOURCES> activityLevel = {};
+    std::array<float, MAX_SOURCES> pulsePhase = {};
     int selectedObject = -1;
     int draggedObject  = -1;
     juce::ListenerList<Listener> listenerList;
+
+    // Coordinate conversion
+    juce::Point<float> spatialToPixel(float azimuthDeg, float distance) const;
+    std::pair<float, float> pixelToSpatial(juce::Point<float> pixel) const;
+    int findObjectAt(juce::Point<float> pos) const;
+
+    // Star field
+    struct Star { float x, y, phase, speed, size; juce::Colour colour; };
+    std::vector<Star> stars;
+    float starTime = 0.0f;
+    void generateStars();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpatialMapComponent)
 };
 
 } // namespace spatialcore

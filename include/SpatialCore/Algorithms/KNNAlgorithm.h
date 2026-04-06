@@ -3,11 +3,14 @@
 
 namespace spatialcore
 {
+
+/** K-Nearest Neighbor panning -- inverse-distance-squared weighting. */
 class KNNAlgorithm : public SpatializationAlgorithm
 {
 public:
-    void computeGains(const SourcePosition& source, const LayoutContext& ctx,
-                      float* outputGains, int numSpeakers) const override;
+    void computeGains (const SourcePosition& source, const LayoutContext& ctx,
+                       float* outputGains, int numSpeakers) const override;
     juce::String getName() const override { return "KNN"; }
 };
+
 } // namespace spatialcore

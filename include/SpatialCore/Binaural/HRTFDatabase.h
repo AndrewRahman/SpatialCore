@@ -1,33 +1,70 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_dsp/juce_dsp.h>
 
-// Forward declaration — libmysofa is a private dependency
+// Forward declaration -- libmysofa is a private dependency
 struct MYSOFA_EASY;
 
 namespace spatialcore
 {
 
+//==============================================================================
+// HRTF Database -- loads SOFA files and provides HRIR lookup
+// Wraps libmysofa for SOFA parsing and nearest-neighbor interpolation
+//==============================================================================
 class HRTFDatabase
 {
 public:
     HRTFDatabase();
     ~HRTFDatabase();
 
-    bool loadFromMemory(const void* data, int dataSize, float targetSampleRate);
+    /** Load a SOFA file from memory (BinaryData). Resamples to targetSampleRate. */
+    bool loadFromMemory (const void* data, int dataSize, float targetSampleRate);
 
-    void getInterpolatedHRIR(float azimuthRad, float elevationRad,
-                             float* irL, float* irR,
-                             float& delayL, float& delayR) const;
+    /** Get interpolated HRIR pair for a direction (our convention: radians).
+        Writes irLength samples to irL and irR buffers (must be pre-allocated). */
+    void getInterpolatedHRIR (float azimuthRad, float elevationRad,
+                              float* irL, float* irR,
+                              float& delayL, float& delayR) const;
 
-    void getAlignedHRIR(float azimuthRad, float elevationRad,
-                        float* irL, float* irR,
-                        float& delayL, float& delayR) const;
+    /** Get ITD-free interpolated HRIR pair for a direction.
+        The returned HRIRs have ITD removed (time-aligned onsets). The ITD values
+        are returned separately in delayL/delayR (in samples, fractional).
+        This produces phase-coherent HRIRs that can be smoothly crossfaded
+        without comb-filtering artifacts from ITD misalignment. */
+    void getAlignedHRIR (float azimuthRad, float elevationRad,
+                         float* irL, float* irR,
+                         float& delayL, float& delayR) const;
 
     int  getIRLength() const { return irLength; }
     int  getNumPositions() const { return numPositions; }
     bool isLoaded() const { return loaded; }
+
+    /** Unload current profile and free resources. */
     void unload();
+
+    /** Convert a raw HRIR to minimum-phase in-place using cepstral decomposition.
+        Preserves magnitude spectrum but removes excess phase, so time-domain
+        interpolation between adjacent HRIRs produces smooth spectral transitions
+        without comb filtering (issue #47). workBuf must be >= fftSize * 2 floats. */
+    static void convertToMinPhase (float* ir, int irLength, int fftOrder, float* workBuf);
+
+    /** Detect onset sample index of an IR using threshold of peak amplitude.
+        Returns the index of the first sample exceeding thresholdFraction * peakAbs.
+        Used to compute ITD when SOFA delay values are zero (ITD baked into waveform).
+        Returns 0 if no clear onset found or if onset > irLength/2. */
+    static int detectOnset (const float* ir, int length, float thresholdFraction = 0.1f);
+
+    /** Apply low-frequency correction to an HRIR in-place (Xie 2009 method).
+        Below lfCutoffHz: magnitude is set to the mean of the lfCutoffHz-to-hfCutoffHz
+        range, and phase is linearly extrapolated from that range. This restores
+        physically plausible bass response for datasets with weak LF content (e.g.,
+        MIT KEMAR). workBuf must be >= fftSize * 2 floats. */
+    static void correctLowFrequency (float* ir, int irLength, int fftOrder,
+                                      float sampleRate, float* workBuf,
+                                      float lfCutoffHz = 100.0f,
+                                      float hfCutoffHz = 300.0f);
 
 private:
     MYSOFA_EASY* easyHandle = nullptr;
