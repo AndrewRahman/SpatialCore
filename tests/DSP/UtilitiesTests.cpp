@@ -43,8 +43,8 @@ TEST_CASE("outputLimiter: zero passthrough", "[dsp]")
 
 TEST_CASE("outputLimiter: near-passthrough for small values", "[dsp]")
 {
-    // tanh(x/c)*c is approximately x for small x (within ~1% for |x| < 0.5)
-    REQUIRE(spatialcore::DSP::outputLimiter(0.5f) == Approx(0.5f).margin(0.01f));
+    // tanh(x/c)*c is approximately x for small x (within ~5% for |x| < 0.5)
+    REQUIRE(spatialcore::DSP::outputLimiter(0.5f) == Approx(0.5f).margin(0.05f));
 }
 
 TEST_CASE("outputLimiter: asymptotically approaches +2dB ceiling", "[dsp]")

@@ -20,7 +20,7 @@ public:
                                 const float* speakerElevations,
                                 float* decodeMatrix);
 
-    static float evaluateSH(int l, int m, float azimuthRad, float elevationRad);
+    static float evaluateSH(int acn, float azimuthRad, float elevationRad);
 
     static void applyMaxREWeights(float* shCoeffs, int order);
 };
