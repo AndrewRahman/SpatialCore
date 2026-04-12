@@ -64,13 +64,7 @@ target_link_libraries(MyPlugin PRIVATE SpatialCore)
 ```
 
 ## Skills
-Skills for SpatialCore development are in the `spatial-media-skills` repository:
-- `spatialcore/spatial-audio-dsp` — algorithms, HRTF, coordinate systems
-- `spatialcore/spatialcore-architecture` — how to build plugins on SpatialCore
-- `spatialcore/adm-osc-integration` — ADM-OSC protocol
-- `dsp/dsp-cookbook` — filters, saturation, smoothing
-- `juce/juce-best-practices` — realtime safety, threading, APVTS
-- `design/oiloil-ui-ux-guide` — UX principles, spacing, style
+15 JUCE/DSP skills are available at project level in `.claude/skills/` — they load automatically in this repo.
 
 ## Critical Rules
 - NEVER allocate memory in any function called from processBlock
