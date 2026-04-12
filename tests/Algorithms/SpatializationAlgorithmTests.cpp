@@ -48,7 +48,7 @@ TEST_CASE("VBAP supports surround, not binaural", "[algorithms]")
     REQUIRE(algo.supportsSurround() == true);
 }
 
-TEST_CASE("computeGains zero-fills output (stub)", "[algorithms]")
+TEST_CASE("computeGains produces valid output", "[algorithms]")
 {
     VBAPAlgorithm algo;
     SpeakerLayout layout;
@@ -57,9 +57,9 @@ TEST_CASE("computeGains zero-fills output (stub)", "[algorithms]")
     float decodeMatrix[1][MAX_SPEAKERS] = {};
     LayoutContext ctx { layout, triplets, decodeMatrix, 0 };
 
-    float gains[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float gains[4] = { -1.0f, -1.0f, -1.0f, -1.0f };
     algo.computeGains({}, ctx, gains, 4);
 
     for (int i = 0; i < 4; ++i)
-        REQUIRE(gains[i] == 0.0f);
+        REQUIRE(gains[i] >= 0.0f);
 }

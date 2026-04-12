@@ -16,19 +16,28 @@ if(MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
-# --- JUCE (must be provided by consumer or found) ---
+# --- JUCE (provided by consumer, local checkout, or fetched) ---
+include(FetchContent)
 if(NOT TARGET juce::juce_core)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../JUCE/CMakeLists.txt")
         add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../JUCE" "${CMAKE_BINARY_DIR}/JUCE" EXCLUDE_FROM_ALL)
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
         add_subdirectory(JUCE EXCLUDE_FROM_ALL)
     else()
-        find_package(JUCE REQUIRED)
+        find_package(JUCE QUIET)
+        if(NOT JUCE_FOUND)
+            FetchContent_Declare(
+                JUCE
+                GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+                GIT_TAG        8.0.4
+                GIT_SHALLOW    TRUE
+            )
+            FetchContent_MakeAvailable(JUCE)
+        endif()
     endif()
 endif()
 
 # --- libmysofa ---
-include(FetchContent)
 FetchContent_Declare(
     mysofa
     GIT_REPOSITORY https://github.com/hoene/libmysofa.git
