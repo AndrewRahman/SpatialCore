@@ -1,0 +1,63 @@
+name: SpatialCore CI
+
+on:
+  push:
+    branches: [main, spatialcore-v2-extraction]
+  pull_request:
+    branches: [main, spatialcore-v2-extraction]
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build-and-test:
+    name: Build + Test (standalone, JUCE 8.0.3 fallback)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # 5 HRTF SOFA files are LFS-tracked (~58 MB)
+
+      - name: Verify LFS objects resolved to real bytes (not pointer text)
+        # Guards against the 2026-04 LFS-pointer-in-binary incident class one
+        # layer deeper (standalone SpatialCore checkout, before any consumer
+        # submodule is involved). A pointer file is a few hundred bytes of
+        # text; a real SOFA file is hundreds of KB to tens of MB.
+        run: |
+          set -e
+          for f in HRTF/*.sofa; do
+            if grep -q "version https://git-lfs.github.com/spec/v1" "$f"; then
+              echo "FATAL: $f is an LFS pointer, not real SOFA bytes" >&2
+              exit 1
+            fi
+            size=$(stat -c%s "$f")
+            if [ "$size" -lt 100000 ]; then
+              echo "FATAL: $f is suspiciously small ($size bytes) — expected real SOFA data" >&2
+              exit 1
+            fi
+          done
+          echo "All 5 SOFA files resolved to real LFS content."
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
+            ladspa-sdk libcurl4-openssl-dev libfreetype6-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libwebkit2gtk-4.1-dev \
+            libglu1-mesa-dev mesa-common-dev zlib1g-dev
+
+      - name: Configure CMake
+        # No consumer JUCE present in standalone CI — SpatialCore's own
+        # FetchContent fallback pins JUCE 8.0.3 (INT-02/D-06: never test
+        # against a different JUCE version than what OSD ships).
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev
+
+      - name: Build SpatialCore + SpatialCoreTests
+        run: cmake --build build --config Release -j$(nproc)
+
+      - name: Run SpatialCore test suite
+        # The suite is empty of new tests until plan 08-02+ adds them; a
+        # build-only + zero-tests-pass run is acceptable at this stage.
+        working-directory: build
+        run: ctest --output-on-failure
