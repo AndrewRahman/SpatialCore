@@ -1,24 +1,15 @@
 #pragma once
-
-#include <SpatialCore/Core/Types.h>
-#include <SpatialCore/IO/SpeakerLayout.h>
 #include <juce_core/juce_core.h>
-#include <vector>
-
-// NOTE: LayoutContext and BinauralContext now live in
-// <SpatialCore/Core/Types.h> (consolidated in Phase 8 Plan 08-02 — see
-// .planning/phases/08-spatialcore-dsp-extraction/08-02-PLAN.md). They were
-// previously defined in this file; kept here as a comment for traceability
-// since this header is not itself listed in 08-02's files_modified (that is
-// 08-03's scope), but the duplicate struct definitions had to be removed to
-// avoid a compile error now that Types.h defines them.
+#include <SpatialCore/Core/Types.h>
 
 namespace spatialcore
 {
 
 //==============================================================================
 // Abstract spatialization algorithm interface
-// Shared across the Spatial Media Library plugin suite
+// Shared across the Spatial Media Library plugin suite.
+// FROZEN (D-02) — moved verbatim from Source/PluginProcessor.h:104-132.
+// Do not add, remove, or change any virtual method signature.
 //==============================================================================
 class SpatializationAlgorithm
 {

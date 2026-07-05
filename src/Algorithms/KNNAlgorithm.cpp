@@ -1,4 +1,5 @@
 #include <SpatialCore/Algorithms/KNNAlgorithm.h>
+#include <SpatialCore/IO/SpeakerLayout.h>
 #include <algorithm>
 
 namespace spatialcore

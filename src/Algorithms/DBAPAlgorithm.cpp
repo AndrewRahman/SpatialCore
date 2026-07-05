@@ -1,4 +1,5 @@
 #include <SpatialCore/Algorithms/DBAPAlgorithm.h>
+#include <SpatialCore/IO/SpeakerLayout.h>
 
 namespace spatialcore
 {
