@@ -87,6 +87,8 @@ add_library(SpatialCore STATIC
     # Trajectory
     src/Trajectory/TrajectoryEngine.cpp
     src/Trajectory/DopplerVelocity.cpp
+    # Engine
+    src/Engine/RenderEngine.cpp
 )
 
 target_include_directories(SpatialCore

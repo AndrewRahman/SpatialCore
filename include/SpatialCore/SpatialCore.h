@@ -1,5 +1,11 @@
 #pragma once
 
+// Umbrella include — DSP modules only (Phase 8 locked scope, D-03 split).
+// UI headers (SpatialMapComponent, SMLLookAndFeel, ReverseSlider,
+// IndicatorToggle, StyledButton) are deliberately NOT included here; they
+// land in a separate SpatialCoreUI umbrella in Phase 9. Consumers that need
+// UI widgets include <SpatialCore/UI/*.h> directly for now.
+
 // Core
 #include <SpatialCore/Core/Types.h>
 #include <SpatialCore/Core/SourcePosition.h>
@@ -16,6 +22,7 @@
 #include <SpatialCore/Algorithms/AmbisonicsAlgorithm.h>
 #include <SpatialCore/Algorithms/DirectBinauralAlgorithm.h>
 #include <SpatialCore/Algorithms/ConstantPowerAlgorithm.h>
+#include <SpatialCore/Algorithms/AllAlgorithms.h>
 
 // Binaural
 #include <SpatialCore/Binaural/SharedFFTCache.h>
@@ -35,10 +42,7 @@
 
 // Trajectory
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
+#include <SpatialCore/Trajectory/DopplerVelocity.h>
 
-// UI
-#include <SpatialCore/UI/SpatialMapComponent.h>
-#include <SpatialCore/UI/SMLLookAndFeel.h>
-#include <SpatialCore/UI/ReverseSlider.h>
-#include <SpatialCore/UI/IndicatorToggle.h>
-#include <SpatialCore/UI/StyledButton.h>
+// Engine (Phase 8 Plan 08-06, CORE-01 — the per-object rendering engine facade)
+#include <SpatialCore/Engine/RenderEngine.h>
