@@ -12,12 +12,25 @@ add_executable(SpatialCoreTests
     Trajectory/TrajectoryTests.cpp
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp
+    Binaural/SadieD2KU100Tests.cpp
+    Binaural/CipicSubject003Tests.cpp
+    Binaural/HutubsPP2Tests.cpp
+    Binaural/BernschuetzKU100Tests.cpp
+    Binaural/MitKemarLargePinnaTests.cpp
+    Binaural/WoodworthFallbackTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
     PRIVATE
         Catch2::Catch2WithMain
         SpatialCore
+)
+
+# SPATIALCORE_HRTF_DIR: absolute path to the Git-LFS-tracked raw .sofa files
+# (SpatialCore/HRTF/), so the per-profile Binaural tests can synchronously
+# load each profile via HRTFDatabase::loadFromFile() (Phase 8 Plan 08-04).
+target_compile_definitions(SpatialCoreTests PRIVATE
+    SPATIALCORE_HRTF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../HRTF"
 )
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
