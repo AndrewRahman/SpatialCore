@@ -1,12 +1,19 @@
 #pragma once
 
-#include <juce_core/juce_core.h>
+#include <vector>
 
 namespace spatialcore
 {
 
 static constexpr int MAX_SOURCES  = 12;
 static constexpr int MAX_SPEAKERS = 16;
+
+// Forward declarations — SpeakerLayout.h includes this header for
+// MAX_SOURCES/MAX_SPEAKERS, so Types.h cannot include SpeakerLayout.h back
+// (circular). LayoutContext only needs these as reference/pointer members,
+// which is legal with an incomplete type.
+struct SpeakerLayout;
+struct VBAPTriplet;
 
 //==============================================================================
 // Binaural profile: defines virtual head characteristics for simplified HRTF
@@ -31,17 +38,42 @@ struct ObjectState
 };
 
 //==============================================================================
-// Per-object trajectory state (for editor visualization)
+// Binaural gain result for one source position
 //==============================================================================
-struct TrajectoryState
+struct BinauralGains
 {
-    float originAzDeg  = 0.0f;   // Base/origin position (captured at shape change)
-    float originElDeg  = 0.0f;
-    float originDist   = 0.5f;
-    int   shape        = 0;      // 0 = None, 1+ = active trajectory
-    float phase        = 0.0f;   // 0..1 animation progress
-    bool  reverse      = false;
-    float randomTime   = 0.0f;   // Random trajectory: current time accumulator
+    float leftGain          = 0.0f;
+    float rightGain         = 0.0f;
+    float leftDelaySamples  = 0.0f;  // ITD: additional delay for left ear
+    float rightDelaySamples = 0.0f;  // ITD: additional delay for right ear
+};
+
+//==============================================================================
+// Source position for spatialization algorithm input
+//==============================================================================
+struct SourcePosition
+{
+    float azimuthRad;
+    float elevationRad;
+    float distance;
+};
+
+//==============================================================================
+// Context structs passed to spatialization algorithms
+//==============================================================================
+struct LayoutContext
+{
+    const SpeakerLayout& layout;
+    const std::vector<VBAPTriplet>& triplets;   // empty for 2D-only layouts
+    const float (*ambiDecodeMatrix)[MAX_SPEAKERS]; // Ambisonics decode matrix [speaker][channel]
+    int ambiNumSpeakers;
+};
+
+struct BinauralContext
+{
+    int profileIndex;
+    double sampleRate;
+    const BinauralProfile* profiles;             // pointer to the 5-profile array
 };
 
 } // namespace spatialcore

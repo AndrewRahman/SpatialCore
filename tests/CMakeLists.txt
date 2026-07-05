@@ -9,7 +9,8 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(SpatialCoreTests
     Algorithms/SpatializationAlgorithmTests.cpp
     IO/SpeakerLayoutTests.cpp
-    Trajectory/TrajectoryEngineTests.cpp
+    Trajectory/TrajectoryTests.cpp
+    Trajectory/DopplerTests.cpp
     DSP/UtilitiesTests.cpp
 )
 

@@ -1,32 +1,20 @@
 #pragma once
 
 #include <SpatialCore/Core/Types.h>
-#include <SpatialCore/Core/SourcePosition.h>
-#include <SpatialCore/Core/BinauralGains.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
 #include <juce_core/juce_core.h>
 #include <vector>
 
+// NOTE: LayoutContext and BinauralContext now live in
+// <SpatialCore/Core/Types.h> (consolidated in Phase 8 Plan 08-02 — see
+// .planning/phases/08-spatialcore-dsp-extraction/08-02-PLAN.md). They were
+// previously defined in this file; kept here as a comment for traceability
+// since this header is not itself listed in 08-02's files_modified (that is
+// 08-03's scope), but the duplicate struct definitions had to be removed to
+// avoid a compile error now that Types.h defines them.
+
 namespace spatialcore
 {
-
-//==============================================================================
-// Context structs passed to spatialization algorithms
-//==============================================================================
-struct LayoutContext
-{
-    const SpeakerLayout&             layout;
-    const std::vector<VBAPTriplet>&  triplets;   // empty for 2D-only layouts
-    const float (*ambiDecodeMatrix)[MAX_SPEAKERS];  // Ambisonics decode matrix [speaker][channel]
-    int ambiNumSpeakers;
-};
-
-struct BinauralContext
-{
-    int    profileIndex;
-    double sampleRate;
-    const BinauralProfile* profiles;             // pointer to the 5-profile array
-};
 
 //==============================================================================
 // Abstract spatialization algorithm interface

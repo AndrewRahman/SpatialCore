@@ -86,6 +86,7 @@ add_library(SpatialCore STATIC
     src/OSC/ADMOSCSender.cpp
     # Trajectory
     src/Trajectory/TrajectoryEngine.cpp
+    src/Trajectory/DopplerVelocity.cpp
 )
 
 target_include_directories(SpatialCore
@@ -156,10 +157,26 @@ target_compile_definitions(SpatialCore PUBLIC JUCE_USE_CURL=0)
 
 target_compile_features(SpatialCore PUBLIC cxx_std_17)
 
+# NOTE: -ffast-math / /fp:fast are deliberately NOT applied to SpatialCore
+# (unlike OSD's own root CMakeLists.txt, which does apply them to the
+# OpenSpatialDelay/OpenSpatialDelayTests/RegressionHarness targets). Phase 8
+# Plan 08-02 discovered empirically that applying -ffast-math to code compiled
+# in a SEPARATE translation unit (SpatialCore/src/Trajectory/TrajectoryEngine.cpp
+# as its own .o inside libSpatialCore.a) versus the ORIGINAL single-TU
+# compilation (Source/TrajectoryEngine.cpp compiled directly into
+# OpenSpatialDelayTests alongside PluginProcessor.cpp) produces different
+# floating-point reassociation choices per translation unit — bit-different
+# but equally "correct" results that compound over thousands of processBlock
+# calls into a large final divergence. This broke the Phase 7 bit-identical
+# regression harness gate (INT-03) for zero logic-level reason. Confirmed via
+# `ctest -R RegressionHarness` before/after: removing -ffast-math here (while
+# OSD's own targets keep it) restores bit-identical output. If a future plan
+# needs -ffast-math perf back on SpatialCore, it must re-verify the full
+# regression harness (not just spot-check) and update the golden manifest
+# deliberately, not silently.
 if(APPLE)
-    target_compile_options(SpatialCore PRIVATE -ffast-math -Wno-nan-infinity-disabled)
+    target_compile_options(SpatialCore PRIVATE -Wno-nan-infinity-disabled)
 elseif(MSVC)
-    target_compile_options(SpatialCore PRIVATE /fp:fast)
 endif()
 
 # --- Tests ---
