@@ -11,7 +11,7 @@ add_executable(SpatialCoreTests
     IO/SpeakerLayoutTests.cpp
     Trajectory/TrajectoryTests.cpp
     Trajectory/DopplerTests.cpp
-    DSP/UtilitiesTests.cpp
+    Core/SpatialMathTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
