@@ -130,8 +130,13 @@ struct RenderBlockContext
     // object (algorithm->computeGains output, up to MAX_SPEAKERS=16).
     float objChannelGains[MAX_SOURCES][MAX_SPEAKERS] = {};
 
-    // Ambisonics path inputs.
+    // Ambisonics path inputs. Sample rate is required by the NFC-HOA per-order
+    // shelf-filter pole/zero recompute (matches the pre-move code's direct
+    // read of currentSampleRate) — supplied per-block rather than cached at
+    // prepare() time so the engine has no hidden dependency on prepare()
+    // having been called with the "right" rate if it ever changes.
     int ambiOrder = 0;
+    double sampleRate = 48000.0;
 
     // Active output format + resolved surround layout for this block
     // (already resolved via getActiveLayout() by the consumer — the format-
@@ -223,6 +228,20 @@ public:
     BinauralRenderer& getBinauralRenderer (int index) { return binauralRenderers[static_cast<size_t> (index)]; }
     std::atomic<int>& getActiveRendererIndexAtomic() { return activeRendererIndex; }
 
+    // HRTF profile double-buffered swap escape hatches — message-thread-only
+    // (OSD's timerCallback()/loadHRTFProfile() reach through these; the
+    // prepare-index bookkeeping mirrors setOutputFormat()'s layout swap
+    // exactly, but the profile-load body itself (SOFA file IO via
+    // HRTFDatabase::loadFromFile) is OSD-specific glue code, not engine
+    // logic, so it stays a consumer-side call using getBinauralRenderer()).
+    int getPrepareRendererIndex() const { return prepareRendererIndex_; }
+    void swapActiveRenderer()
+    {
+        activeRendererIndex.store (prepareRendererIndex_, std::memory_order_release);
+        prepareRendererIndex_ = 1 - prepareRendererIndex_;
+    }
+    bool isRendererCrossfadeActive() const { return rendererXfadeActive_.load (std::memory_order_acquire); }
+
     static constexpr int kRendererXfadeBlocks = 8;
 
 private:
@@ -268,6 +287,7 @@ private:
     //     glitch-free profile swap, plus crossfade-on-swap state) ---
     BinauralRenderer binauralRenderers[2];
     std::atomic<int> activeRendererIndex { 0 };
+    int  prepareRendererIndex_ = 1;
     int  prevActiveRendererIdx_ = 0;
     bool rendererXfading_ = false;
     int  rendererXfadeBlockCount_ = 0;
@@ -288,15 +308,22 @@ private:
     // THE highest-risk field in this entire engine: dropping this
     // reintroduces the exact crossfade-pop class the harness's
     // rapid-position-change configs exist to catch.
+    // NOTE: distance-gain (objDistGain) interpolation is NOT engine state —
+    // the consumer pre-interpolates it into RenderSources::distGainPerSample
+    // (already a per-sample array) before calling renderBlock(), since the
+    // pre-move code computed it identically across 3 of the 5 render paths
+    // from a single `prevDistGain` the consumer owns. Only per-path GAIN
+    // interpolation (binaural/stereo/surround-channel/SH-coefficient) is
+    // engine-owned, since those targets are format-branch-specific.
     BinauralGains prevBinauralGains[MAX_SOURCES] = {};
     float prevStereoGainL[MAX_SOURCES] = {};
     float prevStereoGainR[MAX_SOURCES] = {};
     float prevChannelGains[MAX_SOURCES][MAX_SPEAKERS] = {};
-    float prevDistGain[MAX_SOURCES] = {};
 
     // --- Ambisonics NFC-HOA + max-rE weighting state ---
     static constexpr int kMaxAmbiOrder = 6;
     static constexpr int kMaxAmbiChannels = (kMaxAmbiOrder + 1) * (kMaxAmbiOrder + 1);
+    static constexpr float kNfcReferenceRadius = 1.5f; // meters (typical studio monitoring distance)
     float prevSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
     juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // 12 objects x 6 orders
     float smoothedNfcDistance[MAX_SOURCES] = {};
