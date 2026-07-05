@@ -103,7 +103,7 @@ void BinauralRenderer::setProfile (int profileIndex)
     // Low-shelf bass compensation for MIT KEMAR.
     // KEMAR has a 24 dB deficit at 50 Hz and 6 dB at 100 Hz (measurement limitation).
     // Design a low-shelf biquad filter to boost post-convolution output.
-    lfShelfActive = (profileIndex == 1);  // Only MIT KEMAR needs compensation
+    lfShelfActive = (profileIndex == 5);  // Only MIT KEMAR needs compensation
     if (lfShelfActive)
     {
         // Low-shelf: +12 dB at 200 Hz, Q=0.7 (gentle slope)

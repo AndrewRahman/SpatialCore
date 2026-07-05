@@ -20,6 +20,28 @@ HRTFDatabase::~HRTFDatabase()
 
 bool HRTFDatabase::loadFromMemory (const void* data, int dataSize, float targetSampleRate)
 {
+    return loadFromBytes (data, dataSize, targetSampleRate);
+}
+
+bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleRate)
+{
+    // Read the LFS-tracked raw .sofa bytes from disk. A checkout that returned
+    // LFS pointer text instead of real bytes (T-08-05b) fails mysofa_open_data's
+    // parse below (or the checksum assertion in the per-profile tests), never
+    // silently succeeds with garbage HRIR data.
+    juce::MemoryBlock fileBytes;
+    if (! sofaFile.loadFileAsData (fileBytes))
+    {
+        DBG ("HRTFDatabase: Failed to read SOFA file: " + sofaFile.getFullPathName());
+        loaded = false;
+        return false;
+    }
+
+    return loadFromBytes (fileBytes.getData(), static_cast<int> (fileBytes.getSize()), targetSampleRate);
+}
+
+bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSampleRate)
+{
     unload();
 
     int filterLength = 0;

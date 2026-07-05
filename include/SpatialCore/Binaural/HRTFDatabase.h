@@ -22,6 +22,14 @@ public:
     /** Load a SOFA file from memory (BinaryData). Resamples to targetSampleRate. */
     bool loadFromMemory (const void* data, int dataSize, float targetSampleRate);
 
+    /** Load a SOFA file from disk (Git-LFS-tracked raw .sofa file). Resamples to
+        targetSampleRate. Reads the file's bytes and hands them to the same
+        libmysofa parsing body used by loadFromMemory — the SOFA-parsing logic
+        itself stays byte-identical; only the byte source differs (D-09,
+        minimum-diff). Returns false if the file cannot be read or is not a
+        valid SOFA file (e.g. an unresolved Git LFS pointer stub). */
+    bool loadFromFile (const juce::File& sofaFile, float targetSampleRate);
+
     /** Get interpolated HRIR pair for a direction (our convention: radians).
         Writes irLength samples to irL and irR buffers (must be pre-allocated). */
     void getInterpolatedHRIR (float azimuthRad, float elevationRad,
@@ -67,6 +75,10 @@ public:
                                       float hfCutoffHz = 300.0f);
 
 private:
+    /** Shared SOFA-parsing body for loadFromMemory/loadFromFile — byte-identical
+        libmysofa call sequence regardless of byte source (D-09, minimum-diff). */
+    bool loadFromBytes (const void* data, int dataSize, float targetSampleRate);
+
     MYSOFA_EASY* easyHandle = nullptr;
     int irLength     = 0;
     int numPositions = 0;
