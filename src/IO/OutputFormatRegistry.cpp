@@ -1,5 +1,7 @@
 #include <SpatialCore/IO/OutputFormatRegistry.h>
 
+#include <cstddef>
+
 namespace spatialcore
 {
 
