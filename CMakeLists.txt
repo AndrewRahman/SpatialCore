@@ -144,6 +144,16 @@ target_link_libraries(SpatialCore
         ZLIB::ZLIB
 )
 
+# JUCE_USE_CURL=0: avoids juce_core's optional libcurl dependency (WebInputStream/
+# URL download support), which SpatialCore's DSP code never uses. Without this,
+# Linux builds (standalone CI, ubuntu-latest) fail to link with "undefined
+# reference to curl_easy_init" etc. — matches OSD's own root CMakeLists.txt,
+# which sets this on every one of its targets for the identical reason.
+# PUBLIC so it also applies to SpatialCoreTests (propagates via the
+# SpatialCore link dependency) and to any other target compiling these JUCE
+# module sources transitively through SpatialCore.
+target_compile_definitions(SpatialCore PUBLIC JUCE_USE_CURL=0)
+
 target_compile_features(SpatialCore PUBLIC cxx_std_17)
 
 if(APPLE)
