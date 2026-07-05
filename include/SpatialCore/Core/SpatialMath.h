@@ -76,4 +76,43 @@ void computeVBAPGains2D (const SpeakerLayout& layout, float azimuthRad, float* o
 void computeVBAPGains3D (const SpeakerLayout& layout, const std::vector<VBAPTriplet>& triplets,
                          float azimuthRad, float elevationRad, float* outGains);
 
+//==============================================================================
+// SPATIAL FRAMEWORK: Utility DSP (reusable by any SML plugin)
+// Consolidated verbatim from Source/PluginProcessor.h:1083-1104 (softClip,
+// outputLimiter) and the distance-attenuation formula duplicated at
+// Source/PluginProcessor.cpp:3091 and :4500 (verified byte-identical before
+// consolidation, per D-09 / RESEARCH.md Pitfall 5 — see 08-02-SUMMARY.md).
+//==============================================================================
+
+// Soft Clipper helper (NaN-safe, preserves natural asymptotic curve for self-oscillation)
+inline float softClip (float x)
+{
+    if (! std::isfinite (x))
+        return 0.0f;
+
+    const float threshold = 0.8f;
+    if (x > threshold)
+        return threshold + (x - threshold) / (1.0f + (x - threshold) * (x - threshold));
+    if (x < -threshold)
+        return -threshold + (x + threshold) / (1.0f + (x + threshold) * (x + threshold));
+    return x;
+}
+
+// Output Limiter -- tanh-based soft ceiling for speaker protection during self-oscillation
+// C-infinity continuous (no derivative discontinuities), asymptotes to +/-threshold
+inline float outputLimiter (float x)
+{
+    if (! std::isfinite (x))
+        return 0.0f;
+    const float threshold = 1.2589f;  // +2 dB
+    return threshold * std::tanh (x / threshold);
+}
+
+// Distance attenuation (inverse-distance law, clamped) -- consolidated from the
+// two verified byte-identical occurrences in PluginProcessor.cpp (:3091, :4500)
+inline float distanceAttenuation (float distance)
+{
+    return 1.0f / std::max (0.1f, distance * 4.0f + 0.25f);
+}
+
 } // namespace spatialcore

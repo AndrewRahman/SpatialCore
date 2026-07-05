@@ -36,9 +36,6 @@
 // Trajectory
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 
-// DSP
-#include <SpatialCore/DSP/Utilities.h>
-
 // UI
 #include <SpatialCore/UI/SpatialMapComponent.h>
 #include <SpatialCore/UI/SMLLookAndFeel.h>
