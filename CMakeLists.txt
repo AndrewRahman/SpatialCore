@@ -60,7 +60,8 @@ find_package(ZLIB REQUIRED)
 # --- SpatialCore static library (DSP-ONLY — no GUI modules, no UI sources) ---
 # NOTE: src/UI/*.cpp (SpatialMapComponent, SMLLookAndFeel, ReverseSlider,
 # IndicatorToggle, StyledButton) is deliberately NOT compiled into this target.
-# UI lands in a separate SpatialCoreUI CMake target in Phase 9 (D-03 scope split).
+# UI lives in the separate SpatialCoreUI CMake target below (D-03 scope split),
+# added by Phase 9 Plan 09-02. SpatialCoreUI links PUBLIC against this target.
 add_library(SpatialCore STATIC
     # Algorithms
     src/Algorithms/VBAPAlgorithm.cpp
@@ -180,6 +181,75 @@ if(APPLE)
     target_compile_options(SpatialCore PRIVATE -Wno-nan-infinity-disabled)
 elseif(MSVC)
 endif()
+
+# --- SpatialCoreUI static library (GUI-linked — SMLLookAndFeel + widgets) ---
+# Separate target from the DSP-only SpatialCore above (Pattern 4, 09-RESEARCH.md
+# lines 367-405): a future DSP-only consumer never pulls GUI modules transitively.
+# Landed incrementally: Plan 09-02 adds the four leaf classes below; later Phase 9
+# plans append SpatialMapComponent, ObjectPanel, GlobalTapDrawer, IOSectionComponent,
+# OSCSectionComponent, PresetBrowser to this same source list.
+add_library(SpatialCoreUI STATIC
+    src/UI/SMLLookAndFeel.cpp
+    src/UI/ReverseSlider.cpp
+    src/UI/IndicatorToggle.cpp
+    src/UI/StyledButton.cpp
+)
+
+# UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h
+target_link_libraries(SpatialCoreUI PUBLIC SpatialCore)
+
+# --- SpatialCoreUI fonts — DM Sans, JetBrains Mono, Roboto embedded as BinaryData ---
+# Relocated from OSD's own fonts/ (D-05): SMLLookAndFeel's constructor loads these
+# via SpatialCoreUIFontData:: symbols. OSD's own juce_add_binary_data(FontData ...)
+# target and all its link sites are removed in the same commit (Pitfall 2 in
+# 09-RESEARCH.md — leaving both compiling risks a silent dual-BinaryData font bug).
+juce_add_binary_data(SpatialCoreUIFontData
+    HEADER_NAME "SpatialCoreUIFontData.h"
+    NAMESPACE SpatialCoreUIFontData
+    SOURCES
+        fonts/DM_Sans-Regular.ttf
+        fonts/DM_Sans-Medium.ttf
+        fonts/DM_Sans-SemiBold.ttf
+        fonts/DM_Sans-Bold.ttf
+        fonts/JetBrains_Mono-Regular.ttf
+        fonts/JetBrains_Mono-Medium.ttf
+        fonts/JetBrains_Mono-Bold.ttf
+        fonts/Roboto-Medium.ttf
+)
+
+target_link_libraries(SpatialCoreUI PUBLIC SpatialCoreUIFontData)
+
+# GUI-linked set — juce_gui_basics/juce_graphics only (Pattern 4). Apply the
+# IDENTICAL PROJECT_IS_TOP_LEVEL INTERFACE-vs-PUBLIC branching the DSP target
+# uses above, for the same duplicate-symbol-at-link reason (see the DSP
+# target's comment block).
+set(_spatialcoreui_juce_modules
+    juce::juce_gui_basics
+    juce::juce_graphics
+)
+
+if(PROJECT_IS_TOP_LEVEL)
+    target_link_libraries(SpatialCoreUI PUBLIC ${_spatialcoreui_juce_modules})
+else()
+    target_link_libraries(SpatialCoreUI INTERFACE ${_spatialcoreui_juce_modules})
+    foreach(_scuijm IN LISTS _spatialcoreui_juce_modules)
+        target_include_directories(SpatialCoreUI PRIVATE
+            $<TARGET_PROPERTY:${_scuijm},INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(SpatialCoreUI PRIVATE
+            $<TARGET_PROPERTY:${_scuijm},INTERFACE_COMPILE_DEFINITIONS>)
+    endforeach()
+endif()
+
+target_include_directories(SpatialCoreUI
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+# JUCE_USE_CURL=0: same Linux libcurl link-failure avoidance as the DSP target above.
+target_compile_definitions(SpatialCoreUI PUBLIC JUCE_USE_CURL=0)
+
+target_compile_features(SpatialCoreUI PUBLIC cxx_std_17)
 
 # --- Tests ---
 option(SPATIALCORE_BUILD_TESTS "Build SpatialCore tests" ON)
