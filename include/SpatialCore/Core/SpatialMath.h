@@ -26,16 +26,13 @@ inline void cartesianToPolar (float x, float y, float z,
 }
 
 //==============================================================================
-// v1.0: Check if a speaker layout has height speakers (elevation > 1 degree)
-//==============================================================================
-inline bool layoutHasHeight (const SpeakerLayout& layout)
-{
-    for (int s = 0; s < layout.numSpeakers; ++s)
-        if (std::abs (layout.speakers[s].elevationRad) > 0.0175f)  // ~1 degree
-            return true;
-    return false;
-}
-
+// NOTE: layoutHasHeight() is declared (non-inline) in SpeakerLayout.h and
+// defined once in SpeakerLayout.cpp (added in 08-05). A duplicate `inline`
+// definition used to live here too (from 08-02, before SpeakerLayout.cpp's
+// real implementation existed) -- MSVC's linker caught it as LNK2005/LNK1169
+// multiply-defined-symbol once both TUs were linked into the same binary.
+// Removed; SpeakerLayout.h is already #included above, so callers of this
+// header get the canonical declaration automatically.
 //==============================================================================
 // v1.0: 3D nearest-speaker fallback -- used when triplets are empty on a 3D layout.
 // Prevents 2D fallback from routing signal to height speakers for horizontal sources.
