@@ -108,6 +108,55 @@ TEST_CASE ("RenderEngine: direct-binaural HRTF branch produces finite non-silent
 }
 
 // ----------------------------------------------------------------------------
+// Direct-binaural HRTF branch — oversized block (CR-03 regression)
+// ----------------------------------------------------------------------------
+TEST_CASE ("RenderEngine: direct-binaural HRTF branch survives an oversized block without heap corruption",
+           "[engine][renderblock][oversized]")
+{
+    // Prepare the engine at the SMALL fixture block size, then render a
+    // block whose numSamples is 4x larger than what was prepared — the
+    // exact prepare-contract violation CR-03 identified. Pre-fix, this
+    // overflowed sourceAccumStorage_ (fixed at MAX_SOURCES * kBlockSize)
+    // for source MAX_SOURCES-1 and corrupted adjacent per-source slices for
+    // every other live source. This test is designed to trip ASan/heap
+    // guards on the pre-fix engine and pass cleanly post-fix.
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+    engine.setOutputFormat (OutputFormat::Binaural);
+
+    constexpr int kOversizedNumSamples = kBlockSize * 4;
+
+    std::vector<float> mono (kOversizedNumSamples, 0.5f);
+    std::vector<float> tapFade (kOversizedNumSamples, 1.0f);
+    std::vector<float> distGain (kOversizedNumSamples, 1.0f);
+
+    RenderSources sources;
+    sources.numSamples = kOversizedNumSamples;
+    sources.monoBuffers[0] = mono.data();
+    sources.tapFadeGainPerSample[0] = tapFade.data();
+    sources.distGainPerSample[0] = distGain.data();
+    sources.objectLive[0] = true;
+    sources.objects[0].azimuthDeg = 30.0f;
+    sources.objects[0].elevationDeg = 0.0f;
+    sources.objects[0].distance = 0.5f;
+    sources.objects[0].enabled = true;
+
+    RenderBlockContext ctx;
+    ctx.sampleRate = kSampleRate;
+    ctx.isBinaural = true;
+    ctx.useHRTF = true;
+
+    std::vector<float> outL (kOversizedNumSamples, 0.0f), outR (kOversizedNumSamples, 0.0f);
+    float* outPtrs[2] = { outL.data(), outR.data() };
+
+    engine.renderBlock (sources, ctx, outPtrs, 2);
+    engine.renderBlock (sources, ctx, outPtrs, 2);
+
+    CHECK (allFinite (outL.data(), kOversizedNumSamples));
+    CHECK (allFinite (outR.data(), kOversizedNumSamples));
+}
+
+// ----------------------------------------------------------------------------
 // Simple (Woodworth) binaural branch (isBinaural && !useHRTF)
 // ----------------------------------------------------------------------------
 TEST_CASE ("RenderEngine: simple Woodworth binaural branch produces non-silent finite output for a live source",
