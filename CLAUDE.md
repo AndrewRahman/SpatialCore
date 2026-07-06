@@ -47,7 +47,7 @@ class SpatializationAlgorithm {
 ## Build System
 - **Framework:** JUCE 8, C++17, CMake 3.22+
 - **Dependencies:** libmysofa v1.3.2 (FetchContent), zlib (system)
-- **HRTF data:** 5 SOFA files embedded as BinaryData (Git LFS tracked)
+- **HRTF data:** 5 SOFA files (Git LFS tracked), loaded at runtime via `HRTFDatabase::loadFromFile` — no BinaryData compilation step is involved. Consumer plugins resolve the files bundle-relative in shipped builds (e.g. OSD: `<bundle>/Contents/Resources/HRTF/`), with a source-tree fallback for dev/test/CI. See OpenSpatialDelay's `Source/PluginProcessor.cpp` `loadHRTFProfileIntoRenderer` for the reference resolver + its packaging scripts for the release-time file placement.
 - **Tests:** Catch2 v3.7.1 via FetchContent
 
 ## Versioning
@@ -71,4 +71,4 @@ target_link_libraries(MyPlugin PRIVATE SpatialCore)
 - NEVER modify the SpatializationAlgorithm interface without bumping the major version
 - ALWAYS maintain backward compatibility with existing plugins when adding features
 - ALWAYS run the full test suite before tagging a release
-- HRTF profiles are embedded as BinaryData — adding/removing profiles requires rebuild of all consumer plugins
+- HRTF profiles are Git-LFS-tracked raw `.sofa` files loaded at runtime, not BinaryData — adding/removing profiles updates the consumer plugin's packaging copy step (and the runtime resolver's filename switch), not a BinaryData rebuild
