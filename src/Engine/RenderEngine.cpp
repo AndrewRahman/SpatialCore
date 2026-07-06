@@ -128,6 +128,27 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         }
     }
 
+    // Ensure per-source accumulation storage is sized for this block (issue
+    // CR-03: numSamples may exceed the maxBlockSize this engine was prepared
+    // with — e.g. a host requesting an oversized block. sourceAccumStorage_
+    // is otherwise fixed at MAX_SOURCES * maxBlockSize from prepare(), so an
+    // oversized block would overflow the per-source memset/write below.
+    // This mirrors the wetBufL_/wetBufR_ defensive-resize pattern immediately
+    // below. Regrowth can reallocate the backing vector, so every cached
+    // sourceAccumBufPtrs[src] MUST be re-derived afterward — stale pointers
+    // would alias freed memory.
+    if (sourceAccumStorage_.size() < static_cast<size_t> (MAX_SOURCES) * static_cast<size_t> (numSamples))
+    {
+        // An oversized block is a prepare-contract violation (the engine
+        // should have been prepared with the true maximum block size) —
+        // flag it loudly in debug builds, consistent with BinauralRenderer's
+        // own self-flagging elsewhere in this file.
+        jassertfalse;
+        sourceAccumStorage_.assign (static_cast<size_t> (MAX_SOURCES) * static_cast<size_t> (numSamples), 0.0f);
+        for (int src = 0; src < MAX_SOURCES; ++src)
+            sourceAccumBufPtrs[src] = sourceAccumStorage_.data() + static_cast<size_t> (src) * static_cast<size_t> (numSamples);
+    }
+
     // Zero per-source accumulation buffers (contiguous allocation)
     for (int src = 0; src < MAX_SOURCES; ++src)
         std::memset (sourceAccumBufPtrs[src], 0, sizeof (float) * static_cast<size_t> (numSamples));
