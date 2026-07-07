@@ -187,8 +187,9 @@ endif()
 # lines 367-405): a future DSP-only consumer never pulls GUI modules transitively.
 # Landed incrementally: Plan 09-02 added the four leaf classes; Plan 09-03 added
 # the generic N-object SpatialMapComponent; Plan 09-04 added GlobalTapDrawer and
-# PresetBrowser (+ PresetSaveOverlay) below; later Phase 9 plans append
-# ObjectPanel, IOSectionComponent, OSCSectionComponent to this same source list.
+# PresetBrowser (+ PresetSaveOverlay); Plan 09-05 added IOSectionComponent and
+# OSCSectionComponent below, closing CUI-04; later Phase 9 plans append
+# ObjectPanel to this same source list.
 add_library(SpatialCoreUI STATIC
     src/UI/SMLLookAndFeel.cpp
     src/UI/ReverseSlider.cpp
@@ -197,6 +198,8 @@ add_library(SpatialCoreUI STATIC
     src/UI/SpatialMapComponent.cpp
     src/UI/GlobalTapDrawer.cpp
     src/UI/PresetBrowser.cpp
+    src/UI/IOSectionComponent.cpp
+    src/UI/OSCSectionComponent.cpp
 )
 
 # UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h.
