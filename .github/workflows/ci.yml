@@ -56,6 +56,12 @@ jobs:
       - name: Build SpatialCore + SpatialCoreTests
         run: cmake --build build --config Release -j$(nproc)
 
+      - name: Build SpatialCoreUI (GUI-linked target)
+        # Standalone compile coverage for the shared UI library so the next
+        # consumer (OSP) inherits a green cross-platform build signal before
+        # it ever links SpatialCoreUI itself (Phase 9 Plan 07, D-06).
+        run: cmake --build build --config Release --target SpatialCoreUI -j$(nproc)
+
       - name: Run SpatialCore test suite
         # The suite is empty of new tests until plan 08-02+ adds them; a
         # build-only + zero-tests-pass run is acceptable at this stage.
