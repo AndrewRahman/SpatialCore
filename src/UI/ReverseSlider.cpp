@@ -21,17 +21,9 @@ double ReverseSlider::valueToProportionOfLength(double value)
 void ReverseSlider::mouseWheelMove(const juce::MouseEvent& e,
                                     const juce::MouseWheelDetails& wheel)
 {
-    if (reversed)
-    {
-        auto rw = wheel;
-        rw.deltaX = -wheel.deltaX;
-        rw.deltaY = -wheel.deltaY;
-        juce::Slider::mouseWheelMove(e, rw);
-    }
-    else
-    {
-        juce::Slider::mouseWheelMove(e, wheel);
-    }
+    // Proportion overrides already handle the reversed value mapping,
+    // so pass mousewheel through without negating deltas (fixes #157)
+    juce::Slider::mouseWheelMove(e, wheel);
 }
 
 } // namespace spatialcore

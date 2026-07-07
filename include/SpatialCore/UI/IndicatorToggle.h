@@ -15,11 +15,14 @@ public:
 
     static constexpr int kHeight = 18;
     void paintButton(juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override;
+
+    /** Update accent colour dynamically (e.g. tap-color-aware ON button). */
     void setAccentColour(const juce::Colour& newAccent);
 
 private:
+    juce::String label;
     juce::Colour accent;
-    juce::Typeface::Ptr face;
+    juce::Typeface::Ptr typeface;
 
     static constexpr float kFontSize  = 10.0f;
     static constexpr float kKerning   = 0.08f;
