@@ -185,14 +185,16 @@ endif()
 # --- SpatialCoreUI static library (GUI-linked — SMLLookAndFeel + widgets) ---
 # Separate target from the DSP-only SpatialCore above (Pattern 4, 09-RESEARCH.md
 # lines 367-405): a future DSP-only consumer never pulls GUI modules transitively.
-# Landed incrementally: Plan 09-02 adds the four leaf classes below; later Phase 9
-# plans append SpatialMapComponent, ObjectPanel, GlobalTapDrawer, IOSectionComponent,
-# OSCSectionComponent, PresetBrowser to this same source list.
+# Landed incrementally: Plan 09-02 added the four leaf classes; Plan 09-03 added
+# the generic N-object SpatialMapComponent below; later Phase 9 plans append
+# ObjectPanel, GlobalTapDrawer, IOSectionComponent, OSCSectionComponent,
+# PresetBrowser to this same source list.
 add_library(SpatialCoreUI STATIC
     src/UI/SMLLookAndFeel.cpp
     src/UI/ReverseSlider.cpp
     src/UI/IndicatorToggle.cpp
     src/UI/StyledButton.cpp
+    src/UI/SpatialMapComponent.cpp
 )
 
 # UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h.
