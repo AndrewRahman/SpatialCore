@@ -12,6 +12,7 @@ add_executable(SpatialCoreTests
     IO/AmbisonicsCodecTests.cpp
     OSC/ADMOSCReceiverTests.cpp
     OSC/ADMOSCSenderTests.cpp
+    OSC/OSCPortValidationTests.cpp
     Trajectory/TrajectoryTests.cpp
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp

@@ -85,6 +85,7 @@ add_library(SpatialCore STATIC
     # OSC
     src/OSC/ADMOSCReceiver.cpp
     src/OSC/ADMOSCSender.cpp
+    src/OSC/OSCPortValidation.cpp
     # Trajectory
     src/Trajectory/TrajectoryEngine.cpp
     src/Trajectory/DopplerVelocity.cpp
