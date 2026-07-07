@@ -195,8 +195,23 @@ add_library(SpatialCoreUI STATIC
     src/UI/StyledButton.cpp
 )
 
-# UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h
-target_link_libraries(SpatialCoreUI PUBLIC SpatialCore)
+# UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h.
+# NOTE: cannot simply `target_link_libraries(SpatialCoreUI PUBLIC SpatialCore)` — SpatialCore
+# links its own JUCE modules (juce_core, juce_audio_basics, etc.) as INTERFACE in consumed mode,
+# and INTERFACE-declared sources compile into ANY concrete target that links them at ANY depth
+# (see the DSP target's own comment above). SpatialCoreUI is itself an intermediate static lib,
+# not the final consumer executable, so a PUBLIC/PRIVATE link here would compile a second copy
+# of those JUCE module sources straight into libSpatialCoreUI.a — producing duplicate symbols
+# at OSD's final link step. Forward only SpatialCore's public include dirs in consumed mode
+# (mirrors the same PROJECT_IS_TOP_LEVEL branch used for the raw juce:: modules below); in
+# standalone mode there is no other target to resolve SpatialCore's own INTERFACE JUCE
+# dependencies, so link it normally.
+if(PROJECT_IS_TOP_LEVEL)
+    target_link_libraries(SpatialCoreUI PUBLIC SpatialCore)
+else()
+    target_include_directories(SpatialCoreUI PUBLIC
+        $<TARGET_PROPERTY:SpatialCore,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
 
 # --- SpatialCoreUI fonts — DM Sans, JetBrains Mono, Roboto embedded as BinaryData ---
 # Relocated from OSD's own fonts/ (D-05): SMLLookAndFeel's constructor loads these

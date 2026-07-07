@@ -1,4 +1,5 @@
 #include <SpatialCore/UI/SMLLookAndFeel.h>
+#include "SpatialCoreUIFontData.h"
 
 namespace spatialcore
 {
@@ -16,11 +17,14 @@ namespace SMLColours
 
 SMLLookAndFeel::SMLLookAndFeel()
 {
-    // Font loading: consumer plugins must provide BinaryData with these symbols.
-    // If BinaryData is not available, typeface pointers remain null and fallback fonts are used.
-    // Subclasses or consumer code should call loadFonts() with their BinaryData pointers.
-
-    setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(kBackground));
+    // Load embedded fonts
+    dmSansRegular    = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::DM_SansRegular_ttf,    SpatialCoreUIFontData::DM_SansRegular_ttfSize);
+    dmSansMedium     = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::DM_SansMedium_ttf,     SpatialCoreUIFontData::DM_SansMedium_ttfSize);
+    dmSansBold       = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::DM_SansBold_ttf,       SpatialCoreUIFontData::DM_SansBold_ttfSize);
+    jetbrainsRegular = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoRegular_ttf, SpatialCoreUIFontData::JetBrains_MonoRegular_ttfSize);
+    jetbrainsMedium  = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoMedium_ttf,  SpatialCoreUIFontData::JetBrains_MonoMedium_ttfSize);
+    jetbrainsBold    = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoBold_ttf,    SpatialCoreUIFontData::JetBrains_MonoBold_ttfSize);
+    robotoMedium     = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::RobotoMedium_ttf,          SpatialCoreUIFontData::RobotoMedium_ttfSize);
 
     // Popup menu colors
     setColour(juce::PopupMenu::backgroundColourId,            juce::Colour(0xff010205));
@@ -36,35 +40,27 @@ SMLLookAndFeel::SMLLookAndFeel()
 juce::Typeface::Ptr SMLLookAndFeel::getTypefaceForFont(const juce::Font& f)
 {
     if (f.getStyleFlags() & juce::Font::bold)
-    {
-        if (dmSansBold) return dmSansBold;
-    }
-    if (dmSansRegular) return dmSansRegular;
-    return juce::LookAndFeel_V4::getTypefaceForFont(f);
+        return dmSansBold;
+    return dmSansRegular;
 }
 
 juce::Font SMLLookAndFeel::getComboBoxFont(juce::ComboBox&)
 {
-    if (dmSansRegular)
-        return juce::Font(juce::FontOptions(dmSansRegular).withHeight(13.0f));
-    return juce::Font(juce::FontOptions(13.0f));
+    return juce::Font(juce::FontOptions(dmSansRegular).withHeight(13.0f));
 }
 
 juce::Font SMLLookAndFeel::getPopupMenuFont()
 {
-    if (dmSansRegular)
-        return juce::Font(juce::FontOptions(dmSansRegular).withHeight(13.0f));
-    return juce::Font(juce::FontOptions(13.0f));
+    return juce::Font(juce::FontOptions(dmSansRegular).withHeight(13.0f));
 }
 
 juce::Font SMLLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
 {
+    // Preset button → DM Sans Regular 13px (match ComboBox font)
     if (button.getComponentID() == "presetButton")
-    {
-        if (dmSansRegular)
-            return juce::Font(juce::FontOptions(dmSansRegular).withHeight(13.0f));
-        return juce::Font(juce::FontOptions(13.0f));
-    }
+        return juce::Font(juce::FontOptions(dmSansRegular).withHeight(13.0f));
+    // Object selector buttons (22px) → JetBrains Mono Medium 12px
+    // Other buttons → JetBrains Mono Medium 10px
     float h = (buttonHeight >= 22) ? 12.0f : 10.0f;
     if (jetbrainsMedium)
         return juce::Font(juce::FontOptions(jetbrainsMedium).withHeight(h));
