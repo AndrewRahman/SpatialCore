@@ -188,8 +188,8 @@ endif()
 # Landed incrementally: Plan 09-02 added the four leaf classes; Plan 09-03 added
 # the generic N-object SpatialMapComponent; Plan 09-04 added GlobalTapDrawer and
 # PresetBrowser (+ PresetSaveOverlay); Plan 09-05 added IOSectionComponent and
-# OSCSectionComponent below, closing CUI-04; later Phase 9 plans append
-# ObjectPanel to this same source list.
+# OSCSectionComponent, closing CUI-04; Plan 09-06 added ObjectPanel (tab row +
+# spatial cluster building blocks), closing CUI-03.
 add_library(SpatialCoreUI STATIC
     src/UI/SMLLookAndFeel.cpp
     src/UI/ReverseSlider.cpp
@@ -200,6 +200,7 @@ add_library(SpatialCoreUI STATIC
     src/UI/PresetBrowser.cpp
     src/UI/IOSectionComponent.cpp
     src/UI/OSCSectionComponent.cpp
+    src/UI/ObjectPanel.cpp
 )
 
 # UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h.
