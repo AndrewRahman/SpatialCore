@@ -15,6 +15,13 @@ ObjectPanel::ObjectPanel (SMLLookAndFeel& lf, int numObjects)
     : lookAndFeel (lf),
       numObjects_ (juce::jlimit (0, MAX_SOURCES, numObjects))
 {
+    // The panel is sized to the consumer's full editor bounds so its children line
+    // up with the pre-extraction layout, but it must NOT itself intercept mouse
+    // clicks — otherwise its transparent empty regions steal events from sibling
+    // components beneath it (e.g. OSD's SpatialMapComponent), breaking object
+    // drag/click-to-select. Children (tab buttons, knobs) still receive their clicks.
+    setInterceptsMouseClicks (false, true);
+
     // --- Tab row ---
     for (int i = 0; i < numObjects_; ++i)
     {
