@@ -169,6 +169,26 @@ void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* 
 
 void PartitionedConvolver::process (const float* in, float* out, int numSamples)
 {
+    // WR-02: runtime guard against an oversized host block. The #234 decoupling
+    // contract is numSamples <= blockSize (the prepared maxBlockSize); processSlot
+    // relies on it — overlapAccum has length fftSize, and the tail memmove of size
+    // (fftSize - numSamples) underflows to a huge size_t when numSamples > fftSize,
+    // causing OOB read/write and a likely crash. The jassert there compiles out in
+    // Release, so a host that ever delivers a larger block (some exceed
+    // maximumExpectedSamplesPerBlock) is unprotected. Split any oversized block into
+    // <= blockSize chunks: each chunk is an independent, valid overlap-add sub-block
+    // (processSlot carries overlapAccum across calls), so the output stays correct.
+    if (blockSize > 0 && numSamples > blockSize)
+    {
+        for (int offset = 0; offset < numSamples; )
+        {
+            const int chunk = std::min (blockSize, numSamples - offset);
+            process (in + offset, out + offset, chunk);
+            offset += chunk;
+        }
+        return;
+    }
+
     if (fftSize == 0 || irLen == 0)
     {
         // Pass-through if no IR set
