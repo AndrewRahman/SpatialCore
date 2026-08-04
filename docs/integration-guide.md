@@ -21,7 +21,10 @@ git init
 ```bash
 git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
 git submodule add https://github.com/juce-framework/JUCE.git JUCE
+git submodule update --init --recursive   # SpatialCore's HRTF .sofa are Git-LFS
 ```
+
+> **Live remote:** the canonical org is Spatial Media Lab (spatialmedialab.org); the working git remote today is `https://github.com/AndrewRahman/SpatialCore.git` — use whichever your access resolves. Consumers today: OpenSpatialDelay (live) and OpenSpatialPanner (next).
 
 ## Step 3: CMakeLists.txt
 
@@ -44,8 +47,10 @@ juce_add_plugin(OpenSpatialYourEffect
     NEEDS_MIDI_INPUT FALSE  # TRUE for instruments
 )
 
-# Link SpatialCore
-target_link_libraries(OpenSpatialYourEffect PRIVATE SpatialCore)
+# Link SpatialCore (DSP) and SpatialCoreUI (shared spatial map + look-and-feel).
+# Both targets are defined by add_subdirectory(SpatialCore). Drop SpatialCoreUI
+# only if your plugin builds its entire UI from scratch (Step 5 uses it).
+target_link_libraries(OpenSpatialYourEffect PRIVATE SpatialCore SpatialCoreUI)
 
 # Source files
 target_sources(OpenSpatialYourEffect PRIVATE
@@ -97,6 +102,17 @@ public:
 };
 ```
 
+> **The real render entry point is `spatialcore::RenderEngine`.** The snippet above is
+> conceptual — in practice you do NOT hand-roll `spatialize()` or dispatch render paths
+> yourself. `RenderEngine` (`#include <SpatialCore/SpatialCore.h>`, header
+> `Engine/RenderEngine.h`) owns all five render paths (direct-binaural HRTF, simple
+> binaural, stereo variants, Ambisonics, discrete surround) and the glitch-free
+> double-buffered layout swap. Call `engine.prepare(sampleRate, maxBlock)` and
+> `engine.setOutputFormat(fmt)` in `prepareToPlay`; then per block fill a `RenderSources`
+> (the per-object mono signals produced by YOUR effect DSP) plus a `RenderBlockContext`
+> (per-block format/layout snapshot) and call `engine.renderBlock(sources, ctx, buffer)`.
+> See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
+
 ## Step 5: PluginEditor — Using SpatialCore UI
 
 ```cpp
@@ -127,7 +143,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-The post-build script copies AU and VST3 to `~/Library/Audio/Plug-Ins/` on macOS.
+If your plugin's own CMake defines a post-build copy step, it installs the AU and VST3 to `~/Library/Audio/Plug-Ins/` on macOS. SpatialCore itself is a static library and defines no such step — that belongs to the consumer plugin (see OpenSpatialDelay's `scripts/build_version.sh` for the reference install flow).
 
 ## Architecture Pattern
 

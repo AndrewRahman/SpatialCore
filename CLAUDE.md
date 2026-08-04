@@ -3,7 +3,7 @@
 ## Identity
 - **Library:** SpatialCore — the shared spatial audio rendering engine for the Spatial Media Library
 - **Organization:** Spatial Media Lab (spatialmedialab.org)
-- **What it does:** Takes audio objects with 3D positions and renders them to any output format (binaural, stereo, surround, Ambisonics) via 7 spatialization algorithms
+- **What it does:** Takes audio objects with 3D positions and renders them to any output format (binaural, stereo, surround, Ambisonics) via 8 spatialization algorithms
 - **License:** GPL-3.0 + commercial (dual license)
 - **GitHub:** `https://github.com/Spatial-Media-Lab/SpatialCore`
 
@@ -57,11 +57,12 @@ Semantic versioning: `vMAJOR.MINOR.PATCH`
 - Patch: Bug fixes
 
 ## Consumer Plugins
-Plugins link SpatialCore as a git submodule and a CMake subdirectory:
+Plugins link SpatialCore as a git submodule and a CMake subdirectory. `add_subdirectory(SpatialCore)` exposes two link targets: `SpatialCore` (DSP) and `SpatialCoreUI` (shared spatial map + SML look-and-feel + font BinaryData).
 ```cmake
 add_subdirectory(SpatialCore)
-target_link_libraries(MyPlugin PRIVATE SpatialCore)
+target_link_libraries(MyPlugin PRIVATE SpatialCore SpatialCoreUI)
 ```
+A SpatialCore change reaches a consumer only after: commit + push here, then bump the consumer's submodule pointer (`git add SpatialCore && git commit` in the consumer). Consumers today: OpenSpatialDelay (live) and OpenSpatialPanner (next).
 
 ## Skills
 15 JUCE/DSP skills are available at project level in `.claude/skills/` — they load automatically in this repo.

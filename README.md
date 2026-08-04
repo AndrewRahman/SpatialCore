@@ -75,8 +75,12 @@ git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCo
 
 ```cmake
 # In your CMakeLists.txt
-add_subdirectory(SpatialCore)
+add_subdirectory(SpatialCore)          # defines both SpatialCore + SpatialCoreUI targets
+
+# DSP engine only:
 target_link_libraries(YourPlugin PRIVATE SpatialCore)
+# ...or DSP + shared UI (spatial map, SML look-and-feel, widgets):
+target_link_libraries(YourPlugin PRIVATE SpatialCore SpatialCoreUI)
 ```
 
 ```cpp
@@ -113,6 +117,14 @@ SpatialCore follows semantic versioning (`v1.0.0`). Each plugin pins to a specif
 - **Major:** Breaking API changes (new virtual methods, removed functions)
 - **Minor:** New features (new algorithm, new output format, new UI widget)
 - **Patch:** Bug fixes
+
+### Updating SpatialCore in a consumer
+
+A change to SpatialCore only reaches a plugin after you:
+1. Commit + push the change in the SpatialCore repo.
+2. In the consumer repo, `cd SpatialCore && git pull` (or checkout the tag), then `git add SpatialCore` in the consumer to bump the submodule pointer, and commit.
+
+The consumer builds whatever commit its submodule pointer references — editing SpatialCore in place without bumping the pointer changes nothing in a clean build (this is what `build_version.sh` and CI both do).
 
 ## License
 
