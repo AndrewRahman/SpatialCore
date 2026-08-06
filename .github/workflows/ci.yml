@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build + Test (standalone, JUCE 8.0.3 fallback)
+    name: Build + Test (standalone, JUCE 9.0.0 fallback)
     runs-on: ubuntu-latest
 
     steps:
@@ -49,8 +49,10 @@ jobs:
 
       - name: Configure CMake
         # No consumer JUCE present in standalone CI — SpatialCore's own
-        # FetchContent fallback pins JUCE 8.0.3 (INT-02/D-06: never test
-        # against a different JUCE version than what OSD ships).
+        # FetchContent fallback pins JUCE 9.0.0 (SC-6/D-01: the old policy
+        # of never testing against a different JUCE version than what OSD
+        # ships is retired; OpenSpatialDelay tracks its own JUCE pin
+        # separately, in its own repository).
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev
 
       - name: Build SpatialCore + SpatialCoreTests
