@@ -65,28 +65,79 @@ void RenderEngine::renderBlock (const RenderSources& sources,
                                  float* const* outChannels,
                                  int numOutCh)
 {
+    // SC-13: when the consumer opts in, compute objChannelGains/objGains
+    // internally into a scratch copy and dispatch on that instead — the
+    // dispatch chain itself is unchanged (selected once via pointer so it is
+    // never duplicated or reordered, per D-09).
+    const RenderBlockContext* dispatchCtx = &blockCtx;
+    if (blockCtx.engineComputesGains)
+    {
+        gainScratch_ = blockCtx;
+        computeObjectGains (sources, gainScratch_);
+        dispatchCtx = &gainScratch_;
+    }
+    const RenderBlockContext& ctx = *dispatchCtx;
+
     float* outL = (numOutCh > 0) ? outChannels[0] : nullptr;
     float* outR = (numOutCh > 1) ? outChannels[1] : nullptr;
 
-    if (blockCtx.isStereoVariant)
+    if (ctx.isStereoVariant)
     {
-        renderStereoVariant (sources, blockCtx, outL, outR, numOutCh);
+        renderStereoVariant (sources, ctx, outL, outR, numOutCh);
     }
-    else if (blockCtx.isBinaural && blockCtx.useHRTF)
+    else if (ctx.isBinaural && ctx.useHRTF)
     {
         renderDirectBinauralHRTF (sources, outL, outR, numOutCh);
     }
-    else if (blockCtx.isBinaural)
+    else if (ctx.isBinaural)
     {
-        renderSimpleBinauralWoodworth (sources, blockCtx, outL, outR, numOutCh);
+        renderSimpleBinauralWoodworth (sources, ctx, outL, outR, numOutCh);
     }
-    else if (blockCtx.isAmbiOutput)
+    else if (ctx.isAmbiOutput)
     {
-        renderAmbisonicsOutput (sources, blockCtx, outChannels, numOutCh);
+        renderAmbisonicsOutput (sources, ctx, outChannels, numOutCh);
     }
     else
     {
-        renderDiscreteSurround (sources, blockCtx, outChannels, numOutCh);
+        renderDiscreteSurround (sources, ctx, outChannels, numOutCh);
+    }
+}
+
+//==============================================================================
+// computeObjectGains — SC-13. Fills ctx.objChannelGains (surround/Ambisonics,
+// via surroundAlgorithm_) and ctx.objGains (simple binaural, via
+// binauralAlgorithm_) for every object slot. Only called when the consumer
+// sets RenderBlockContext::engineComputesGains. Does not read or write
+// objGainL/objGainR/stereoMode — those stay consumer-side (D-06).
+//==============================================================================
+void RenderEngine::computeObjectGains (const RenderSources& sources, RenderBlockContext& ctx)
+{
+    const auto& ls = getActiveLayout();
+    LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
+
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        // Zero the full speaker-wide row first so a stale value from a wider
+        // previous layout cannot survive into this block.
+        for (int sp = 0; sp < MAX_SPEAKERS; ++sp)
+            ctx.objChannelGains[t][sp] = 0.0f;
+
+        if (! sources.objectLive[t])
+        {
+            ctx.objGains[t] = {};
+            continue;
+        }
+
+        SourcePosition pos {
+            juce::degreesToRadians (sources.objects[t].azimuthDeg),
+            juce::degreesToRadians (sources.objects[t].elevationDeg),
+            sources.objects[t].distance
+        };
+
+        surroundAlgorithm_.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
+
+        BinauralContext binCtx { binauralProfileIndex_, ctx.sampleRate, kDefaultBinauralProfiles };
+        ctx.objGains[t] = binauralAlgorithm_.computeBinauralGains (pos, binCtx);
     }
 }
 

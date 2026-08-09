@@ -26,6 +26,19 @@ struct BinauralProfile
     const char* name;
 };
 
+// Default 5-profile Simple/Woodworth binaural table (SC-13). Extracted
+// verbatim from OpenSpatialDelay's Source/PluginProcessor.cpp:33-39 so
+// RenderEngine can fill BinauralGains internally when a consumer opts in via
+// RenderBlockContext::engineComputesGains, without requiring a consumer-
+// supplied profile pointer. `inline constexpr` avoids a new translation unit.
+inline constexpr BinauralProfile kDefaultBinauralProfiles[5] = {
+    { 0.0920f, 1.3f, 1200.0f, "Immersive" },
+    { 0.0850f, 0.8f, 1800.0f, "Natural" },
+    { 0.0900f, 1.1f, 1400.0f, "Precise" },
+    { 0.0875f, 1.5f, 1100.0f, "Spatial" },
+    { 0.0875f, 1.0f, 1500.0f, "Studio Reference" },
+};
+
 //==============================================================================
 // Per-object spatial state
 //==============================================================================

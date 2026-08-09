@@ -48,6 +48,17 @@ namespace spatialcore
 // site. This is PROVISIONAL and flagged for ergonomic review in the
 // Phase 10+ post-extraction refactor (locked decision, CONTEXT.md) — do not
 // redesign it now.
+//
+// SC-13 (opt-in): when a consumer sets RenderBlockContext::engineComputesGains,
+// the engine additionally owns per-object gain computation for the
+// discrete-surround/Ambisonics path (objChannelGains, via a fixed
+// VBAPAlgorithm) and the simple-binaural path (objGains, via
+// DirectBinauralAlgorithm + kDefaultBinauralProfiles) — the consumer no
+// longer hand-builds a LayoutContext or dispatches an algorithm itself for
+// those two fields. The flag defaults false, so a consumer that still
+// precomputes these fields sees unchanged behaviour. Stereo-variant gains
+// (objGainL/objGainR) remain consumer-side always — that math is not a
+// SpatializationAlgorithm (D-06).
 //==============================================================================
 
 //------------------------------------------------------------------------------
@@ -148,6 +159,16 @@ struct RenderBlockContext
     bool isBinaural = false;
     bool isAmbiOutput = false;
     bool useHRTF = false;
+
+    // SC-13: when true, RenderEngine computes objChannelGains/objGains
+    // internally (via a fixed VBAPAlgorithm for surround/Ambisonics and
+    // DirectBinauralAlgorithm for simple binaural) before dispatch, instead
+    // of reading consumer-precomputed values. Defaults false so every
+    // existing caller — including SpatialCore's own RenderEngineTests — sees
+    // byte-for-byte unchanged behaviour; this is additive, not a major bump.
+    // Scoped strictly to objChannelGains/objGains: objGainL/objGainR (stereo-
+    // variant gains) stay consumer-side per the comment above (D-06).
+    bool engineComputesGains = false;
 };
 
 //==============================================================================
@@ -209,6 +230,14 @@ public:
     void setOutputFormat (OutputFormat format);
     OutputFormat getActiveOutputFormat() const;
 
+    //--------------------------------------------------------------------------
+    // SC-13: selects which of kDefaultBinauralProfiles the engine-owned
+    // simple-binaural gain computation uses when engineComputesGains is set.
+    // Message-thread only, matching DirectBinauralAlgorithm.cpp's existing
+    // index convention (1-based, clamped to 0..4 internally via index - 1).
+    //--------------------------------------------------------------------------
+    void setBinauralProfileIndex (int index) { binauralProfileIndex_ = index; }
+
     struct LayoutState
     {
         OutputFormat format = OutputFormat::Binaural;
@@ -264,6 +293,15 @@ private:
     static void computeAmbiDecodeForLayout (const SpeakerLayout& layout,
                                              float (*outMatrix)[MAX_SPEAKERS],
                                              int& outNumSpeakers);
+
+    //--------------------------------------------------------------------------
+    // SC-13: engine-owned gain computation, used only when the consumer sets
+    // RenderBlockContext::engineComputesGains. Fills ctx.objChannelGains (via
+    // surroundAlgorithm_) and ctx.objGains (via binauralAlgorithm_) for every
+    // live object. Does not touch objGainL/objGainR/stereoMode (D-06 — those
+    // stay consumer-side, not a SpatializationAlgorithm concern).
+    //--------------------------------------------------------------------------
+    void computeObjectGains (const RenderSources& sources, RenderBlockContext& ctx);
 
     // ACN channel index -> SH order lookup (verbatim from
     // OpenSpatialDelayProcessor::acnToOrder, moved because it is used only by
@@ -340,6 +378,16 @@ private:
     LayoutState layoutBuffers[2];
     std::atomic<int> activeLayoutIndex { 0 };
     int prepareLayoutIndex = 1;
+
+    // --- SC-13: engine-owned gain computation state ---
+    // Algorithms are stateless per the project convention, so a plain member
+    // instance allocates nothing and is safe to call from the audio thread.
+    // Fixed to VBAP/DirectBinaural deliberately: runtime algorithm selection
+    // is SPAT-01 (a later, separate concern) and must not be pulled forward.
+    VBAPAlgorithm surroundAlgorithm_;
+    DirectBinauralAlgorithm binauralAlgorithm_;
+    RenderBlockContext gainScratch_;
+    int binauralProfileIndex_ = 1;
 };
 
 } // namespace spatialcore
