@@ -1,0 +1,21 @@
+{
+  "source_path": "/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/docs/conductor-setup-guide.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Conductor — Complete Setup Guide for Spatial Media Library",
+  "summary": "Step-by-step tutorial for installing and configuring Conductor to run parallel Claude workspaces across Spatial Media Library plugin repos.",
+  "scope": ["Conductor", "workspaces", "git branches", "pull requests", "setup script", "run script", "parallel agents", "OpenSpatialDelay", "SpatialCore"],
+  "cross_refs": [
+    "https://www.conductor.build/",
+    "https://docs.conductor.build/",
+    "https://docs.conductor.build/installation.md",
+    "https://docs.conductor.build/first-workspace.md",
+    "https://docs.conductor.build/guides/how-to-setup.md",
+    "https://docs.conductor.build/core/parallel-agents.md",
+    "https://docs.conductor.build/core/diff-viewer.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

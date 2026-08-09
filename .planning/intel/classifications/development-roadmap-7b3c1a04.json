@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/docs/development-roadmap.md",
+  "type": "PRD",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "SpatialCore — Development Roadmap",
+  "summary": "Phased roadmap for extracting SpatialCore from OpenSpatialDelay, publishing it publicly, and building future plugins on it.",
+  "scope": ["SpatialCore library extraction", "OpenSpatialDelay v1.0", "Algorithms", "Binaural/HRTF", "IO/OutputFormatRegistry", "OSC", "Trajectory", "DSP", "UI", "GitHub migration", "future plugin suite"],
+  "cross_refs": ["CLAUDE.md", "README.md", "docs/integration-guide.md", "docs/conductor-setup-guide.md", "docs/workflow-tutorials.md", "CMakeLists.txt"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Roadmap with goals, phases, and deliverable checklists → PRD-style scope/requirements. Contains a frozen SpatializationAlgorithm interface snippet (SPEC signal) and a 'Critical Design Rules' list stated as locked (ADR-like), but neither uses Status/Decision/Consequences structure and both are restatements of rules recorded elsewhere. Dominant signal is planned scope and deliverables → PRD."
+}

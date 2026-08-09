@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/docs/workflow-tutorials.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Spatial Media Library — Multi-Plugin Development Tutorials",
+  "summary": "Step-by-step tutorials for multi-plugin development with Claude Code using conductor and worktree patterns.",
+  "scope": ["Claude Code workflow", "conductor pattern", "worktree pattern", "multi-plugin development", "git branches"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}
