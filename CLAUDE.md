@@ -17,6 +17,7 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 |-----------|---------|-------------|
 | Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural |
 | Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
+| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free double-buffered output-format/HRTF-profile swap, and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
 | I/O | `IO/*.h` | OutputFormatRegistry (22 formats), SpeakerLayout (13 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
 | Trajectory | `Trajectory/*.h` | 13 shapes, origin-point architecture, forward/reverse |
@@ -24,6 +25,28 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 | UI | `UI/*.h` | SpatialMapComponent, SMLLookAndFeel, ReverseSlider, IndicatorToggle, StyledButton |
 
 ### Key Interfaces
+
+**`RenderEngine` — the consumer-facing render surface.** A consumer plugin drives
+rendering through this facade only:
+```cpp
+class RenderEngine {
+public:
+    void prepare(double sampleRate, int maxBlockSize);
+    void renderBlock(const RenderSources& sources,
+                      const RenderBlockContext& blockCtx,
+                      float* const* outChannels, int numOutCh);
+    void setOutputFormat(OutputFormat format);
+    // ...
+};
+```
+`RenderBlockContext::engineComputesGains` (default `false`, SC-13) is the opt-in flag
+that lets `RenderEngine` compute `objChannelGains`/`objGains` internally instead of
+requiring the consumer to precompute them. Stereo-variant gains (`objGainL`/
+`objGainR`) always stay consumer-side — stereo gain math is not a
+`SpatializationAlgorithm` concern.
+
+**`SpatializationAlgorithm` — engine-internal.** Not a consumer-facing interface;
+reached only through `RenderEngine`, never dispatched directly by a consumer:
 ```cpp
 // Abstract base — all algorithms implement this
 class SpatializationAlgorithm {
@@ -43,6 +66,7 @@ class SpatializationAlgorithm {
 - **Dual-buffered layouts:** Atomic swap for lock-free audio thread reads during format changes
 - **Per-source HRTF:** 12 independent PartitionedConvolvers for direct binaural rendering
 - **Self-calibrating normalization:** `targetRMS = 1/sqrt(irLen)` ensures consistent levels across HRTF profiles
+- **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — with one stated exception: stereo-variant gains (`objGainL`/`objGainR`) are computed consumer-side always, because that math is not a `SpatializationAlgorithm`
 
 ## Build System
 - **Framework:** JUCE 8, C++17, CMake 3.22+
