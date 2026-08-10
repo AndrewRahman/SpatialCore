@@ -1,0 +1,34 @@
+{
+  "source_path": "/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/docs/superpowers/plans/2026-03-22-scaffold-spatialcore.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "SpatialCore Library Scaffolding Plan",
+  "summary": "Task-by-task scaffolding plan defining SpatialCore's directory tree, CMake build, public API headers, stub implementations, and Catch2 test infrastructure.",
+  "scope": [
+    "SpatialCore static library",
+    "CMake build system",
+    "public API headers (include/SpatialCore/)",
+    "Core types (SourcePosition, BinauralGains, Types)",
+    "Algorithms module + SpatializationAlgorithm interface",
+    "Binaural module (HRTFDatabase, PartitionedConvolver, BinauralRenderer)",
+    "IO module (OutputFormat, OutputFormatRegistry, SpeakerLayout, AmbisonicsCodec)",
+    "OSC module (ADMOSCReceiver, ADMOSCSender)",
+    "TrajectoryEngine",
+    "DSP utilities (softClip, outputLimiter)",
+    "UI components",
+    "Catch2 test infrastructure",
+    "libmysofa v1.3.2, zlib, JUCE 8, C++17",
+    "implementation status: all 12 tasks unchecked (- [ ]) — forward-looking scope, not recorded as implemented"
+  ],
+  "cross_refs": [
+    "docs/development-roadmap.md",
+    "CLAUDE.md",
+    "README.md",
+    "tests/CMakeLists.txt",
+    "CMakeLists.txt"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Filename numeric prefix is a date (2026-03-22), not an ADR number; classified on content only. No frontmatter, no status field, no Decision/Consequences sections, no user stories. Dominant content is concrete API/type/interface declarations and build contracts -> SPEC over DOC. Execution-plan framing (checkbox tasks, commit commands) is a DOC-like signal; ambiguity resolved toward higher-precedence SPEC per ambiguity rule. All checkboxes are unchecked, so the document describes intended, not verified-completed, work."
+}

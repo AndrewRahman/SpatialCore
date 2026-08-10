@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/docs/integration-guide.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "SpatialCore Integration Guide",
+  "summary": "Step-by-step tutorial for building a new Spatial Media Library plugin that links SpatialCore via git submodule and CMake.",
+  "scope": ["SpatialCore", "JUCE 8", "CMake", "plugin integration", "PluginProcessor", "BinauralRenderer", "HRTFDatabase", "git submodules"],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}
