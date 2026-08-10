@@ -79,7 +79,7 @@ rather than by hand-copying a directory.
 **Open questions: none. OQ-6 resolved 2026-08-10 — lookup chain now, embedded default for v1.**
 The user proposed that the 5 profiles live on disk once per machine
 (`/Library/Application Support/Spatial Media Lab/HRTF/` on macOS,
-`%ProgramData%\\Spatial Media Lab\\HRTF\\` on Windows) with every SML plugin referencing them
+`%ProgramData%\Spatial Media Lab\HRTF\` on Windows) with every SML plugin referencing them
 instead of carrying a copy. **Adopted as the target architecture** — it is better than what OSD
 does today, chiefly because it makes user-supplied SOFA files possible at all, and secondarily
 because it lets profiles be fixed without re-shipping plugins and stops 58 MB of BinaryData

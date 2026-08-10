@@ -125,7 +125,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
   - **Target architecture** (user proposal, adopted): the 5 profiles live on disk once per machine
     in a shared location, and every SML plugin references them rather than carrying its own copy.
     - macOS: `/Library/Application Support/Spatial Media Lab/HRTF/`
-    - Windows: `%ProgramData%\\Spatial Media Lab\\HRTF\\`
+    - Windows: `%ProgramData%\Spatial Media Lab\HRTF\`
   - **Why this is better than what OSD does today** (OSD embeds all 5 raw via
     `juce_add_binary_data(HRTFData ...)` at its `CMakeLists.txt:50-58`, shipping a 64 MB VST3,
     64 MB AU, and 73 MB macOS zip):
