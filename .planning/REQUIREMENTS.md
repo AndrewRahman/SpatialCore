@@ -56,11 +56,15 @@ doc-counting errors, answerable from the tree without a user decision.
     different count.
 
 - [ ] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function
-  - **Still open — OQ-2.** This is a genuine spec-vs-implementation disagreement, not a counting
-    error: `Utilities.h` implements a tanh soft ceiling, the SPEC specifies a hard clamp at
-    1.2589f. Only a human can pick.
-  - Acceptance: one curve chosen and both artifacts agree. A test pins the chosen curve at, below,
-    and above the ceiling, and for non-finite input (returns 0.0f).
+  - **OQ-2 RESOLVED 2026-08-10 (user decision): keep the shipped `tanh` soft ceiling.**
+    Rationale: OpenSpatialDelay shipped publicly at v1.0.0 with this curve, so it is the known
+    sound. Changing it during a migration whose gate is "zero regressions" would alter output
+    for existing users. The SPEC is amended to describe the implementation, not the reverse.
+  - Acceptance: the SPEC's hard-clamp-at-1.2589f language is replaced with the tanh soft ceiling.
+    Implementation unchanged. A test pins the curve at, below, and above the ceiling, and for
+    non-finite input (returns 0.0f).
+  - **Deferred, not discarded:** a selectable hard-clamp mode is recorded as a v2 candidate
+    (LIMIT-01, Future Milestones). Adding a mode later is additive and does not break DR-2.
 
 - [ ] **API-03**: The HRTF profile count is one number across docs, headers, and shipped data
   - **Resolved by evidence: 5.** `HRTF/` holds exactly 5 `.sofa` files; the identical 5 exist in
@@ -115,16 +119,39 @@ otherwise. What remains is verifying the named gaps, not building the modules.
 
 ### Packaging and Consumability
 
-- [ ] **DATA-01**: A consumer gets working HRTF data without hand-copying files
-  - **Reframed — this is the real gap.** The 5 SOFA files exist and are real, but they are **not**
-    embedded. `HRTFDatabase::loadFromFile()` reads them from disk via a `SPATIALCORE_HRTF_DIR`
-    path. A plugin that submodules SpatialCore therefore does not get HRTF data by linking; it
-    must ship the directory and resolve the path at runtime.
-  - Acceptance: either the files become BinaryData (DR-5's stated intent, +40 MB of binary), or
-    the disk-loading contract is documented as the shipping path and the integration guide tells
-    consumers exactly how to install and locate the directory. **This is a decision, not just work
-    — see OQ-6.**
+- [ ] **DATA-01**: A consumer gets working HRTF data by linking, with no install step
+  - **OQ-6 RESOLVED 2026-08-10: convert-then-embed. All 5 profiles ship inside every plugin.**
+    User ruling: the profiles belong in SpatialCore and should reach the final plugin even if that
+    duplicates them per format and per plugin. Architecture decision delegated to Claude; recorded
+    below.
+  - **Why not embed the raw SOFA files:** they total **58 MB**
+    (`sadie_d2_ku100` 35 MB, `bernschuetz_ku100` 19 MB, the other three 4.5 MB combined). A plugin
+    builds VST3 + AU (+ AAX), so raw embedding costs ~174 MB per plugin and ~520 MB across a
+    three-plugin suite — before counting build-time cost, which for 58 MB of generated BinaryData
+    arrays is severe on every clean build.
+  - **The size is redundancy, not resolution.** The `.sofa` files are HDF5 containers holding
+    full-resolution measurement grids, metadata, and sample rates SpatialCore does not use. The
+    engine already interpolates between measurement points, already detects ITD onset, and already
+    has `convertToMinPhase()` implemented (currently unused — previously listed as out of scope,
+    now load-bearing).
+  - **Decision — a build-time conversion step producing a compact internal format:**
+    1. Offline tool converts each `.sofa` → min-phase HRIR set + separate ITD table
+    2. 48 kHz, 128 taps post-min-phase, int16 samples, decimated to a uniform sphere grid
+    3. Estimated ~780 KB per profile → **~4 MB for all 5**, a ~14× reduction
+    4. Converted blobs embed as JUCE BinaryData; `HRTFDatabase` gains a `loadFromBinaryData()` path
+    5. Raw `.sofa` files stay in the repo (LFS) as the conversion source and the test oracle
+  - Acceptance: a freshly cloned consumer links SpatialCore and renders binaural audio through any
+    of the 5 profiles with **no HRTF directory, no install step, and no path configuration**.
+    Total embedded payload under 8 MB. `loadFromFile()` and `loadFromMemory()` survive as secondary
+    APIs for user-supplied SOFA files.
+  - **Risk and its control:** conversion is real DSP work and could change the sound. Binaural
+    golden-checksum tests already run against the real SOFA files, so each converted profile is
+    A/B'd against raw-SOFA output under a stated tolerance before it replaces anything.
+  - **Fallback if conversion proves lossy:** embed the three small profiles (4.5 MB raw, no
+    conversion needed) and ship the two large ones as optional disk-loaded extras. The plugin still
+    works out of the box on a default profile; only the two reference-grade sets need installing.
   - The build already fails loudly on LFS pointer stubs via a CI guard. That half is done.
+  - Satisfies DR-5 ("SpatialCore owns and embeds the profiles") as written.
 
 - [ ] **DATA-02**: `SMLLookAndFeel` has the font BinaryData it needs
   - **Verified done.** `fonts/*.ttf` are compiled in as JUCE BinaryData. Retained only to confirm
@@ -263,10 +290,10 @@ Open issues that close with evidence rather than a code change.
 | ID | Question | Status |
 |----|----------|--------|
 | OQ-1 | Algorithm count 6 / 7 / 8 | **Closed — 8**, verified from tree |
-| OQ-2 | `outputLimiter` hard clamp vs tanh | **Open** — genuine design choice, needs user |
+| OQ-2 | `outputLimiter` hard clamp vs tanh | **Closed 2026-08-10 — keep tanh.** Hard clamp deferred to v2 as LIMIT-01 |
 | OQ-3 | HRTF profile count 5 vs 6 | **Closed — 5**, verified from tree |
 | OQ-4 | Test coverage target | **Blocked** — no coverage tooling exists to measure against |
-| OQ-6 | Embed SOFA as BinaryData (+40 MB) vs document disk-loading | **Open** — needs user; DR-5 says embed, the tree does not |
+| OQ-6 | Embed SOFA as BinaryData vs document disk-loading | **Closed 2026-08-10 — convert-then-embed.** Raw is 58 MB; a min-phase/int16 conversion brings all 5 to ~4 MB. See DATA-01 |
 
 ---
 
@@ -309,14 +336,14 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | Requirement | Source | Phase | Status |
 |-------------|--------|-------|--------|
 | API-01 | OQ-1, resolved by re-map | 1 | Evidence gathered |
-| API-02 | OQ-2 | 1 | Needs user |
+| API-02 | OQ-2 (resolved: keep tanh) | 1 | Pending |
 | API-03 | OQ-3, resolved by re-map | 1 | Evidence gathered |
 | API-04 | Re-map (25 formats / 14 layouts) | 1 | Pending |
 | API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Pending |
 | EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
 | EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
 | EXTR-02 | REQ-extract-binaural-rendering | 3 | Largely verified by tests |
-| DATA-01 | REQ-embed-hrtf-binarydata | 3 | Reframed; needs OQ-6 |
+| DATA-01 | REQ-embed-hrtf-binarydata | 3 | OQ-6 resolved: convert-then-embed |
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Largely verified by tests |
 | EXTR-05 | REQ-extract-ui-rendering | 4 | Pending |
 | DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Verified done |
@@ -354,6 +381,7 @@ gate list, alongside:
 | REQ-plugin-openspatialreverb | OpenSpatialReverb — algorithmic reverb with spatial reflections |
 | REQ-plugin-openspatialgranular | OpenSpatialGranular — granular synthesis with 3D grain positioning |
 | REQ-plugin-openspatialchorus | OpenSpatialChorus — chorus/flanger with spatially distributed voices |
+| LIMIT-01 | Selectable hard-clamp limiter mode alongside the default tanh soft ceiling. Deferred from OQ-2 2026-08-10 — additive, does not break DR-2 |
 
 ### v3 — Public release under the org with docs and a tagged v1.0
 
@@ -372,7 +400,6 @@ gate list, alongside:
 | Windows / Linux CI matrices | v1 verifies macOS only. CI-01 covers macOS + JUCE 9 |
 | Custom / vendor-specific speaker layouts | Only the 14 built-in layouts |
 | Replacing the JUCE FFT dependency | Disproportionate to v1 |
-| `convertToMinPhase()` integration | Implemented but unused. Quality enhancement |
 | Configurable convolver crossfade duration | Hardcoded `kCrossfadeBlocks = 4` works |
 | UI test target for `src/UI/*.cpp` | Needs a separate target linking `SpatialCoreUI`. Post-v1 |
 

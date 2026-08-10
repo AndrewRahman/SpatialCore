@@ -39,12 +39,14 @@ own context file stops describing a library that doesn't exist.
 **Requirements**: API-01, API-02, API-03, API-04, API-05, BUG-03
 **Success Criteria** (what must be TRUE):
   1. Headers and docs state 8 algorithms, 5 HRTF profiles, 25 output formats, and 14 speaker layouts — the counts verified from the tree on 2026-08-10.
-  2. `spatialcore::DSP::outputLimiter()` implements one curve, and the SPEC describes that curve. A test pins it at, below, and above the ceiling, and for non-finite input.
+  2. The SPEC describes the shipped tanh soft ceiling instead of a hard clamp at 1.2589f. The implementation is unchanged. A test pins the curve at, below, and above the ceiling, and for non-finite input.
   3. CLAUDE.md's architecture table includes the `Engine/` module, states JUCE 9.0.0, and describes HRTF data the way it actually loads.
   4. Every `#NNN` in a code comment resolves in the tracker it names — OSD references are written `Spatial-Media-Lab/OpenSpatialDelay#NNN`.
-**Open question to resolve with the user**: OQ-2 (`outputLimiter` hard clamp vs tanh). This is the
-only one of the original four that survived — OQ-1 and OQ-3 were doc-counting errors, closed by
-evidence. Frozen and major-version-gated under DR-2/DR-7: surface it, do not choose silently.
+**Open questions: none.** All four originals are closed. OQ-1 and OQ-3 were doc-counting errors
+closed by evidence; **OQ-2 was resolved by the user 2026-08-10 — keep the shipped tanh soft
+ceiling and amend the SPEC to match.** Rationale: OSD ships publicly at v1.0.0 with that curve, so
+it is the known sound, and changing it during a zero-regressions migration would alter output for
+existing users. A selectable hard-clamp mode is deferred to v2 as LIMIT-01.
 **Why first**: A wrong CLAUDE.md is loaded into every session in this repo, and is the direct cause
 of the 2026-08-09 planning pass being built on false premises. Fix the map before using it.
 **Plans**: TBD
@@ -71,13 +73,26 @@ rather than by hand-copying a directory.
 **Success Criteria** (what must be TRUE):
   1. A source at elevation +90° is measurably distinguishable from one at 0°, and azimuth 0° from 180°. *(SpatialCore#15 — the same defect exists in OSD, so this fix reaches both)*
   2. Rendering at 32, 64, and 128 sample blocks produces no artifacts. *(`Spatial-Media-Lab/OpenSpatialDelay#234`, still open, cited in live code at `PartitionedConvolver.cpp:120-124`)*
-  3. A freshly cloned consumer renders binaural audio without hand-installing HRTF files.
+  3. A freshly cloned consumer links SpatialCore and renders binaural audio through any of the 5 profiles with no HRTF directory, no install step, and no path configuration. Embedded payload stays under 8 MB.
   4. Switching HRTF profile while audio is running produces no click, pop, or dropout.
   5. `PartitionedConvolver` and `BinauralRenderer` have dedicated test files — today they are only exercised indirectly.
-**Open question to resolve with the user**: OQ-6 — embed the 5 SOFA files as BinaryData (DR-5's
-stated intent, roughly +40 MB of binary in every consumer plugin) or keep runtime disk-loading via
-`SPATIALCORE_HRTF_DIR` and document the install contract. The tree currently does the latter while
-DR-5 says the former.
+**Open questions: none. OQ-6 resolved 2026-08-10 — convert-then-embed.**
+The user ruled that the profiles belong in SpatialCore and should reach the final plugin even if
+duplicated per format and per plugin, and delegated the architecture. Decision: do not embed the
+raw files. They total **58 MB** (`sadie_d2_ku100` 35 MB, `bernschuetz_ku100` 19 MB, the rest
+4.5 MB) — roughly 174 MB per plugin across VST3 + AU + AAX, and severe build-time cost.
+
+That size is redundancy, not resolution: the `.sofa` files are HDF5 containers carrying
+full-resolution grids, metadata, and unused sample rates. A build-time conversion to min-phase
+HRIRs plus a separate ITD table (48 kHz, 128 taps, int16, decimated grid) is estimated at ~780 KB
+per profile — **~4 MB for all 5, a ~14× reduction** — which is entirely acceptable to duplicate.
+The engine already has `convertToMinPhase()` and ITD onset detection implemented, so the machinery
+exists; `convertToMinPhase()` moves from out-of-scope to load-bearing.
+
+Raw `.sofa` files stay in the repo under LFS as the conversion source and the test oracle. Existing
+binaural golden-checksum tests A/B each converted profile against raw-SOFA output under a stated
+tolerance. **Fallback if conversion proves lossy:** embed the three small profiles (4.5 MB raw, no
+conversion) and ship the two large ones as optional disk-loaded extras. Satisfies DR-5 as written.
 **Corrected premise**: the original roadmap said "no `.sofa` file and no BinaryData target exists
 anywhere in the tree, so DATA-01 is unstarted." Half wrong: 5 real HDF5 files (1.2–36.6 MB) are
 present and LFS-tracked with a CI guard against pointer stubs. Only the embedding is absent.

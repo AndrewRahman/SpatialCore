@@ -57,7 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 
 Full log in PROJECT.md Key Decisions. Affecting current work:
 
-- DR-5 **locked, but contradicted by the tree**: DR-5 says SpatialCore embeds HRTF profiles as BinaryData. The tree loads 5 real `.sofa` files from disk via `SPATIALCORE_HRTF_DIR` instead. Reconcile in Phase 3 — see OQ-6.
+- DR-5 **locked, reconciliation decided**: DR-5 says SpatialCore embeds HRTF profiles as BinaryData; the tree loads them from disk. Resolved 2026-08-10 by converting to a compact internal format then embedding — satisfies DR-5 as written. Phase 3 owns it.
 - DR-1 **locked**: no allocation, locks, or logging in anything reachable from `processBlock`. Owns Phase 5.
 - DR-7 **locked**: `SpatializationAlgorithm` is frozen. Contract ambiguity is a defect, not a preference.
 - **User ruling 2026-08-10:** OpenSpatialDelay is the v1 consumer, not OpenSpatialPanner. OSD is the tree SpatialCore was extracted from and ships publicly at v1.0.0, so it is the only oracle that can prove zero regressions. Verified: OSD does not yet consume SpatialCore — the migration is unstarted.
@@ -70,11 +70,11 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 ### Blockers/Concerns
 
 - **OQ-1** — algorithm count. **CLOSED: 8**, verified from the tree.
-- **OQ-2** (Phase 1) — `outputLimiter()`: SPEC hard clamp at 1.2589f vs shipped `tanh` soft ceiling. **Still open, needs a user decision** — a real spec-vs-code disagreement, not a counting error.
+- **OQ-2** — `outputLimiter()`. **CLOSED 2026-08-10: keep the shipped tanh soft ceiling**; amend the SPEC to match. OSD ships v1.0.0 with that curve, so it is the known sound. Hard-clamp mode deferred to v2 as LIMIT-01.
 - **OQ-3** — HRTF profile count. **CLOSED: 5**, verified from the tree.
 - **OQ-4** (Phase 6) — test coverage target. **Blocked, not merely undefined**: no coverage tooling exists in the build, so there is nothing to measure against. Wire up instrumentation, read the real number, then set the target. The old "~5%" figure was never measured.
 - **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` publishes a submodule URL that does not resolve.
-- **OQ-6** (Phase 3) — embed the 5 SOFA files as BinaryData (DR-5's intent, ~+40 MB per consumer plugin) or keep runtime disk-loading and document the install contract. **Needs a user decision.**
+- **OQ-6** (Phase 3) — HRTF packaging. **CLOSED 2026-08-10: convert-then-embed.** Raw SOFA is 58 MB (35 + 19 + 4.5); a build-time min-phase/int16 conversion brings all 5 to ~4 MB, which embeds cleanly. `convertToMinPhase()` moves from unused to load-bearing. Fallback: embed the 3 small profiles, disk-load the 2 large ones.
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
 
@@ -87,5 +87,5 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 ## Session Continuity
 
 Last session: 2026-08-09 23:52
-Stopped at: Roadmap and requirements written; 18/18 v1 requirements mapped across 6 phases
+Stopped at: Plan rewritten on branch `gsd-remap`; 14 GitHub issues triaged; OQ-1/2/3/6 all closed. Only OQ-4 (coverage target) remains, and it is blocked on wiring up coverage tooling.
 Resume file: None
