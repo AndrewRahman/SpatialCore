@@ -119,39 +119,42 @@ otherwise. What remains is verifying the named gaps, not building the modules.
 
 ### Packaging and Consumability
 
-- [ ] **DATA-01**: A consumer gets working HRTF data by linking, with no install step
-  - **OQ-6 RESOLVED 2026-08-10: convert-then-embed. All 5 profiles ship inside every plugin.**
-    User ruling: the profiles belong in SpatialCore and should reach the final plugin even if that
-    duplicates them per format and per plugin. Architecture decision delegated to Claude; recorded
-    below.
-  - **Why not embed the raw SOFA files:** they total **58 MB**
-    (`sadie_d2_ku100` 35 MB, `bernschuetz_ku100` 19 MB, the other three 4.5 MB combined). A plugin
-    builds VST3 + AU (+ AAX), so raw embedding costs ~174 MB per plugin and ~520 MB across a
-    three-plugin suite — before counting build-time cost, which for 58 MB of generated BinaryData
-    arrays is severe on every clean build.
-  - **The size is redundancy, not resolution.** The `.sofa` files are HDF5 containers holding
-    full-resolution measurement grids, metadata, and sample rates SpatialCore does not use. The
-    engine already interpolates between measurement points, already detects ITD onset, and already
-    has `convertToMinPhase()` implemented (currently unused — previously listed as out of scope,
-    now load-bearing).
-  - **Decision — a build-time conversion step producing a compact internal format:**
-    1. Offline tool converts each `.sofa` → min-phase HRIR set + separate ITD table
-    2. 48 kHz, 128 taps post-min-phase, int16 samples, decimated to a uniform sphere grid
-    3. Estimated ~780 KB per profile → **~4 MB for all 5**, a ~14× reduction
-    4. Converted blobs embed as JUCE BinaryData; `HRTFDatabase` gains a `loadFromBinaryData()` path
-    5. Raw `.sofa` files stay in the repo (LFS) as the conversion source and the test oracle
-  - Acceptance: a freshly cloned consumer links SpatialCore and renders binaural audio through any
-    of the 5 profiles with **no HRTF directory, no install step, and no path configuration**.
-    Total embedded payload under 8 MB. `loadFromFile()` and `loadFromMemory()` survive as secondary
-    APIs for user-supplied SOFA files.
-  - **Risk and its control:** conversion is real DSP work and could change the sound. Binaural
-    golden-checksum tests already run against the real SOFA files, so each converted profile is
-    A/B'd against raw-SOFA output under a stated tolerance before it replaces anything.
-  - **Fallback if conversion proves lossy:** embed the three small profiles (4.5 MB raw, no
-    conversion needed) and ship the two large ones as optional disk-loaded extras. The plugin still
-    works out of the box on a default profile; only the two reference-grade sets need installing.
+- [ ] **DATA-01**: HRTF data resolves through a lookup chain, with an embedded set that cannot fail
+  - **OQ-6 RESOLVED 2026-08-10 (final): build the shared-folder lookup chain now, ship v1 with
+    the embedded set active, flip the default when a signed installer exists.**
+  - **Target architecture** (user proposal, adopted): the 5 profiles live on disk once per machine
+    in a shared location, and every SML plugin references them rather than carrying its own copy.
+    - macOS: `/Library/Application Support/Spatial Media Lab/HRTF/`
+    - Windows: `%ProgramData%\\Spatial Media Lab\\HRTF\\`
+  - **Why this is better than what OSD does today** (OSD embeds all 5 raw via
+    `juce_add_binary_data(HRTFData ...)` at its `CMakeLists.txt:50-58`, shipping a 64 MB VST3,
+    64 MB AU, and 73 MB macOS zip):
+    1. **User-supplied HRTFs become possible.** Anyone with their own measured SOFA file drops it
+       in the folder and it appears. Embedding makes this impossible without a rebuild. For a
+       spatial audio library this is close to a feature requirement.
+    2. Profiles can be fixed or added without rebuilding and re-shipping every plugin.
+    3. Suite-wide size: 5 plugins x 2 formats x 64 MB is ~640 MB embedded, vs 58 MB once.
+    4. 58 MB of generated BinaryData arrays slows every clean build of every consumer.
+  - **Resolution chain** (`HRTFDatabase`, in order): shared platform folder -> embedded
+    BinaryData fallback -> loud error. Never a silent failure to render.
+  - **v1 ships with all 5 embedded.** Rationale: the shared folder depends on a signed installer
+    that does not exist yet, and OSD ships drag-and-drop today. Cutting OSD's bundle before the
+    installer lands would mean an existing user who updates by drag-and-drop silently loses 4 of
+    5 profiles — a regression, in a milestone whose gate is zero regressions. Migrating OSD and
+    repackaging OSD are separately risky and must not ride together.
+  - Acceptance: `juce_add_binary_data(HRTFData ...)` moves into SpatialCore over the 5
+    `HRTF/*.sofa` files; `HRTFDatabase` gains `loadFromBinaryData()` **and** the shared-folder
+    lookup; a `SPATIALCORE_EMBED_ALL_HRTF` CMake option selects all-5 (default, v1) vs
+    default-profile-only. A freshly cloned consumer renders through any of the 5 profiles with no
+    install step. `loadFromFile()` / `loadFromMemory()` survive as secondary APIs.
+  - **The flip is a build flag, not a redesign.** When the signed installer lands, set
+    `SPATIALCORE_EMBED_ALL_HRTF=OFF` — embedding drops to `mit_kemar_large_pinna` (1.1 MB) and the
+    installer supplies the rest. No SpatialCore code changes. Tracked as SUITE-01.
+  - **Rejected:** convert-then-embed (min-phase/int16 to ~4 MB). It introduces DSP work that can
+    change the sound during a zero-regressions migration, to solve a size problem the shipping
+    product proves it does not have. `convertToMinPhase()` returns to out-of-scope.
   - The build already fails loudly on LFS pointer stubs via a CI guard. That half is done.
-  - Satisfies DR-5 ("SpatialCore owns and embeds the profiles") as written.
+  - Satisfies DR-5 as written, and leaves a designed path off it.
 
 - [ ] **DATA-02**: `SMLLookAndFeel` has the font BinaryData it needs
   - **Verified done.** `fonts/*.ttf` are compiled in as JUCE BinaryData. Retained only to confirm
@@ -293,7 +296,7 @@ Open issues that close with evidence rather than a code change.
 | OQ-2 | `outputLimiter` hard clamp vs tanh | **Closed 2026-08-10 — keep tanh.** Hard clamp deferred to v2 as LIMIT-01 |
 | OQ-3 | HRTF profile count 5 vs 6 | **Closed — 5**, verified from tree |
 | OQ-4 | Test coverage target | **Blocked** — no coverage tooling exists to measure against |
-| OQ-6 | Embed SOFA as BinaryData vs document disk-loading | **Closed 2026-08-10 — convert-then-embed.** Raw is 58 MB; a min-phase/int16 conversion brings all 5 to ~4 MB. See DATA-01 |
+| OQ-6 | HRTF packaging | **Closed 2026-08-10 — build the shared-folder lookup chain, ship v1 embedded, flip via CMake flag when an installer exists.** See DATA-01 |
 
 ---
 
@@ -343,7 +346,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
 | EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
 | EXTR-02 | REQ-extract-binaural-rendering | 3 | Largely verified by tests |
-| DATA-01 | REQ-embed-hrtf-binarydata | 3 | OQ-6 resolved: convert-then-embed |
+| DATA-01 | REQ-embed-hrtf-binarydata | 3 | OQ-6 resolved: lookup chain + embedded default |
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Largely verified by tests |
 | EXTR-05 | REQ-extract-ui-rendering | 4 | Pending |
 | DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Verified done |
@@ -382,6 +385,7 @@ gate list, alongside:
 | REQ-plugin-openspatialgranular | OpenSpatialGranular — granular synthesis with 3D grain positioning |
 | REQ-plugin-openspatialchorus | OpenSpatialChorus — chorus/flanger with spatially distributed voices |
 | LIMIT-01 | Selectable hard-clamp limiter mode alongside the default tanh soft ceiling. Deferred from OQ-2 2026-08-10 — additive, does not break DR-2 |
+| SUITE-01 | Signed installers that populate the shared HRTF folder, then `SPATIALCORE_EMBED_ALL_HRTF=OFF`. The SpatialCore side ships in v1 (DATA-01); this is the installer + the flag flip. Deferred from OQ-6 2026-08-10 |
 
 ### v3 — Public release under the org with docs and a tagged v1.0
 
@@ -400,6 +404,7 @@ gate list, alongside:
 | Windows / Linux CI matrices | v1 verifies macOS only. CI-01 covers macOS + JUCE 9 |
 | Custom / vendor-specific speaker layouts | Only the 14 built-in layouts |
 | Replacing the JUCE FFT dependency | Disproportionate to v1 |
+| `convertToMinPhase()` integration | Implemented but unused. Considered for HRTF compaction under OQ-6 and rejected — no size problem to solve |
 | Configurable convolver crossfade duration | Hardcoded `kCrossfadeBlocks = 4` works |
 | UI test target for `src/UI/*.cpp` | Needs a separate target linking `SpatialCoreUI`. Post-v1 |
 

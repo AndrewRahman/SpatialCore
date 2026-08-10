@@ -73,26 +73,38 @@ rather than by hand-copying a directory.
 **Success Criteria** (what must be TRUE):
   1. A source at elevation +90° is measurably distinguishable from one at 0°, and azimuth 0° from 180°. *(SpatialCore#15 — the same defect exists in OSD, so this fix reaches both)*
   2. Rendering at 32, 64, and 128 sample blocks produces no artifacts. *(`Spatial-Media-Lab/OpenSpatialDelay#234`, still open, cited in live code at `PartitionedConvolver.cpp:120-124`)*
-  3. A freshly cloned consumer links SpatialCore and renders binaural audio through any of the 5 profiles with no HRTF directory, no install step, and no path configuration. Embedded payload stays under 8 MB.
+  3. A freshly cloned consumer links SpatialCore and renders through any of the 5 profiles with no install step and no path configuration. A SOFA file dropped into the shared platform folder is picked up ahead of the embedded copy, and a missing folder falls back silently to embedded rather than failing.
   4. Switching HRTF profile while audio is running produces no click, pop, or dropout.
   5. `PartitionedConvolver` and `BinauralRenderer` have dedicated test files — today they are only exercised indirectly.
-**Open questions: none. OQ-6 resolved 2026-08-10 — convert-then-embed.**
-The user ruled that the profiles belong in SpatialCore and should reach the final plugin even if
-duplicated per format and per plugin, and delegated the architecture. Decision: do not embed the
-raw files. They total **58 MB** (`sadie_d2_ku100` 35 MB, `bernschuetz_ku100` 19 MB, the rest
-4.5 MB) — roughly 174 MB per plugin across VST3 + AU + AAX, and severe build-time cost.
+**Open questions: none. OQ-6 resolved 2026-08-10 — lookup chain now, embedded default for v1.**
+The user proposed that the 5 profiles live on disk once per machine
+(`/Library/Application Support/Spatial Media Lab/HRTF/` on macOS,
+`%ProgramData%\\Spatial Media Lab\\HRTF\\` on Windows) with every SML plugin referencing them
+instead of carrying a copy. **Adopted as the target architecture** — it is better than what OSD
+does today, chiefly because it makes user-supplied SOFA files possible at all, and secondarily
+because it lets profiles be fixed without re-shipping plugins and stops 58 MB of BinaryData
+slowing every consumer's clean build.
 
-That size is redundancy, not resolution: the `.sofa` files are HDF5 containers carrying
-full-resolution grids, metadata, and unused sample rates. A build-time conversion to min-phase
-HRIRs plus a separate ITD table (48 kHz, 128 taps, int16, decimated grid) is estimated at ~780 KB
-per profile — **~4 MB for all 5, a ~14× reduction** — which is entirely acceptable to duplicate.
-The engine already has `convertToMinPhase()` and ITD onset detection implemented, so the machinery
-exists; `convertToMinPhase()` moves from out-of-scope to load-bearing.
+**Decisive context:** OSD already embeds all 5 raw files via `juce_add_binary_data(HRTFData ...)`
+(`CMakeLists.txt:50-58`) and ships a 64 MB VST3, 64 MB AU, and 73 MB macOS zip at v1.0.0. The
+embedded approach is proven in production; the shared folder is the improvement on it.
 
-Raw `.sofa` files stay in the repo under LFS as the conversion source and the test oracle. Existing
-binaural golden-checksum tests A/B each converted profile against raw-SOFA output under a stated
-tolerance. **Fallback if conversion proves lossy:** embed the three small profiles (4.5 MB raw, no
-conversion) and ship the two large ones as optional disk-loaded extras. Satisfies DR-5 as written.
+**But v1 ships embedded anyway.** The shared folder depends on a signed installer that does not
+exist, and OSD ships drag-and-drop today — so cutting the bundle before the installer lands means
+an existing user who updates by drag-and-drop silently loses 4 of 5 profiles. That is a regression
+in a milestone gated on zero regressions. "Migrate OSD onto SpatialCore" and "repackage OSD" are
+independently risky and must not ride together.
+
+**So Phase 3 builds the mechanism and ships it switched off:** `HRTFDatabase` gets a resolution
+chain (shared folder → embedded BinaryData → loud error) plus a `SPATIALCORE_EMBED_ALL_HRTF`
+CMake option defaulting to ON. When the installer lands, set it OFF: embedding drops to
+`mit_kemar_large_pinna` (1.1 MB) and the installer supplies the rest, with **no SpatialCore code
+change**. Tracked as SUITE-01.
+
+**Rejected:** convert-then-embed (min-phase/int16 compaction to ~4 MB). It adds DSP work that can
+change the sound during a zero-regressions migration, to solve a size problem the shipping product
+proves it does not have.
+
 **Corrected premise**: the original roadmap said "no `.sofa` file and no BinaryData target exists
 anywhere in the tree, so DATA-01 is unstarted." Half wrong: 5 real HDF5 files (1.2–36.6 MB) are
 present and LFS-tracked with a CI guard against pointer stubs. Only the embedding is absent.

@@ -57,7 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 
 Full log in PROJECT.md Key Decisions. Affecting current work:
 
-- DR-5 **locked, reconciliation decided**: DR-5 says SpatialCore embeds HRTF profiles as BinaryData; the tree loads them from disk. Resolved 2026-08-10 by converting to a compact internal format then embedding — satisfies DR-5 as written. Phase 3 owns it.
+- DR-5 **locked, reconciliation decided**: DR-5 says SpatialCore embeds HRTF profiles as BinaryData; the tree loads them from disk. Resolved 2026-08-10: embed as DR-5 says for v1, and add a shared-folder lookup ahead of it so the embedding can later be reduced to a single fallback profile without code changes. Phase 3 owns it.
 - DR-1 **locked**: no allocation, locks, or logging in anything reachable from `processBlock`. Owns Phase 5.
 - DR-7 **locked**: `SpatializationAlgorithm` is frozen. Contract ambiguity is a defect, not a preference.
 - **User ruling 2026-08-10:** OpenSpatialDelay is the v1 consumer, not OpenSpatialPanner. OSD is the tree SpatialCore was extracted from and ships publicly at v1.0.0, so it is the only oracle that can prove zero regressions. Verified: OSD does not yet consume SpatialCore — the migration is unstarted.
@@ -74,7 +74,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **OQ-3** — HRTF profile count. **CLOSED: 5**, verified from the tree.
 - **OQ-4** (Phase 6) — test coverage target. **Blocked, not merely undefined**: no coverage tooling exists in the build, so there is nothing to measure against. Wire up instrumentation, read the real number, then set the target. The old "~5%" figure was never measured.
 - **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` publishes a submodule URL that does not resolve.
-- **OQ-6** (Phase 3) — HRTF packaging. **CLOSED 2026-08-10: convert-then-embed.** Raw SOFA is 58 MB (35 + 19 + 4.5); a build-time min-phase/int16 conversion brings all 5 to ~4 MB, which embeds cleanly. `convertToMinPhase()` moves from unused to load-bearing. Fallback: embed the 3 small profiles, disk-load the 2 large ones.
+- **OQ-6** (Phase 3) — HRTF packaging. **CLOSED 2026-08-10: lookup chain now, embedded default for v1.** Target architecture is the user's — profiles on disk once per machine in a shared folder, all SML plugins reference it; better than embedding chiefly because it enables user-supplied SOFA files. But v1 still embeds all 5, because the shared folder needs a signed installer that does not exist and OSD ships drag-and-drop. Phase 3 builds the resolution chain (shared folder → embedded → loud error) behind `SPATIALCORE_EMBED_ALL_HRTF=ON`; flipping it OFF later is a build flag, not a redesign. Tracked as SUITE-01.
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
 
