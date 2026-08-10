@@ -65,7 +65,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 
 ### Pending Todos
 
-- Consider filing GitHub issues for two confirmed defects that no issue tracks: the `TrajectoryEngine` non-atomic position floats, and the second audio-thread allocation at `BinauralRenderer.cpp:134,158-163`.
+- ~~File issues for the two untracked defects~~ **Done 2026-08-10:** SpatialCore#18 (TrajectoryEngine cross-thread position reads) and SpatialCore#19 (second audio-thread allocation in `BinauralRenderer::updateSourceHRIR`). Both labelled `bug`, both owned by Phase 5.
 
 ### Blockers/Concerns
 

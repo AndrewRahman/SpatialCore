@@ -183,6 +183,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
 Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one widened, one closed.
 
 - [ ] **RTSF-01**: `BinauralRenderer` cannot allocate on the audio thread in a Release build
+  - Tracked by **SpatialCore#19** (filed 2026-08-10).
   - **Widened — there are two sites, not one.**
     - `src/Binaural/BinauralRenderer.cpp:196-209` (`renderSourceBuffers`)
     - `src/Binaural/BinauralRenderer.cpp:134,158-163` (`updateSourceHRIR`), reached from
@@ -193,7 +194,8 @@ Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one wi
     copies of the fallback. Verified in a Release build.
 
 - [ ] **RTSF-02**: TrajectoryEngine final positions are safe to read from the audio thread
-  - **Confirmed real and untracked by any GitHub issue.** `TrajectoryEngine.h:30` documents a
+  - Tracked by **SpatialCore#18** (filed 2026-08-10).
+  - **Confirmed real.** `TrajectoryEngine.h:30` documents a
     60 Hz-timer-writes / audio-thread-reads contract, but only `active_` is atomic
     (`TrajectoryEngine.h:106`). `finalAz_`, `finalEl_`, `finalDist_` (lines 103-106) are plain
     `float[]`, written at `src/Trajectory/TrajectoryEngine.cpp:76-90,143-145`. A data race under
@@ -350,8 +352,8 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Largely verified by tests |
 | EXTR-05 | REQ-extract-ui-rendering | 4 | Pending |
 | DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Verified done |
-| RTSF-01 | CONCERNS.md — 2 sites | 5 | Pending |
-| RTSF-02 | CONCERNS.md — unfiled | 5 | Pending |
+| RTSF-01 | SpatialCore#19 — 2 sites | 5 | Pending |
+| RTSF-02 | SpatialCore#18 | 5 | Pending |
 | RTSF-03 | CONCERNS.md | 5 | Pending |
 | ~~RTSF-04~~ | — | — | **Closed, non-finding** |
 | RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Pending |

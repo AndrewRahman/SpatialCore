@@ -134,8 +134,8 @@ build with tools.
 **Depends on**: Phase 4
 **Requirements**: RTSF-01, RTSF-02, RTSF-03, RTSF-05, VERIFY-02
 **Success Criteria** (what must be TRUE):
-  1. Neither `BinauralRenderer.cpp:196-209` (`renderSourceBuffers`) nor `:134,158-163` (`updateSourceHRIR`, reached from `RenderEngine.cpp:178`) can allocate in a Release build. Both currently guard a `resize()` with `jassertfalse`, which is a no-op in Release.
-  2. `TrajectoryEngine`'s `finalAz_`/`finalEl_`/`finalDist_` are no longer plain floats read across threads. Clean under thread sanitizer.
+  1. Neither `BinauralRenderer.cpp:196-209` (`renderSourceBuffers`) nor `:134,158-163` (`updateSourceHRIR`, reached from `RenderEngine.cpp:178`) can allocate in a Release build. Both currently guard a `resize()` with `jassertfalse`, which is a no-op in Release. *(SpatialCore#19)*
+  2. `TrajectoryEngine`'s `finalAz_`/`finalEl_`/`finalDist_` are no longer plain floats read across threads. Clean under thread sanitizer. *(SpatialCore#18)*
   3. `setProfile()` from a UI timer during audio processing does not race on the libmysofa handle.
   4. Several plugin instances in one host process render concurrently without crashing or buzzing. *(SpatialCore#12; regression tests for `OpenSpatialDelay#96` and `#131`)*
   5. A thread-sanitizer plus allocation-detector pass over the `processBlock` path reports zero allocations, zero locks, zero races.
@@ -201,13 +201,13 @@ See `.planning/REQUIREMENTS.md` Traceability for the full table and the 14-issue
 
 ## GitHub Issue Coverage
 
-All 14 open SpatialCore issues are triaged in REQUIREMENTS.md. Summary:
+All open SpatialCore issues are triaged in REQUIREMENTS.md (14 at rewrite time, plus #18 and #19 filed 2026-08-10). Summary:
 
 | In v1 | Issue |
 |-------|-------|
 | Phase 2 | #11 Ambisonics ACN/SN3D convention |
 | Phase 3 | #15 Binaural elevation cue collapse |
-| Phase 5 | #12 SharedFFTCache concurrent instances |
+| Phase 5 | #12 SharedFFTCache concurrent instances, #18 TrajectoryEngine race, #19 audio-thread allocation |
 | Phase 6 | #9 CI vs JUCE 9.0.0, and #14's residual opt-in trap |
 
 Deferred to v2 (OpenSpatialPanner): #2, #3, #4, #5, #6, #7, #10, #13, #16, #17.
