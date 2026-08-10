@@ -3,7 +3,7 @@
 ## What This Is
 
 SpatialCore is the shared spatial audio rendering engine for the Spatial Media Library, built by
-Spatial Media Lab (spatialmedialab.org). It is a JUCE 8 / C++17 static library that takes audio
+Spatial Media Lab (spatialmedialab.org). It is a JUCE 9.0.0 / C++17 static library that takes audio
 objects carrying 3D positions and renders them to any output format — binaural, stereo, surround,
 or Ambisonics — through a set of spatialization algorithms, with HRTF convolution, ADM-OSC
 control, trajectory animation, and shared UI widgets included.
@@ -79,7 +79,7 @@ Milestone v1 scope. Full detail and acceptance in `.planning/REQUIREMENTS.md`.
 - **OpenSpatialDelay repository work** — seven requirements live in that repo. Tracked below as external dependencies, deliberately given no SpatialCore phase.
 - **Future plugin suite (OpenSpatialReverb, OpenSpatialGranular, OpenSpatialPanner, OpenSpatialChorus)** — 2027 targets. One of them becomes the v2 milestone.
 - **Windows and Linux CI verification** — cross-platform support is an intent and the build flags exist, but v1 verification is macOS-only. Adding CI matrices before a second consumer exists is premature.
-- **Custom / vendor-specific speaker layouts** — only the 13 ITU-R layouts. Generalizing the layout API is a post-v1 API addition.
+- **Custom / vendor-specific speaker layouts** — only the 14 built-in layouts. Generalizing the layout API is a post-v1 API addition.
 - **Replacing the JUCE FFT dependency** — noted as a medium risk in CONCERNS.md; swapping FFT libraries is disproportionate to v1.
 
 ## External Dependencies
@@ -125,16 +125,22 @@ as fact. The git remote is still `github.com/AndrewRahman/SpatialCore.git` while
 resolve.
 
 **Known realtime-safety violations.** `.planning/codebase/CONCERNS.md` documents four live
-breaches of locked rule DR-1. These are named requirements (RTSF-01 through RTSF-04) with their
-own phase, not assumptions folded into a general verification sweep.
+breaches of locked rule DR-1. These are named requirements (RTSF-01 through RTSF-05) with their
+own phase, not assumptions folded into a general verification sweep. *(Corrected 2026-08-10:
+RTSF-04 was closed as a non-finding — `ADMOSCReceiver.cpp:43` already bounds-checks correctly —
+while RTSF-01 widened to two allocation sites and a new unfiled TrajectoryEngine race was found.)*
 
-**Test coverage.** CONCERNS.md measures 209 lines of test code against 4,084 lines of source
-(~5%). Binaural rendering, HRTF database, convolver, OSC, Ambisonics, format registry, and UI are
-entirely untested.
+**Test coverage.** *(Corrected 2026-08-10 — the previous figure was measured against the wrong
+branch.)* The suite builds and passes: **144 TEST_CASE blocks, 1585 assertions across 16 test
+files**, covering Core, Algorithms, IO, OSC, Trajectory, Binaural (against all 5 real SOFA
+profiles), and Engine. No coverage tooling is configured anywhere in the build, so no percentage
+can be measured — the earlier "~5%" was never a real measurement. Modules with no dedicated tests:
+`src/Binaural/PartitionedConvolver.cpp`, `src/Binaural/BinauralRenderer.cpp`, and all of
+`src/UI/*.cpp` (the last by design — UI lives in the separate `SpatialCoreUI` target).
 
 ## Constraints
 
-- **Tech stack**: JUCE 8, C++17, CMake 3.22+, libmysofa v1.3.2 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
+- **Tech stack**: JUCE 9.0.0, C++17, CMake 3.22+, libmysofa v1.3.2 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
 - **Distribution**: Static library consumed via git submodule + `add_subdirectory(SpatialCore)` + `target_link_libraries(... PRIVATE SpatialCore)`. Consumers include only `<SpatialCore/SpatialCore.h>`.
 - **Platform**: macOS is primary — arm64, deployment target 12.0, `-ffast-math`. Windows (MSVC, `/fp:fast`) and Linux are intended but not verified in v1.
 - **Realtime**: No malloc, locks, or logging in any function reachable from `processBlock`. Algorithms are stateless; all computation state lives in context structs. Layout changes use dual-buffered atomic swap.
@@ -192,7 +198,7 @@ normal planning decision.
 |----|----------|---------|
 | DR-8 | Static library, 7 modules (Algorithms, Binaural, IO, OSC, Trajectory, DSP, UI) plus shared `Core/`, fixed `include/` / `src/` / `tests/` layout | ✓ Good — tree matches, with additive extras (`Core/SpatialMath`, `Algorithms/ConstantPower`, `Algorithms/AllAlgorithms.h`, `Binaural/SharedFFTCache.h`) |
 | DR-9 | Consumers integrate via git submodule + CMake `add_subdirectory()` | — Pending — unverified by a real consumer until INTG-01 |
-| DR-10 | JUCE 8 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good |
+| DR-10 | JUCE 9.0.0 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good — corrected 2026-08-10; DR-10 originally said JUCE 8, tree is pinned 9.0.0 at `CMakeLists.txt:33` |
 | DR-11 | All library code lives in `namespace spatialcore` (DSP utilities in `spatialcore::DSP`) | ✓ Good |
 | DR-12 | Dual license GPL-3.0 + commercial | — Pending — LICENSE file lands in v3 |
 | DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — v3, see OQ-5 |

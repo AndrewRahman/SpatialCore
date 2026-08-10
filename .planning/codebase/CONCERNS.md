@@ -21,28 +21,37 @@ Scope: full repo (`src/`, `include/`), excluding `build/` and JUCE/. Cross-refer
 - Fix approach: same as above; additionally consider making these two call sites share one guarded helper instead of duplicating the fallback logic twice.
 - GitHub issue: not tracked. **Not yet filed.** (Related to the general realtime-safety guarantee implied by open issue #12's "thread-safety" framing, but #12 is scoped specifically to `SharedFFTCache`, not this buffer-sizing bug — treat as a separate, unfiled defect.)
 
-## Fictional/Stale Issue References Baked Into Code Comments
+## Unqualified Cross-Repo Issue References In Code Comments
 
-**`(issue #131)` cited in `SharedFFTCache` docs — does not exist:**
-- Files: `include/SpatialCore/Binaural/SharedFFTCache.h:17`, `src/Binaural/PartitionedConvolver.cpp:7`
-- Issue: both the header doc comment and the `SharedFFTCache::getOrCreate` implementation cite "(issue #131)" as the rationale for the process-global FFT cache. The repo's highest real issue number is #17; #131 does not exist in this repository's issue tracker.
-- Impact: misleads future contributors trying to find the design discussion; erodes trust in other issue citations in the same files.
-- Fix approach: replace with the real tracking issue — open GitHub issue #12 ("Verify SharedFFTCache thread-safety across concurrent plugin instances") is the closest genuine match and should be cited instead, or a new issue should be filed and cross-referenced.
-- GitHub issue: the *topic* (SharedFFTCache thread-safety) is tracked by real open issue **#12**; the specific `#131` citation itself is fictional and should be corrected.
+**Correction (verified 2026-08-10):** an earlier pass of this document called these
+citations fictional. They are **not**. Every one resolves in
+`Spatial-Media-Lab/OpenSpatialDelay`, whose tracker runs to #235 — the repository
+this code was extracted from. The defect is notation, not invention: bare `#NNN`
+reads as a SpatialCore issue, and SpatialCore's tracker only reaches #17.
 
-**`(issue #50)` cited in dual-slot convolver IR loading — does not exist:**
-- Files: `src/Binaural/PartitionedConvolver.cpp:46,89`
-- Issue: comments attribute the "v1.0.5 dual-convolver IR loading strategy" to "issue #50," which is not a real open or closed issue number surfaced by `gh issue list` for this repo (highest real number is #17).
-- Impact: same as above — a stale/fabricated citation in a load-bearing DSP file.
-- Fix approach: remove the issue reference or replace with a real one; if this predates the current issue tracker (e.g., inherited from OpenSpatialDelay history), say so explicitly instead of citing a SpatialCore issue number.
-- GitHub issue: none open tracks this specifically.
+Verified by `gh issue view <N> -R Spatial-Media-Lab/OpenSpatialDelay`:
 
-**`(issue #234)` cited in `processSlot` — does not exist:**
-- Files: `src/Binaural/PartitionedConvolver.cpp:120-124`
-- Issue: comment reads "v2.0.0-dev.1 (issue #234): decoupled from the prepared `blockSize`." #234 is far outside the real issue range (#2–#17).
-- Impact: same as above.
-- Fix approach: same as above.
-- GitHub issue: none open tracks this specifically.
+| Cited | State | Real title |
+|-------|-------|-----------|
+| `#50` | closed | Binaural HRTF: perceptual pops on azimuth/elevation movement |
+| `#131` | closed | CoreGraphics crash with multiple plugin instances loaded simultaneously |
+| `#234` | **open** | Audio artifacts at buffer sizes below 256 samples |
+
+**Sites needing requalification to `Spatial-Media-Lab/OpenSpatialDelay#NNN`:**
+- `include/SpatialCore/Binaural/SharedFFTCache.h:17` — cites `#131`
+- `src/Binaural/PartitionedConvolver.cpp:7` — cites `#131`
+- `src/Binaural/PartitionedConvolver.cpp:46,89` — cites `#50`
+- `src/Binaural/PartitionedConvolver.cpp:120-124` — cites `#234`
+
+- Impact: a reader checking `#131` against SpatialCore's tracker finds nothing and
+  concludes the comment is junk, discarding a real and load-bearing design rationale.
+- Fix approach: rewrite each as a fully-qualified `owner/repo#N` reference. Low risk,
+  comment-only.
+- **`#234` is open**, and its citation sits in live convolver code at
+  `PartitionedConvolver.cpp:120-124` — SpatialCore inherited an unfixed OpenSpatialDelay
+  defect during extraction. This is a real open bug in this tree, not just a stale comment.
+- Related live SpatialCore issue: **#12** (SharedFFTCache thread-safety across concurrent
+  instances) covers the same failure mode as OSD `#96` and `#131`.
 
 ## Known Bugs (tracked by open GitHub issues)
 

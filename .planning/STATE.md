@@ -17,14 +17,18 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 1 — Public Contract Freeze & Extraction Audit
+**Current focus:** Phase 1 — Documentation Truth & Contract Freeze
 
 ## Current Position
 
-Phase: 1 of 6 (Public Contract Freeze & Extraction Audit)
+Phase: 1 of 6 (Documentation Truth & Contract Freeze)
 Plan: 0 of TBD in current phase
 Status: Ready to plan
-Last activity: 2026-08-09 — PROJECT.md, REQUIREMENTS.md, and ROADMAP.md created from docs ingest + codebase map
+Last activity: 2026-08-10 — codebase re-mapped on branch `gsd-remap`; REQUIREMENTS.md and ROADMAP.md rewritten with all 14 open GitHub issues triaged
+
+**Branch note:** planning now tracks `gsd-remap` = `origin/spatialcore-v2-extraction` + `origin/main`.
+The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
+described a tree that no longer matched reality. Do not plan against `origin/main` alone.
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -53,24 +57,24 @@ Progress: [░░░░░░░░░░] 0%
 
 Full log in PROJECT.md Key Decisions. Affecting current work:
 
-- DR-5 **locked, supersedes DR-15**: SpatialCore embeds HRTF profiles as BinaryData (Git LFS). Consumer-supplied raw pointers is closed. `loadFromMemory()` may survive as a secondary API.
-- DR-1 **locked**: no allocation, locks, or logging in anything reachable from `processBlock`. Four documented live breaches — owns Phase 5.
-- DR-7 **locked**: `SpatializationAlgorithm` is frozen. Any contract ambiguity (OQ-1) is a defect, not a preference.
-- User ruling: existing `src/` is **partial until audited**, despite `.planning/codebase/` reporting it implemented. Every extraction phase opens with an executed audit.
+- DR-5 **locked, but contradicted by the tree**: DR-5 says SpatialCore embeds HRTF profiles as BinaryData. The tree loads 5 real `.sofa` files from disk via `SPATIALCORE_HRTF_DIR` instead. Reconcile in Phase 3 — see OQ-6.
+- DR-1 **locked**: no allocation, locks, or logging in anything reachable from `processBlock`. Owns Phase 5.
+- DR-7 **locked**: `SpatializationAlgorithm` is frozen. Contract ambiguity is a defect, not a preference.
+- **User ruling 2026-08-10:** OpenSpatialDelay is the v1 consumer, not OpenSpatialPanner. OSD is the tree SpatialCore was extracted from and ships publicly at v1.0.0, so it is the only oracle that can prove zero regressions. Verified: OSD does not yet consume SpatialCore — the migration is unstarted.
+- **Discharged:** the 2026-08-09 ruling that `src/` is "partial until audited" has been satisfied by evidence. The suite builds and passes 144 TEST_CASEs / 1585 assertions across 16 files. Phases no longer open with a re-implementation audit.
 
 ### Pending Todos
 
-None yet.
+- Consider filing GitHub issues for two confirmed defects that no issue tracks: the `TrajectoryEngine` non-atomic position floats, and the second audio-thread allocation at `BinauralRenderer.cpp:134,158-163`.
 
 ### Blockers/Concerns
 
-Five open questions, none blocking Phase 1 planning but all requiring a user decision before their owning phase closes. Detail in PROJECT.md Open Questions.
-
-- **OQ-1** (Phase 1) — public algorithm count: 6 vs 7 vs 8. Frozen contract, surface prominently.
-- **OQ-2** (Phase 1) — `outputLimiter()`: SPEC hard clamp at 1.2589f vs shipped `tanh` soft ceiling.
-- **OQ-3** (Phase 1) — HRTF profile count: 5 vs 6. Gates what Phase 3 embeds.
-- **OQ-4** (Phase 6) — test coverage target undefined; ~5% today, CONCERNS.md recommends 50%.
-- **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` already publishes a submodule URL that does not resolve.
+- **OQ-1** — algorithm count. **CLOSED: 8**, verified from the tree.
+- **OQ-2** (Phase 1) — `outputLimiter()`: SPEC hard clamp at 1.2589f vs shipped `tanh` soft ceiling. **Still open, needs a user decision** — a real spec-vs-code disagreement, not a counting error.
+- **OQ-3** — HRTF profile count. **CLOSED: 5**, verified from the tree.
+- **OQ-4** (Phase 6) — test coverage target. **Blocked, not merely undefined**: no coverage tooling exists in the build, so there is nothing to measure against. Wire up instrumentation, read the real number, then set the target. The old "~5%" figure was never measured.
+- **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` publishes a submodule URL that does not resolve.
+- **OQ-6** (Phase 3) — embed the 5 SOFA files as BinaryData (DR-5's intent, ~+40 MB per consumer plugin) or keep runtime disk-loading and document the install contract. **Needs a user decision.**
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
 

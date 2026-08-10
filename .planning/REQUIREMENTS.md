@@ -1,13 +1,44 @@
 # Requirements: SpatialCore
 
 **Defined:** 2026-08-09
+**Rewritten:** 2026-08-10 — re-derived against the real code branch, with all 14 open GitHub issues triaged
 **Milestone:** v1 — "OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions"
 **Core Value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 
-Source intel: `.planning/intel/requirements.md` (slug IDs preserved in the Traceability table).
-Where the intel recorded no acceptance criteria, criteria below are derived from the governing
-constraints in `.planning/intel/constraints.md` and from the observable-behaviour test — never
-invented scope.
+Source intel: `.planning/intel/requirements.md`, `.planning/codebase/` (re-mapped 2026-08-10 on
+branch `gsd-remap`), and the GitHub issue trackers of both this repo and
+`Spatial-Media-Lab/OpenSpatialDelay`.
+
+---
+
+## Why this document was rewritten
+
+The 2026-08-09 version was derived from a codebase map generated against a branch that was
+missing 42 commits of work. Verified corrections now folded in:
+
+| 2026-08-09 claim | Verified 2026-08-10 |
+|---|---|
+| "~5% test coverage; binaural, HRTF, convolver, OSC, Ambisonics untested" | Suite **builds and passes: 144 TEST_CASEs, 1585 assertions**, 16 files covering Core, Algorithms, IO, OSC, Trajectory, Binaural, Engine |
+| "No `.sofa` file exists anywhere in the tree — DATA-01 unstarted" | 5 real HDF5 SOFA files, 1.2–36.6 MB, LFS-tracked, with a CI guard against pointer stubs |
+| JUCE 8 | JUCE **9.0.0** (`CMakeLists.txt:33`) |
+| 22 output formats, 13 layouts | **25** formats, **14** layouts |
+| Existing `src/` is "partial work, treat as unstarted" | Extraction is substantially complete and test-covered; remaining work is **named defects**, not re-implementation |
+| Issue refs `#50/#89/#96/#131` unresolvable | Real issues in `Spatial-Media-Lab/OpenSpatialDelay` (tracker runs to #235) |
+
+The user's ruling that "the tree is partial until proven otherwise" has now been **discharged by
+evidence**: the proof was run. Requirements below are scoped to what execution showed is missing.
+
+## Consumer ruling (2026-08-10)
+
+**OpenSpatialDelay is the v1 consumer.** It is the plugin SpatialCore was extracted from, it ships
+publicly at v1.0.0, and it is therefore the only tree that can prove zero regressions.
+OpenSpatialPanner is early-stage; its issues are triaged below but do not shape v1 phases.
+
+**Verified:** OSD does **not** yet consume SpatialCore. Both checkouts
+(`~/conductor/repos/openspatialdelay`, `…-v1`) carry only a JUCE submodule; SpatialCore appears
+solely in planning docs and one archived `Archive/v0.1/PluginProcessor_v0.1.h`. OSD's DSP still
+lives in its own `Source/` (14 files), last commit 2026-05-06. The migration is unstarted — which
+is exactly what the v1 milestone exists to deliver.
 
 ---
 
@@ -15,100 +46,314 @@ invented scope.
 
 ### Public Contract Resolution
 
-The `SpatializationAlgorithm` interface and everything consumers link against are frozen under
-DR-7 and gated by DR-2. Ambiguity in a frozen contract is a defect. These four settle it before
-any module work begins.
+Frozen under DR-7, gated by DR-2. Three of the four 2026-08-09 open questions turned out to be
+doc-counting errors, answerable from the tree without a user decision.
 
-- [ ] **API-01**: The public algorithm count is one number, and headers, SPEC, PRD, and integration guide all state it
-  - Acceptance: `SpatialCore.h` and `AllAlgorithms.h` expose exactly the decided set; no source doc states a different count; if `ConstantPowerAlgorithm` is ruled internal, it is absent from the umbrella header.
-  - Open question: **OQ-1** — 6 vs 7 vs 8. Resolve with the user; do not pick a side during planning.
+- [ ] **API-01**: The public algorithm count is one number across headers and docs
+  - **Resolved by evidence: 8.** `grep -l "public SpatializationAlgorithm"` returns 8 concrete
+    implementations. OQ-1 ("6 vs 7 vs 8") is closed.
+  - Acceptance: `SpatialCore.h` and `AllAlgorithms.h` expose exactly 8; no source doc states a
+    different count.
 
-- [ ] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function, and spec and implementation agree
-  - Acceptance: Either `Utilities.h` restores the SPEC's hard clamp at 1.2589f, or the SPEC is amended to the tanh soft ceiling. A test pins the chosen curve at, below, and above the ceiling, and for non-finite input (returns 0.0f).
-  - Open question: **OQ-2**.
+- [ ] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function
+  - **Still open — OQ-2.** This is a genuine spec-vs-implementation disagreement, not a counting
+    error: `Utilities.h` implements a tanh soft ceiling, the SPEC specifies a hard clamp at
+    1.2589f. Only a human can pick.
+  - Acceptance: one curve chosen and both artifacts agree. A test pins the chosen curve at, below,
+    and above the ceiling, and for non-finite input (returns 0.0f).
 
-- [ ] **API-03**: The number of selectable HRTF profiles is one number across docs, headers, and embedded data
-  - Acceptance: CLAUDE.md, `docs/development-roadmap.md`, and the header exposing `profileIndex` state the same count; the count is the number of profiles DATA-01 embeds.
-  - Open question: **OQ-3** — 5 vs 6.
+- [ ] **API-03**: The HRTF profile count is one number across docs, headers, and shipped data
+  - **Resolved by evidence: 5.** `HRTF/` holds exactly 5 `.sofa` files; the identical 5 exist in
+    OSD's `HRTF/`, confirming provenance. OQ-3 ("5 vs 6") is closed.
+  - Acceptance: CLAUDE.md, `docs/development-roadmap.md`, and the header exposing `profileIndex`
+    all state 5.
 
-- [ ] **AUDIT-01**: Every module carries a complete / partial / stub verdict backed by an executed probe
-  - Acceptance: All 7 modules plus `Core/` have a recorded verdict with named gaps. Each verdict is backed by a probe that was compiled and run — reading the source and declaring it done does not satisfy this. The gap list is the scope input for Phases 2 through 4.
-  - Rationale: the user has ruled the tree partial despite `.planning/codebase/` reporting it implemented. This requirement resolves that disagreement with evidence.
+- [ ] **API-04**: Output-format and speaker-layout counts match the tree
+  - **New.** `OutputFormat` has **25** values; `SpeakerLayout.h`'s `LayoutID` has **14** named
+    layouts plus a `NUM_LAYOUT_DEFS` sentinel. Every doc says 22 and 13.
+  - Acceptance: CLAUDE.md, the SPEC, and the integration guide state 25 and 14, or the extra
+    entries are documented as internal.
 
-### Extraction Completion
+- [ ] **API-05**: CLAUDE.md describes the library that actually exists
+  - **New.** Four verified inaccuracies in the project's own context file: JUCE 8 (is 9.0.0); SOFA
+    files "embedded as BinaryData" (they load from disk); the component table omits the `Engine/`
+    module entirely; format/layout counts wrong.
+  - Acceptance: CLAUDE.md's Architecture table lists `Engine/`, and every factual claim in it is
+    reproducible from the tree.
+  - Rationale: CLAUDE.md is loaded into every session in this repo. A wrong CLAUDE.md
+    mis-steers every future planning pass — this is the root cause of the 2026-08-09 rewrite.
 
-Five requirements carried forward from the PRD. **Still open by user ruling** — the codebase map
-reports them implemented; existing `src/` code is treated as partial work to be completed and
-verified. Each phase starts with its slice of the AUDIT-01 gap list.
+### Extraction Verification
 
-- [ ] **EXTR-01**: Every public spatialization algorithm computes correct gains — no zeroed or stubbed `computeGains()`
-  - Acceptance: For each algorithm in the API-01 set, `computeGains()` returns non-zero gains obeying that algorithm's panning law across the supported layouts. The 3D triplet fallback path (`jassertfalse` → nearest-speaker heuristic in VBAP, VBIP, MDAP) is either eliminated or fails loudly.
+**Reframed.** The 2026-08-09 requirements assumed these were unwritten. The test suite proves
+otherwise. What remains is verifying the named gaps, not building the modules.
 
-- [ ] **EXTR-02**: HRTF/SOFA loading and convolution render real binaural audio
-  - Acceptance: `HRTFDatabase` loads a SOFA profile and returns interpolated HRIRs with ITD; `PartitionedConvolver` performs FFT overlap-save with a click-free dual-slot transition; `BinauralRenderer` drives 12 per-source convolver pairs. Verified by measured output, not by inspection.
+- [ ] **EXTR-01**: Every public algorithm computes correct gains
+  - Acceptance: the existing algorithm tests continue to pass, and the 3D triplet fallback
+    (`jassertfalse` → nearest-speaker heuristic in VBAP/VBIP/MDAP) is either eliminated or fails
+    loudly rather than silently degrading.
 
-- [ ] **EXTR-03**: Speaker layouts, output format registry, and Ambisonics codec return real data
-  - Acceptance: All 22 `OutputFormat` entries resolve to correct `OutputFormatInfo`; all 13 ITU-R factories return populated layouts with correct channel indices and LFE placement; `AmbisonicsCodec` encodes/decodes to order 6.
+- [ ] **EXTR-02**: Binaural rendering produces measured-correct output
+  - Acceptance: already covered by binaural tests running against all 5 real SOFA profiles plus
+    the Woodworth fallback. Remaining gap: `PartitionedConvolver.cpp` and `BinauralRenderer.cpp`
+    have **no dedicated test files** — they are only exercised indirectly.
 
-- [ ] **EXTR-04**: ADM-OSC receive/send and the trajectory engine drive real object motion
-  - Acceptance: `ADMOSCReceiver` parses `/adm/obj/N/{azim,elev,dist,aed,xyz}` with ITU-R BS.2127-0 Cartesian-to-polar conversion; `ADMOSCSender` broadcasts `/adm/obj/N/aed` at 30 Hz with position-change gating; `TrajectoryEngine` animates all 13 shapes forward and reverse.
+- [ ] **EXTR-03**: Layouts, format registry, and Ambisonics codec return real data
+  - Acceptance: all 25 `OutputFormat` entries resolve; all 14 layouts return populated channel
+    indices and LFE placement; Ambisonics encodes/decodes to order 6.
 
-- [ ] **EXTR-05**: UI components render and interact for real — no stub paint methods
-  - Acceptance: `SpatialMapComponent` renders objects, distance rings, and elevation-as-opacity, and supports drag; `SMLLookAndFeel` applies the SML palette; `ReverseSlider`, `IndicatorToggle`, `StyledButton` render and respond. No component holds a concrete processor pointer (DR-16).
+- [ ] **EXTR-04**: ADM-OSC and the trajectory engine drive real object motion
+  - Acceptance: covered by existing OSC and Trajectory tests. Bounds checking at
+    `ADMOSCReceiver.cpp:43` was audited and confirmed correct — the 2026-08-09 RTSF-04 concern
+    is **closed as a non-finding**.
 
-### Embedded Data
+- [ ] **EXTR-05**: UI components render and interact for real
+  - Acceptance: `SpatialMapComponent` renders objects, rings, and elevation-as-opacity and
+    supports drag; no component holds a concrete processor pointer (DR-16).
+  - Note: all 10 `src/UI/*.cpp` files are untested, by design — UI lives in the separate
+    `SpatialCoreUI` target which `SpatialCoreTests` does not link.
 
-- [ ] **DATA-01**: HRTF SOFA profiles are embedded as BinaryData and tracked in Git LFS
-  - Acceptance: A fresh clone builds and renders binaural audio with no consumer-supplied HRTF file. The profile count matches API-03. The build fails with a clear error when a SOFA file is a Git LFS pointer rather than real data (pointer files are ~100 bytes; real files exceed 100 KB).
-  - Locked by DR-5. No `.sofa` file and no BinaryData target exists in the tree today — this is unstarted work.
+### Packaging and Consumability
+
+- [ ] **DATA-01**: A consumer gets working HRTF data without hand-copying files
+  - **Reframed — this is the real gap.** The 5 SOFA files exist and are real, but they are **not**
+    embedded. `HRTFDatabase::loadFromFile()` reads them from disk via a `SPATIALCORE_HRTF_DIR`
+    path. A plugin that submodules SpatialCore therefore does not get HRTF data by linking; it
+    must ship the directory and resolve the path at runtime.
+  - Acceptance: either the files become BinaryData (DR-5's stated intent, +40 MB of binary), or
+    the disk-loading contract is documented as the shipping path and the integration guide tells
+    consumers exactly how to install and locate the directory. **This is a decision, not just work
+    — see OQ-6.**
+  - The build already fails loudly on LFS pointer stubs via a CI guard. That half is done.
 
 - [ ] **DATA-02**: `SMLLookAndFeel` has the font BinaryData it needs
-  - Acceptance: SML typography renders correctly in a consumer plugin with no font installed on the host system.
+  - **Verified done.** `fonts/*.ttf` are compiled in as JUCE BinaryData. Retained only to confirm
+    rendering on a host with no SML font installed.
+
+- [ ] **INTG-01**: A consumer plugin can submodule, link, and build against SpatialCore
+  - **Corrected.** The 2026-08-09 acceptance named only
+    `target_link_libraries(... PRIVATE SpatialCore)`. There are **two** targets: `SpatialCore`
+    (DSP-only) and `SpatialCoreUI` (GUI). OSD needs both, so the old criterion would have passed a
+    harness that OSD could not actually use.
+  - Acceptance: a minimal harness adds SpatialCore as a submodule, links **both** targets,
+    includes only `<SpatialCore/SpatialCore.h>`, resolves HRTF data per DATA-01, and builds clean
+    in Release on macOS. From a clean clone, `cmake -B build -DCMAKE_BUILD_TYPE=Release`,
+    `cmake --build build --config Release`, and the test binary all succeed.
+
+- [ ] **INTG-02**: `engineComputesGains` does not silently no-op for a migrating consumer
+  - **New.** SC-13 (issue #14, closed) moved panning-gain computation into `RenderEngine`, but
+    behind an **opt-in** `engineComputesGains` flag. A consumer that doesn't set it still gets the
+    old pass-through path where `RenderEngine` only reads `objChannelGains` — the exact bug #14
+    was filed for.
+  - Acceptance: the flag defaults safely or the engine fails loudly when gains are neither
+    computed nor supplied; the integration guide states which mode a consumer must choose.
 
 ### Realtime Safety
 
-Four documented breaches of locked rule DR-1, plus the whole-path sweep. The four fixes are
-tracked individually so none of them disappears inside the sweep.
+Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one widened, one closed.
 
-- [ ] **RTSF-01**: `BinauralRenderer::renderSourceBuffers()` cannot allocate on the audio thread in a release build
-  - Acceptance: The `jassertfalse`-then-resize path at `src/Binaural/BinauralRenderer.cpp:205-210` is gone. A mis-sized or missing `prepare()` fails loudly or is made impossible by construction-time maximum allocation. Verified in a Release build, where `jassertfalse` is a no-op.
+- [ ] **RTSF-01**: `BinauralRenderer` cannot allocate on the audio thread in a Release build
+  - **Widened — there are two sites, not one.**
+    - `src/Binaural/BinauralRenderer.cpp:196-209` (`renderSourceBuffers`)
+    - `src/Binaural/BinauralRenderer.cpp:134,158-163` (`updateSourceHRIR`), reached from
+      `src/Engine/RenderEngine.cpp:178` in the per-block HRIR update loop
+  - Both use `jassertfalse` — a **no-op in Release** — guarding a `resize()` that then executes
+    unconditionally in shipping builds.
+  - Acceptance: neither site can allocate in Release. Prefer one shared guarded helper over two
+    copies of the fallback. Verified in a Release build.
 
-- [ ] **RTSF-02**: TrajectoryEngine final positions are safe to read from the audio thread while the timer thread writes
-  - Acceptance: `finalAz_`, `finalEl_`, `finalDist_` are no longer plain unsynchronised floats. A concurrent timer-writes / audio-reads test runs clean under thread sanitizer.
+- [ ] **RTSF-02**: TrajectoryEngine final positions are safe to read from the audio thread
+  - **Confirmed real and untracked by any GitHub issue.** `TrajectoryEngine.h:30` documents a
+    60 Hz-timer-writes / audio-thread-reads contract, but only `active_` is atomic
+    (`TrajectoryEngine.h:106`). `finalAz_`, `finalEl_`, `finalDist_` (lines 103-106) are plain
+    `float[]`, written at `src/Trajectory/TrajectoryEngine.cpp:76-90,143-145`. A data race under
+    the C++ memory model.
+  - Acceptance: atomic floats or an atomically-swapped struct. Clean under thread sanitizer.
 
 - [ ] **RTSF-03**: `HRTFDatabase` access to the libmysofa handle is thread-safe
-  - Acceptance: `setProfile()` called from a UI timer while audio is processing does not race on `easyHandle` or `loaded`. Achieved by a lock outside the audio path, atomic double-buffering, or a documented-and-enforced threading contract — never by an unguarded shared handle.
+  - Acceptance: `setProfile()` from a UI timer during audio processing does not race on
+    `easyHandle` or `loaded`.
 
-- [ ] **RTSF-04**: `ADMOSCReceiver` rejects out-of-range object indices
-  - Acceptance: An OSC message addressing `/adm/obj/999/...` is ignored rather than writing out of bounds. Bounds are checked against `MAX_SOURCES` (12) before any array access.
+- [ ] ~~**RTSF-04**: `ADMOSCReceiver` rejects out-of-range object indices~~
+  - **CLOSED as a non-finding.** `src/OSC/ADMOSCReceiver.cpp:43` already validates
+    `if (objNum < 1 || objNum > MAX_SOURCES) return;` on every `/adm/obj/` and `/osd/obj/` path.
+    No out-of-bounds write exists. The 2026-08-09 requirement was written from a stale map.
 
 - [ ] **RTSF-05**: The whole audio path is verified lock-free and realtime-safe
-  - Acceptance: A sweep over every function reachable from `processBlock` finds no allocation, no locks, and no logging, evidenced by an actual tool run (thread sanitizer plus an allocation detector) rather than a code read. Includes removing the `DBG()` calls compiled into release builds at `HRTFDatabase.cpp:36,50` and `BinauralRenderer.cpp:127`.
+  - Acceptance: thread sanitizer plus an allocation detector over every function reachable from
+    `processBlock`, reporting zero allocations, locks, and races.
+  - Scope correction: the `DBG()` calls at `BinauralRenderer.cpp:127` and
+    `HRTFDatabase.cpp:35,58,72` were audited and are **configuration-thread only**, and `DBG`
+    compiles out in Release regardless. Not a violation — removed from scope.
+  - `SharedFFTCache` was audited and **is** correctly spinlock-guarded
+    (`PartitionedConvolver.cpp:16`) and called only from `prepare()`-time paths. See VERIFY-02 for
+    the residual multi-instance question.
 
-### Verification and Consumability
+### Inherited and Filed Defects
 
-- [ ] **TEST-01**: OpenSpatialDelay tests are ported and coverage reaches the agreed target
-  - Acceptance: Coverage meets the number set at phase start. The currently untested modules — binaural rendering, HRTF database, partitioned convolver, OSC, Ambisonics, output format registry — are exercised. Known issues #50, #89, #96, #131 each get a regression test.
-  - Open question: **OQ-4** — target undefined in all source docs; CONCERNS.md recommends 50% (~2,000 lines). Set the number before planning this phase.
+New category. These are real bugs in code SpatialCore now owns.
 
-- [ ] **INTG-01**: A consumer plugin can submodule, link, and build against SpatialCore using only the umbrella header
-  - Acceptance: A minimal harness plugin adds SpatialCore as a git submodule, calls `add_subdirectory(SpatialCore)` and `target_link_libraries(... PRIVATE SpatialCore)`, includes only `<SpatialCore/SpatialCore.h>`, and builds clean in Release on macOS. From a clean clone: `cmake -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build --config Release`, and `./build/SpatialCoreTests` all succeed.
-  - Derived from the SPEC's build verification gate (nfr) and from the v1 milestone metric. Verified with a throwaway harness, not by modifying OpenSpatialDelay.
+- [ ] **BUG-01**: DirectBinaural produces no elevation cue and cannot distinguish front from rear
+  - `src/Algorithms/DirectBinauralAlgorithm.cpp:26` — `lateral = sinAz * cosEl` collapses to 0 at
+    elevation ±90° *and* at azimuth 0°/180°. Both the Woodworth ITD (line 30) and the ILD
+    (line 34) derive from this single value, so neither carries elevation.
+  - Tracked by **SpatialCore#15**. The issue states this code was extracted verbatim, so
+    **OpenSpatialDelay carries the identical defect** — fixing it here fixes both.
+  - Acceptance: a source at elevation +90° is measurably distinguishable from one at 0°, and
+    azimuth 0° from 180°.
+
+- [ ] **BUG-02**: Audio artifacts at buffer sizes below 256 samples
+  - `Spatial-Media-Lab/OpenSpatialDelay#234` — **still open** — is cited in live convolver code at
+    `src/Binaural/PartitionedConvolver.cpp:120-124`. SpatialCore inherited an unfixed OSD defect
+    during extraction.
+  - Acceptance: a regression test renders at 32/64/128 sample blocks without artifacts.
+  - Directly blocks the v1 "zero regressions" gate: OSD ships to users who run small buffers.
+
+- [ ] **BUG-03**: Cross-repo issue references in code comments are qualified
+  - `SharedFFTCache.h:17`, `PartitionedConvolver.cpp:7` (`#131`), `:46,89` (`#50`),
+    `:120-124` (`#234`) cite OSD issues in bare `#N` form, which resolves to the wrong tracker.
+  - Acceptance: each rewritten as `Spatial-Media-Lab/OpenSpatialDelay#N`. Comment-only, low risk.
+
+### Verification Tasks
+
+Open issues that close with evidence rather than a code change.
+
+- [ ] **VERIFY-01**: Ambisonics channel-order and normalisation convention is stated
+  - **SpatialCore#11.** Inspect `AmbisonicsCodec` encode/decode against ACN ordering and SN3D
+    normalisation; record the answer in code and docs, or correct it if mixed.
+
+- [ ] **VERIFY-02**: `SharedFFTCache` is safe across concurrent plugin instances
+  - **SpatialCore#12.** The spinlock is present and correct; what is unverified is behaviour with
+    several instances in one host process.
+  - **This is the highest-value item in v1.** It is the same failure mode as two closed OSD bugs:
+    `OpenSpatialDelay#96` ("Two plugin instances on same track causes buzzing and Reaper crash")
+    and `#131` ("CoreGraphics crash with multiple plugin instances loaded simultaneously"). Those
+    were fixed in OSD; the fix now lives in SpatialCore. If it regressed during extraction, the
+    migration reintroduces two crashes into a shipping plugin.
+  - Acceptance: a concurrent-instance stress test, plus regression tests reproducing OSD#96 and
+    OSD#131 against the old behaviour.
+  - Note: the cache is create-once-never-destroy by design — a deliberate permanent allocation,
+    not a leak bug. Document it as such.
+
+- [ ] **CI-01**: SpatialCore is CI-verified against JUCE 9.0.0
+  - **SpatialCore#9.** SpatialCore's own CI builds on Linux only. The tree is pinned to JUCE 9.0.0
+    while CLAUDE.md claims 8 — the mismatch must be settled in CI, not prose.
+  - Acceptance: a green macOS CI run building against JUCE 9.0.0 and running the Catch2 suite.
+  - Scope note: this supersedes the 2026-08-09 "Windows/Linux CI is out of scope" line only for
+    macOS + JUCE 9. Cross-platform matrices remain out of scope.
+
+### Test Coverage
+
+- [ ] **TEST-01**: Coverage tooling exists and the untested modules are covered
+  - **Reframed.** No coverage tooling is configured anywhere in the build, so no percentage can be
+    measured — the old "~5%" figure was invented, and OQ-4 ("set a coverage target") cannot be
+    answered until measurement exists.
+  - Acceptance: coverage instrumentation is wired into CMake and reports a real number. The
+    modules confirmed to have **no dedicated tests** get them:
+    `src/Binaural/PartitionedConvolver.cpp` and `src/Binaural/BinauralRenderer.cpp`.
+  - Regression tests required for: `OpenSpatialDelay#50`, `#89`, `#96`, `#131` (all closed there,
+    all in code SpatialCore now owns) and `#234` (open — see BUG-02).
+  - `src/UI/*.cpp` is excluded by design: UI is in the `SpatialCoreUI` target, which
+    `SpatialCoreTests` does not link. Covering it needs a separate UI test target — post-v1.
+
+---
+
+## Open Questions
+
+| ID | Question | Status |
+|----|----------|--------|
+| OQ-1 | Algorithm count 6 / 7 / 8 | **Closed — 8**, verified from tree |
+| OQ-2 | `outputLimiter` hard clamp vs tanh | **Open** — genuine design choice, needs user |
+| OQ-3 | HRTF profile count 5 vs 6 | **Closed — 5**, verified from tree |
+| OQ-4 | Test coverage target | **Blocked** — no coverage tooling exists to measure against |
+| OQ-6 | Embed SOFA as BinaryData (+40 MB) vs document disk-loading | **Open** — needs user; DR-5 says embed, the tree does not |
+
+---
+
+## Issue Triage — all 14 open SpatialCore issues
+
+Every open issue is accounted for. None is silently dropped.
+
+### In v1 (5)
+
+| Issue | Requirement | Why it's v1 |
+|-------|-------------|-------------|
+| #12 SharedFFTCache concurrency | VERIFY-02 | Same failure mode as OSD#96 and OSD#131 — two crashes in a shipping plugin |
+| #15 Binaural elevation collapse | BUG-01 | Extracted verbatim; OSD carries the identical defect |
+| #11 Ambisonics ACN/SN3D | VERIFY-01 | Cheap verification; OSD uses Ambisonics output |
+| #9 CI vs JUCE 9.0.0 | CI-01 | OSD must build against the same JUCE the tree is pinned to |
+| #14 (closed) RenderEngine gains | INTG-02 | Closed, but the opt-in flag leaves the trap armed for migration |
+
+### Deferred to v2 (9)
+
+Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
+`RenderSources::distGainPerSample[]` itself, so migration does not require them in SpatialCore.
+
+| Issue | Reason for deferral |
+|-------|---------------------|
+| #3 MAX_SOURCES 12→32 | OSD uses 12. Prerequisite: `DopplerVelocity.h:17`'s independent `kMaxObjects = 12` must move in lockstep or arrays silently desync |
+| #4 Distance attenuation curves | Consumer-side today; OSD keeps its own through migration |
+| #5 Air absorption | Same |
+| #6 Global rotate-all transform | OSP feature |
+| #7 Per-object RMS visualisation | OSP feature |
+| #10 Spread API | Needs a `computeGains()` signature change — a DR-2 major-version break. Not a v1 add |
+| #13 PresetBrowser API docs | OSP Phase 8 |
+| #16 Metres as a real unit | New design work; changes parameter ranges and invalidates saved automation |
+| #17 Doppler pitch-shift path | Real DSP work; OSD keeps its own pitch-shift engine consumer-side |
+| #2 OSP preset system | OSP-level feature |
+
+---
+
+## Traceability
+
+| Requirement | Source | Phase | Status |
+|-------------|--------|-------|--------|
+| API-01 | OQ-1, resolved by re-map | 1 | Evidence gathered |
+| API-02 | OQ-2 | 1 | Needs user |
+| API-03 | OQ-3, resolved by re-map | 1 | Evidence gathered |
+| API-04 | Re-map (25 formats / 14 layouts) | 1 | Pending |
+| API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Pending |
+| EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
+| EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
+| EXTR-02 | REQ-extract-binaural-rendering | 3 | Largely verified by tests |
+| DATA-01 | REQ-embed-hrtf-binarydata | 3 | Reframed; needs OQ-6 |
+| EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Largely verified by tests |
+| EXTR-05 | REQ-extract-ui-rendering | 4 | Pending |
+| DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Verified done |
+| RTSF-01 | CONCERNS.md — 2 sites | 5 | Pending |
+| RTSF-02 | CONCERNS.md — unfiled | 5 | Pending |
+| RTSF-03 | CONCERNS.md | 5 | Pending |
+| ~~RTSF-04~~ | — | — | **Closed, non-finding** |
+| RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Pending |
+| BUG-01 | SpatialCore#15 | 3 | Pending |
+| BUG-02 | OpenSpatialDelay#234 | 3 | Pending |
+| BUG-03 | CONCERNS.md | 1 | Pending |
+| VERIFY-01 | SpatialCore#11 | 2 | Pending |
+| VERIFY-02 | SpatialCore#12 | 5 | Pending |
+| CI-01 | SpatialCore#9 | 6 | Pending |
+| INTG-01 | Build gate + v1 metric | 6 | Pending |
+| INTG-02 | SpatialCore#14 residual | 6 | Pending |
+| TEST-01 | REQ-test-port-and-coverage | 6 | Reframed; OQ-4 blocked |
+
+**Coverage:** 25 active v1 requirements, all mapped. 1 closed as non-finding (RTSF-04).
+14 open issues triaged: 4 into v1 requirements, 9 deferred to v2, 1 (#14) closed with residual
+work captured as INTG-02. Unmapped: 0.
+
+---
 
 ## Future Milestones
 
-Not in the v1 roadmap. Recorded so nothing is lost.
-
 ### v2 — A second plugin is built on SpatialCore from scratch
+
+OpenSpatialPanner is the presumptive v2 consumer. The 9 deferred issues above are its
+gate list, alongside:
 
 | ID | Requirement |
 |----|-------------|
+| REQ-plugin-openspatialpanner | OpenSpatialPanner — object-based panner with energy distribution |
 | REQ-plugin-openspatialreverb | OpenSpatialReverb — algorithmic reverb with spatial reflections |
 | REQ-plugin-openspatialgranular | OpenSpatialGranular — granular synthesis with 3D grain positioning |
-| REQ-plugin-openspatialpanner | OpenSpatialPanner — object-based panner with energy distribution |
 | REQ-plugin-openspatialchorus | OpenSpatialChorus — chorus/flanger with spatially distributed voices |
-
-One of these becomes the v2 milestone. All four target 2027.
 
 ### v3 — Public release under the org with docs and a tagged v1.0
 
@@ -117,48 +362,20 @@ One of these becomes the v2 milestone. All four target 2027.
 | REQ-create-org-repo | Create `github.com/Spatial-Media-Lab/SpatialCore` with squashed history |
 | REQ-set-dual-license | Land the GPL-3.0 + commercial dual license |
 | REQ-tag-v1-0-0 | Tag v1.0.0 (gated by DR-4: full test suite passes first) |
-| REQ-osd-repoint-submodule-to-org | Point OpenSpatialDelay's submodule at the public org repo (external repo) |
+| REQ-osd-repoint-submodule-to-org | Point OSD's submodule at the public org repo (external) |
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| OpenSpatialDelay repository work (7 × REQ-osd-*) | Lives in another repo. Tracked in PROJECT.md as external dependencies of v1; deliberately given no SpatialCore phase. |
-| Windows / Linux CI verification | Cross-platform is an intent and the flags exist, but v1 verifies macOS only. Build matrices before a second consumer exists are premature. |
-| Custom / vendor-specific speaker layouts | Only the 13 ITU-R layouts. Generalizing the layout API is a post-v1 additive change. |
-| Replacing the JUCE FFT dependency | Medium risk in CONCERNS.md; swapping FFT libraries is disproportionate to v1. |
-| Integrating `convertToMinPhase()` into the HRTF pipeline | Implemented but unused. Quality enhancement, not a v1 shipping gate. |
-| Configurable convolver crossfade duration | Hardcoded `kCrossfadeBlocks = 4` works. Post-v1 tuning. |
-
-## Traceability
-
-| Requirement | Intel source ID | Phase | Status |
-|-------------|-----------------|-------|--------|
-| API-01 | (from INGEST-CONFLICTS OQ-1) | Phase 1 | Pending |
-| API-02 | (from INGEST-CONFLICTS OQ-2) | Phase 1 | Pending |
-| API-03 | (from INGEST-CONFLICTS OQ-3) | Phase 1 | Pending |
-| AUDIT-01 | (from user ruling on Conflict 1) | Phase 1 | Pending |
-| EXTR-01 | REQ-extract-algorithms | Phase 2 | Pending |
-| EXTR-03 | REQ-extract-speaker-layouts-and-format-registry | Phase 2 | Pending |
-| EXTR-02 | REQ-extract-binaural-rendering | Phase 3 | Pending |
-| DATA-01 | REQ-embed-hrtf-binarydata | Phase 3 | Pending |
-| EXTR-04 | REQ-extract-adm-osc-and-trajectory | Phase 4 | Pending |
-| EXTR-05 | REQ-extract-ui-rendering | Phase 4 | Pending |
-| DATA-02 | REQ-smllookandfeel-font-binarydata | Phase 4 | Pending |
-| RTSF-01 | CONCERNS.md violation 1 | Phase 5 | Pending |
-| RTSF-02 | CONCERNS.md violation 2 | Phase 5 | Pending |
-| RTSF-03 | CONCERNS.md violation 3 | Phase 5 | Pending |
-| RTSF-04 | CONCERNS.md violation 4 | Phase 5 | Pending |
-| RTSF-05 | REQ-verify-lockfree-realtime-safe | Phase 5 | Pending |
-| TEST-01 | REQ-test-port-and-coverage | Phase 6 | Pending |
-| INTG-01 | (derived: build verification gate + v1 metric) | Phase 6 | Pending |
-
-**Coverage:**
-- v1 requirements: 18 total
-- Mapped to phases: 18
-- Unmapped: 0 ✓
-- Duplicated across phases: 0 ✓
+| OpenSpatialDelay repository work (7 × REQ-osd-*) | Lives in another repo. External dependency of v1 |
+| Windows / Linux CI matrices | v1 verifies macOS only. CI-01 covers macOS + JUCE 9 |
+| Custom / vendor-specific speaker layouts | Only the 14 built-in layouts |
+| Replacing the JUCE FFT dependency | Disproportionate to v1 |
+| `convertToMinPhase()` integration | Implemented but unused. Quality enhancement |
+| Configurable convolver crossfade duration | Hardcoded `kCrossfadeBlocks = 4` works |
+| UI test target for `src/UI/*.cpp` | Needs a separate target linking `SpatialCoreUI`. Post-v1 |
 
 ---
 *Requirements defined: 2026-08-09*
-*Last updated: 2026-08-09 after initial definition from docs ingest + codebase map*
+*Rewritten 2026-08-10 against branch `gsd-remap` after the original map was found to describe the wrong branch*
