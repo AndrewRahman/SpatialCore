@@ -1,12 +1,19 @@
 ---
-gsd_state_version: '1.0'  # placeholder; syncStateFrontmatter overwrites on first state.* call
+gsd_state_version: 1.0
+milestone: v1.0.0
+milestone_name: milestone
+current_phase: 1
+current_phase_name: Documentation Truth & Contract Freeze
 status: planning
+stopped_at: Phase 1 context gathered
+last_updated: "2026-08-11T03:18:55.977Z"
+last_activity: 2026-08-10
+last_activity_desc: codebase re-mapped on branch `gsd-remap`; REQUIREMENTS.md and ROADMAP.md rewritten with all 14 open GitHub issues triaged
 progress:
-  total_phases: 6
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State
@@ -35,6 +42,7 @@ Progress: [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: —
 - Total execution time: —
@@ -46,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: none yet
 - Trend: —
 
@@ -86,6 +95,6 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-08-09 23:52
-Stopped at: Plan rewritten on branch `gsd-remap`; 14 GitHub issues triaged; OQ-1/2/3/6 all closed. Only OQ-4 (coverage target) remains, and it is blocked on wiring up coverage tooling.
-Resume file: None
+Last session: 2026-08-11T03:18:55.972Z
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-documentation-truth-contract-freeze/01-CONTEXT.md
