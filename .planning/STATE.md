@@ -4,15 +4,15 @@ milestone: v1.0.0
 milestone_name: milestone
 current_phase: 1
 current_phase_name: Documentation Truth & Contract Freeze
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-08-11T03:18:55.977Z"
-last_activity: 2026-08-10
-last_activity_desc: codebase re-mapped on branch `gsd-remap`; REQUIREMENTS.md and ROADMAP.md rewritten with all 14 open GitHub issues triaged
+status: planned
+stopped_at: Phase 1 planned — 5 plans in 3 waves, checker passed with 0 blockers
+last_updated: "2026-08-11T08:23:00.000Z"
+last_activity: 2026-08-11
+last_activity_desc: Phase 1 researched and planned; canonical counts corrected to 23 formats / 15 layouts after the locked 25/14 pair was traced to a mapper miscount
 progress:
-  total_phases: 1
+  total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 5
   completed_plans: 0
 ---
 
@@ -29,9 +29,20 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ## Current Position
 
 Phase: 1 of 6 (Documentation Truth & Contract Freeze)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-08-10 — codebase re-mapped on branch `gsd-remap`; REQUIREMENTS.md and ROADMAP.md rewritten with all 14 open GitHub issues triaged
+Plan: 0 of 5 in current phase
+Status: Planned — ready to execute (`/gsd-execute-phase 1`)
+Last activity: 2026-08-11 — Phase 1 researched, pattern-mapped, and planned; 5 plans in 3 waves; plan-checker returned 0 blockers / 3 warnings, all three resolved
+
+**Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
+profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
+pair of 25 formats / 14 layouts was wrong: it originated as a mapper miscount in
+`.planning/codebase/ARCHITECTURE.md:107` and `STRUCTURE.md:119-120` during the 2026-08-10 remap,
+which commit `f0b14f4` copied into REQUIREMENTS.md and ROADMAP.md under a "verified from the tree"
+label it never earned. The same remap commit's `TESTING.md:56` already said "23-format table". The
+tree has read 23/15 since `149d50d` (2026-07-05), and the code ships
+`static constexpr int NUM_OUTPUT_FORMATS = 23;` at `include/SpatialCore/IO/OutputFormatRegistry.h:9`.
+Corrected across CONTEXT/REQUIREMENTS/ROADMAP/codebase-map in `cf265e1`. Treat any `25` or `14` in a
+count context as a defect.
 
 **Branch note:** planning now tracks `gsd-remap` = `origin/spatialcore-v2-extraction` + `origin/main`.
 The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
@@ -95,6 +106,22 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-08-11T03:18:55.972Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-documentation-truth-contract-freeze/01-CONTEXT.md
+Last session: 2026-08-11T08:23:00.000Z
+Stopped at: Phase 1 planned — 5 plans in 3 waves, checker passed (0 blockers)
+Resume file: .planning/phases/01-documentation-truth-contract-freeze/01-01-PLAN.md
+Next command: `/gsd-execute-phase 1`
+
+**Scope grew during Phase 1 planning — three findings worth carrying forward:**
+1. **BUG-03 is ~10× its filed size.** REQUIREMENTS.md named 4 sites; RESEARCH.md corrected that to
+   19; the planner's repo-wide sweep found **39 occurrences across 38 lines in 17 files, spanning 15
+   distinct issue numbers**, including `tests/` which earlier sweeps never scanned. Material: **`#2`
+   resolves in BOTH trackers to different issues** — `Spatial-Media-Lab/OpenSpatialDelay#2` is "User
+   Presets folder missing after build", `AndrewRahman/SpatialCore#2` is "[OpenSpatialPanner] Preset
+   system" (OPEN). SpatialCore's tracker runs to #19, so every low-numbered bare citation is already
+   ambiguous and that one already points at the wrong issue. BUG-03 is not cosmetic.
+2. **`docs/integration-guide.md:164` says "7 spatialization algorithms"** — a stale count that
+   appeared in no prior fix table. Folded into plan 01-03.
+3. **Two items are already partly done:** `docs/development-roadmap.md:3` already carries a
+   supersession note, and `CLAUDE.md`'s `Engine/` row (`:20`) plus its HRTF-loading description
+   (`:74`) were already fixed by `2e3b090` / `87cb7a3`. Plans verify these rather than redo them,
+   and plan 01-05 corrects the requirement text that still lists them as outstanding.
