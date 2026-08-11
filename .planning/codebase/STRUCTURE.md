@@ -116,8 +116,8 @@ Note: no top-level `include/SpatialCore/Engine/` or `Engine/` mention exists in 
 - Tests: `tests/Algorithms/` (existing pattern uses a shared `SpatializationAlgorithmTests.cpp` covering multiple algorithms rather than one file per algorithm — check that file before adding a new one).
 
 **New output format / speaker layout:**
-- `include/SpatialCore/IO/OutputFormat.h`: add to the `OutputFormat` enum (currently 25 values) and `OutputFormatInfo` registry entry.
-- `include/SpatialCore/IO/SpeakerLayout.h` / `src/IO/SpeakerLayout.cpp`: add to `LayoutID` enum (currently 14 named layouts + `NUM_LAYOUT_DEFS` sentinel) and the layout-definition table.
+- `include/SpatialCore/IO/OutputFormat.h`: add to the `OutputFormat` enum (currently 23 values) and `OutputFormatInfo` registry entry.
+- `include/SpatialCore/IO/SpeakerLayout.h` / `src/IO/SpeakerLayout.cpp`: add to `LayoutID` enum (currently 15 named layouts + `NUM_LAYOUT_DEFS` sentinel) and the layout-definition table.
 - Tests: `tests/IO/SpeakerLayoutTests.cpp`, `tests/IO/AmbisonicsCodecTests.cpp` if Ambisonics-adjacent.
 
 **Changes to the RenderEngine facade contract:**

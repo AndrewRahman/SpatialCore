@@ -38,7 +38,7 @@ own context file stops describing a library that doesn't exist.
 **Depends on**: Nothing (first phase)
 **Requirements**: API-01, API-02, API-03, API-04, API-05, BUG-03
 **Success Criteria** (what must be TRUE):
-  1. Headers and docs state 8 algorithms, 5 HRTF profiles, 25 output formats, and 14 speaker layouts — the counts verified from the tree on 2026-08-10.
+  1. Headers and docs state 8 algorithms, 5 HRTF profiles, 23 output formats, and 15 speaker layouts — the counts read directly from `OutputFormat.h:9-28` and `SpeakerLayout.h:42-45` on 2026-08-11.
   2. The SPEC describes the shipped tanh soft ceiling instead of a hard clamp at 1.2589f. The implementation is unchanged. A test pins the curve at, below, and above the ceiling, and for non-finite input.
   3. CLAUDE.md's architecture table includes the `Engine/` module, states JUCE 9.0.0, and describes HRTF data the way it actually loads.
   4. Every `#NNN` in a code comment resolves in the tracker it names — OSD references are written `Spatial-Media-Lab/OpenSpatialDelay#NNN`.
@@ -61,7 +61,7 @@ named gaps, it does not rebuild the modules.
 **Success Criteria** (what must be TRUE):
   1. `AmbisonicsCodec`'s channel order and normalisation is confirmed ACN/SN3D or FuMa, stated in code and docs. *(SpatialCore#11)*
   2. The 3D triplet fallback in VBAP/VBIP/MDAP either no longer exists or fails loudly instead of silently degrading to nearest-speaker.
-  3. All 25 `OutputFormat` entries resolve to correct info; all 14 layouts return populated channel indices and LFE placement.
+  3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 **Plans**: TBD
 

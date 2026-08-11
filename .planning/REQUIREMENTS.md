@@ -73,10 +73,15 @@ doc-counting errors, answerable from the tree without a user decision.
     all state 5.
 
 - [ ] **API-04**: Output-format and speaker-layout counts match the tree
-  - **New.** `OutputFormat` has **25** values; `SpeakerLayout.h`'s `LayoutID` has **14** named
-    layouts plus a `NUM_LAYOUT_DEFS` sentinel. Every doc says 22 and 13.
-  - Acceptance: CLAUDE.md, the SPEC, and the integration guide state 25 and 14, or the extra
+  - **New.** `OutputFormat` has **23** values (`OutputFormat.h:9-28`, cross-checked against 23
+    `OutputFormat::` rows in `OutputFormatRegistry.cpp`); `SpeakerLayout.h`'s `LayoutID` has **15**
+    named layouts plus a `NUM_LAYOUT_DEFS` sentinel (`SpeakerLayout.h:42-45`). Every doc says 22
+    and 13.
+  - Acceptance: CLAUDE.md, the SPEC, and the integration guide state 23 and 15, or the extra
     entries are documented as internal.
+  - **Corrected 2026-08-11:** this requirement previously read 25 / 14. Those numbers came from a
+    mapper miscount in `.planning/codebase/ARCHITECTURE.md:107` that `f0b14f4` copied here under a
+    "verified from the tree" label; the tree says 23 / 15. See CONTEXT.md D-04.
 
 - [ ] **API-05**: CLAUDE.md describes the library that actually exists
   - **New.** Four verified inaccuracies in the project's own context file: JUCE 8 (is 9.0.0); SOFA
@@ -103,7 +108,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     have **no dedicated test files** — they are only exercised indirectly.
 
 - [ ] **EXTR-03**: Layouts, format registry, and Ambisonics codec return real data
-  - Acceptance: all 25 `OutputFormat` entries resolve; all 14 layouts return populated channel
+  - Acceptance: all 23 `OutputFormat` entries resolve; all 15 layouts return populated channel
     indices and LFE placement; Ambisonics encodes/decodes to order 6.
 
 - [ ] **EXTR-04**: ADM-OSC and the trajectory engine drive real object motion
@@ -343,7 +348,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | API-01 | OQ-1, resolved by re-map | 1 | Evidence gathered |
 | API-02 | OQ-2 (resolved: keep tanh) | 1 | Pending |
 | API-03 | OQ-3, resolved by re-map | 1 | Evidence gathered |
-| API-04 | Re-map (25 formats / 14 layouts) | 1 | Pending |
+| API-04 | Re-map (23 formats / 15 layouts) | 1 | Pending |
 | API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Pending |
 | EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
 | EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |

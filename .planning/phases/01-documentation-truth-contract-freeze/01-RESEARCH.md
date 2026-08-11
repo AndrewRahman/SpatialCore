@@ -641,7 +641,22 @@ open risk is entirely the internal count conflict in Open Question 1.
 
 ## Open Questions
 
-1. **Which output-format and speaker-layout counts are the real frozen contract: D-04's "25/14" or the tree's verified "23/15"?**
+> **✅ Open Question 1 was CLOSED by the user on 2026-08-11: the canonical counts are 23 output
+> formats and 15 speaker layouts.** D-04, REQUIREMENTS.md API-04 (+ the EXTR-03 acceptance line and
+> the traceability table), ROADMAP.md Phase 1 criterion 1 and Phase 2 criterion 3, and the stale
+> `.planning/codebase/ARCHITECTURE.md` / `STRUCTURE.md` lines were all amended to 23/15 before the
+> planner ran. The provenance question is also answered: the 25/14 pair originated as a mapper
+> miscount in `.planning/codebase/ARCHITECTURE.md:107` + `STRUCTURE.md:119-120` during the
+> 2026-08-10 remap, which commit `f0b14f4` then copied into REQUIREMENTS.md and ROADMAP.md under a
+> "verified from the tree" label it never earned. The same remap commit's `TESTING.md:56` already
+> said "23-format table" — the remap contradicted itself. The 14 was an off-by-one that
+> misattributed one named `LayoutID` entry to the `NUM_LAYOUT_DEFS` sentinel.
+>
+> **Planning directive: write 23 and 15.** Every `static_assert`, doc line, and test assertion in
+> this phase uses those values. Treat any occurrence of 25 or 14 in a count context as a defect to
+> fix. The body of the question is retained below as the audit trail.
+
+1. **[CLOSED — 23/15]** ~~Which output-format and speaker-layout counts are the real frozen contract: D-04's "25/14" or the tree's verified "23/15"?~~
    - What we know: The tree (three independent sources: enum body, registry `constexpr`, and
      `.cpp` initializer-list row counts) says 23 output formats and 15 speaker layouts, unchanged
      since commit `149d50d` (2026-07-05), five weeks before the "verified 2026-08-10" claim. No

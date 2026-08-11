@@ -49,12 +49,25 @@ mechanism and is currently worse than `CLAUDE.md` ever was.
 
 ### The Numbers (ground truth, verified 2026-08-10 / 2026-08-11)
 
-- **D-04:** Canonical counts: **8** algorithms, **25** output formats, **14** speaker layouts,
+- **D-04:** Canonical counts: **8** algorithms, **23** output formats, **15** speaker layouts,
   **JUCE 9.0.0**, **5** SOFA HRTF profiles shipped.
   Verified: `grep -l "public SpatializationAlgorithm" include/` → 8; `ls HRTF/*.sofa` → 5;
-  `CMakeLists.txt` `GIT_TAG 9.0.0`; `NUM_LAYOUT_DEFS` at `include/SpatialCore/IO/SpeakerLayout.h:44`.
+  `CMakeLists.txt` `GIT_TAG 9.0.0`; `OutputFormat` enum body at
+  `include/SpatialCore/IO/OutputFormat.h:9-28` → 23 enumerators, cross-checked against 23
+  `OutputFormat::` rows in `src/IO/OutputFormatRegistry.cpp`; `LayoutID` at
+  `include/SpatialCore/IO/SpeakerLayout.h:42-45` → 15 named entries before `NUM_LAYOUT_DEFS`,
+  which sizes `layoutDefs[NUM_LAYOUT_DEFS]` at `src/IO/SpeakerLayout.cpp:19`.
+  Consistency check: 23 − Binaural − Stereo − 6 Ambisonics orders = 15 speaker layouts.
   — **Reversibility:** one-way — these are the frozen public contract under DR-7. Publishing a
   number and later changing it breaks consumers who wrote loops or switches against it.
+  — **Corrected 2026-08-11 (was 25 formats / 14 layouts).** The 25/14 pair never came from the
+  tree despite the "verified 2026-08-10" label. It originated as a mapper miscount in
+  `.planning/codebase/ARCHITECTURE.md:107` and `STRUCTURE.md:119-120`, and commit `f0b14f4`
+  copied it into REQUIREMENTS.md and ROADMAP.md. The same remap commit's `TESTING.md:56` says
+  "23-format table", so the remap contradicted itself. The 14 was an off-by-one on `LayoutID`
+  that misattributed one named entry to the `NUM_LAYOUT_DEFS` sentinel. The enum has been
+  unchanged since 2026-07-05. This correction is itself an instance of the defect class the
+  phase exists to eliminate, and is the same adjudication already applied to OQ-1 and OQ-3.
 
 - **D-05:** **HRTF profile count is stated as two numbers together, never one.** Canonical phrasing:
   *"5 SOFA HRTF profiles ship; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select
@@ -94,7 +107,7 @@ mechanism and is currently worse than `CLAUDE.md` ever was.
 ### Drift Prevention
 
 - **D-10:** **`static_assert` + Catch2 test. No doc-grep CI script.**
-  The doc-grep half is the expensive, brittle half — grepping prose for "8" and "25" yields false
+  The doc-grep half is the expensive, brittle half — grepping prose for "8" and "23" yields false
   positives and becomes its own maintenance burden. The compile-time half is cheap and catches
   drift at its source: a dev adding an `OutputFormat` breaks the build immediately.
   — **Reversibility:** reversible.
@@ -175,7 +188,7 @@ mechanism and is currently worse than `CLAUDE.md` ever was.
   the OQ-1/2/3/5 history. **Note: contains errors this phase should correct — see D-09, D-16.**
 
 ### Tier A — surfaces to correct
-- `CLAUDE.md` — architecture table (JUCE 8→9.0.0, 22→25 formats, 13→14 layouts, delete the phantom
+- `CLAUDE.md` — architecture table (JUCE 8→9.0.0, 22→23 formats, 13→15 layouts, delete the phantom
   `DSP/` row per D-09). The `Engine/` row is already present at `:20`; API-05's claim that it is
   missing is stale.
 - `README.md` — `:34` "6 HRTF Profiles", `:36` "22 formats", `:43` "13 ITU-R", `:95` "JUCE 8".

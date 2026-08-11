@@ -61,7 +61,7 @@ Two independent, orthogonal subsystems also exist and are NOT wired through Rend
 | PartitionedConvolver | Single-source FFT overlap-save convolution primitive | `include/SpatialCore/Binaural/PartitionedConvolver.h`, `src/Binaural/PartitionedConvolver.cpp` |
 | SharedFFTCache | Process-global FFT plan singleton shared across all convolvers | `include/SpatialCore/Binaural/SharedFFTCache.h` |
 | OutputFormatRegistry | Single source of truth mapping `OutputFormat` enum → channel count / name / LFE / height flags | `include/SpatialCore/IO/OutputFormat.h`, `include/SpatialCore/IO/OutputFormatRegistry.h`, `src/IO/OutputFormatRegistry.cpp` |
-| SpeakerLayout | 14 ITU-R/SMPTE speaker layouts + VBAP triplet builder | `include/SpatialCore/IO/SpeakerLayout.h`, `src/IO/SpeakerLayout.cpp` |
+| SpeakerLayout | 15 ITU-R/SMPTE speaker layouts + VBAP triplet builder | `include/SpatialCore/IO/SpeakerLayout.h`, `src/IO/SpeakerLayout.cpp` |
 | AmbisonicsCodec | Spherical-harmonic evaluation and Ambisonics decode-matrix construction | `include/SpatialCore/IO/AmbisonicsCodec.h`, `src/IO/AmbisonicsCodec.cpp` |
 | ADMOSCReceiver / ADMOSCSender | Parse `/adm/obj/N/...` OSC messages; broadcast object state at 30 Hz | `include/SpatialCore/OSC/ADMOSCReceiver.h`, `include/SpatialCore/OSC/ADMOSCSender.h` |
 | TrajectoryEngine | 13 named trajectory shapes, origin-point-relative, forward/reverse playback | `include/SpatialCore/Trajectory/TrajectoryEngine.h`, `src/Trajectory/TrajectoryEngine.cpp` |
@@ -104,7 +104,7 @@ Two independent, orthogonal subsystems also exist and are NOT wired through Rend
 **IO (format/layout layer):**
 - Purpose: describe and resolve output formats to concrete speaker geometry / Ambisonics decode matrices.
 - Location: `include/SpatialCore/IO/*.h`, `src/IO/*.cpp`
-- Contains: `OutputFormat` enum (25 values), `OutputFormatRegistry`, `SpeakerLayout`/`LayoutID` (14 named layouts + `NUM_LAYOUT_DEFS` sentinel), `AmbisonicsCodec`.
+- Contains: `OutputFormat` enum (23 values), `OutputFormatRegistry`, `SpeakerLayout`/`LayoutID` (15 named layouts + `NUM_LAYOUT_DEFS` sentinel), `AmbisonicsCodec`.
 - Used by: RenderEngine's `activateLayout`/`computeAmbiDecodeForLayout`.
 
 **OSC layer:** parses/emits ADM-OSC object-position messages; consumer-side glue feeds results into `RenderSources::objects`. Independent of RenderEngine.
