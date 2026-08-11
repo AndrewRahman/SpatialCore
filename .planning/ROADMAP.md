@@ -39,7 +39,7 @@ own context file stops describing a library that doesn't exist.
 **Requirements**: API-01, API-02, API-03, API-04, API-05, BUG-03
 **Success Criteria** (what must be TRUE):
   1. Headers and docs state 8 algorithms, 5 HRTF profiles, 23 output formats, and 15 speaker layouts — the counts read directly from `OutputFormat.h:9-28` and `SpeakerLayout.h:42-45` on 2026-08-11.
-  2. The SPEC describes the shipped tanh soft ceiling instead of a hard clamp at 1.2589f. The implementation is unchanged. A test pins the curve at, below, and above the ceiling, and for non-finite input.
+  2. `outputLimiter()` has exactly one governing contract, and it describes the shipped tanh soft ceiling. Per D-06/D-07 (2026-08-11) that contract is the header docblock at `Core/SpatialMath.h:98-99`, which already states the curve correctly; the March scaffold plan's contradicting hard-clamp-at-1.2589f language is stamped historical rather than amended, because a historical doc must not serve as the governing contract (D-01). The implementation is unchanged. A test pins the curve at, below, and above the ceiling, and for non-finite input.
   3. CLAUDE.md's architecture table includes the `Engine/` module, states JUCE 9.0.0, and describes HRTF data the way it actually loads.
   4. Every `#NNN` in a code comment resolves in the tracker it names — OSD references are written `Spatial-Media-Lab/OpenSpatialDelay#NNN`.
 **Open questions: none.** All four originals are closed. OQ-1 and OQ-3 were doc-counting errors
