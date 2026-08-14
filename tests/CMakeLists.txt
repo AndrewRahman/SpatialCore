@@ -16,6 +16,7 @@ add_executable(SpatialCoreTests
     Trajectory/TrajectoryTests.cpp
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp
+    Core/CountsTests.cpp
     Binaural/SadieD2KU100Tests.cpp
     Binaural/CipicSubject003Tests.cpp
     Binaural/HutubsPP2Tests.cpp

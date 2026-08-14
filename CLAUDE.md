@@ -18,7 +18,7 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 | Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural |
 | Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
 | Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free double-buffered output-format/HRTF-profile swap, and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
-| I/O | `IO/*.h` | OutputFormatRegistry (22 formats), SpeakerLayout (13 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
+| I/O | `IO/*.h` | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
 | Trajectory | `Trajectory/*.h` | 13 shapes, origin-point architecture, forward/reverse |
 | DSP | `DSP/*.h` | softClip(), outputLimiter() |
