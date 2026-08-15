@@ -6,7 +6,7 @@ namespace spatialcore
 {
 
 // oscPortsConflict — same-port OSC self-feedback validator (Phase 10 Plan
-// 10-06, issue #179). Per D-06 the primary conflict is the OSC receive port
+// 10-06, issue Spatial-Media-Lab/OpenSpatialDelay#179). Per D-06 the primary conflict is the OSC receive port
 // colliding with the OSC send port WHEN the send host is loopback: binding
 // both endpoints to the same UDP port on 127.0.0.1 makes the plugin
 // re-receive its own broadcasts (a message storm / dead OSC). Equal ports

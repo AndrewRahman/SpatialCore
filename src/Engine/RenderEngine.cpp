@@ -44,7 +44,7 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     binauralRenderers[0].prepare (sampleRate, maxBlockSize);
     binauralRenderers[1].prepare (sampleRate, maxBlockSize);
 
-    // Pre-allocate renderer crossfade buffers (issue #131: avoid audio-thread allocation)
+    // Pre-allocate renderer crossfade buffers (issue Spatial-Media-Lab/OpenSpatialDelay#131: avoid audio-thread allocation)
     xfadeWetL_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
     xfadeWetR_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
 

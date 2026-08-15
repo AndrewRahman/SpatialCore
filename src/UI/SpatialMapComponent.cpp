@@ -104,7 +104,7 @@ std::pair<float, float> SpatialMapComponent::pixelToSpatial (juce::Point<float> 
 
 int SpatialMapComponent::findObjectAt (juce::Point<float> pos) const
 {
-    // Issue #98: Check selected tap first (it renders on top)
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#98: Check selected tap first (it renders on top)
     auto hitTest = [&](int i) -> bool
     {
         if (! objects[(size_t)i].enabled) return false;
@@ -342,7 +342,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
 
                 // Brightness: proximity to current animated dot position
                 // Tighter focus (×6) for concentrated glow near the moving dot.
-                // Issue #168 r3: in hero-screenshot mode, keep the proximity
+                // Issue Spatial-Media-Lab/OpenSpatialDelay#168 r3: in hero-screenshot mode, keep the proximity
                 // fade so the animated dot still has a bright focus, but
                 // lift the baseline so the rest of the path reads as a faint
                 // continuous curve rather than a near-invisible 0.05-alpha
@@ -436,7 +436,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
         }
     }
 
-    // Issue #98: Build draw order so selected tap renders on top
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#98: Build draw order so selected tap renders on top
     std::vector<int> drawOrder;
     drawOrder.reserve ((size_t) numObjects_);
     for (int i = 0; i < numObjects_; ++i)
@@ -570,7 +570,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
 
         // 5. Elevation degree label
         //    - Normal UI: selected object only, non-zero elevation
-        //    - Screenshot mode (#168 round 2): every enabled object regardless of magnitude
+        //    - Screenshot mode (Spatial-Media-Lab/OpenSpatialDelay#168 round 2): every enabled object regardless of magnitude
         bool drawElevationLabel = labelAllEnabledForScreenshot
                                     ? objects[(size_t)i].enabled
                                     : (i == selectedObject && std::abs (elDeg) > 1.0f);

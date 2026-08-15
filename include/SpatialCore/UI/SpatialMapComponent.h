@@ -52,13 +52,13 @@ public:
     void setOscOverride (int index, bool active) { if (index >= 0 && index < numObjects_) oscOverride[(size_t)index] = active; }
     void setSelectedObject (int index) { selectedObject = index; repaint(); }
 
-    /** Round-2 screenshot hook (#168): when true, the elevation-readout label
+    /** Round-2 screenshot hook (Spatial-Media-Lab/OpenSpatialDelay#168): when true, the elevation-readout label
         is drawn next to every enabled tap rather than only the selected one.
         Used by the screenshot tool's elevation-map mode so the spiral of
         taps all display their in-plugin elevation label in the tap's colour. */
     void setLabelAllEnabledObjectsForScreenshot (bool enabled) { labelAllEnabledForScreenshot = enabled; }
 
-    /** Round-3 screenshot hook (#168): when true, the selected tap's
+    /** Round-3 screenshot hook (Spatial-Media-Lab/OpenSpatialDelay#168): when true, the selected tap's
         trajectory trail is drawn at full brightness along the entire
         sampled path instead of fading based on proximity to the moving
         dot. Used by the hero screenshot so the Infinity path is visible
@@ -128,8 +128,8 @@ private:
     std::array<bool, MAX_SOURCES> oscOverride = {};  // v0.6: per-object OSC override indicator
     int selectedObject = -1;
     int draggedObject  = -1;
-    bool labelAllEnabledForScreenshot = false;  // issue #168 round 2: elevation-map mode
-    bool drawFullTrajectoryForScreenshot = false;  // issue #168 round 3: hero screenshot
+    bool labelAllEnabledForScreenshot = false;  // issue Spatial-Media-Lab/OpenSpatialDelay#168 round 2: elevation-map mode
+    bool drawFullTrajectoryForScreenshot = false;  // issue Spatial-Media-Lab/OpenSpatialDelay#168 round 3: hero screenshot
     const TrajectoryEngine* trajectoryEngine = nullptr;  // for Random trail look-ahead
 
     juce::ListenerList<Listener> listeners;

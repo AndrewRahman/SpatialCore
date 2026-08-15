@@ -318,7 +318,7 @@ private:
     // ENGINE-OWNED STATE — every field below is a required carry-forward of
     // an implicit render-state dependency found in the Task 1 inventory
     // (see 08-06-SUMMARY.md for the full per-method breakdown). None of these
-    // may be dropped or the crossfade-pop bug classes (#90, #96) reappear.
+    // may be dropped or the crossfade-pop bug classes (Spatial-Media-Lab/OpenSpatialDelay#90, Spatial-Media-Lab/OpenSpatialDelay#96) reappear.
     //==========================================================================
 
     // --- Direct-binaural HRTF renderer state (double-buffered for

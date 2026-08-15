@@ -24,7 +24,7 @@ public:
         v1.0.5: Dual-convolver crossfade -- new IR is loaded into the inactive
         slot and crossfaded over kCrossfadeBlocks blocks using equal-power
         (cos/sin) gains.  This eliminates overlap-save boundary discontinuities
-        that caused audible pops during HRTF transitions (issue #50). */
+        that caused audible pops during HRTF transitions (issue Spatial-Media-Lab/OpenSpatialDelay#50). */
     void setIR (const float* ir, int length);
 
     /** Process one block: convolve input with IR, write to output.
@@ -40,19 +40,19 @@ public:
     bool isPrepared() const { return fftSize > 0; }
 
 private:
-    std::shared_ptr<juce::dsp::FFT> fft;  // Shared via process-global FFT cache (issue #131)
+    std::shared_ptr<juce::dsp::FFT> fft;  // Shared via process-global FFT cache (issue Spatial-Media-Lab/OpenSpatialDelay#131)
     int fftOrder  = 1;
     int fftSize   = 0;                 // 2^fftOrder
     int irLen     = 0;
     int blockSize = 0;
 
-    // v1.0.5: Dual-convolver architecture (issue #50).
+    // v1.0.5: Dual-convolver architecture (issue Spatial-Media-Lab/OpenSpatialDelay#50).
     // Two independent convolution slots run in parallel during crossfades.
     // This avoids the overlap-save boundary discontinuity: each slot keeps
     // its own overlap buffer tied to its own IR, so the tail is never
     // contaminated by a mismatched kernel.
     //
-    // v2.0.0-dev.1 (issue #234): processSlot no longer requires numSamples to
+    // v2.0.0-dev.1 (issue Spatial-Media-Lab/OpenSpatialDelay#234): processSlot no longer requires numSamples to
     // equal the prepared `blockSize`. Each call's `numSamples` is processed as
     // its own independent overlap-add block (zero-padded to fftSize, which is
     // always >= numSamples + irLen - 1 since numSamples <= blockSize by

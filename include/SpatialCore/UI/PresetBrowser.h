@@ -10,7 +10,7 @@ namespace spatialcore
 // PresetSaveOverlay — native popup window for saving presets.
 // Phase 9 Plan 09-04 (CUI-04): re-homed verbatim from OSD (self-contained,
 // portable as-is). Uses addToDesktop() to bypass host keyboard interception
-// (Issue #35).
+// (Issue Spatial-Media-Lab/OpenSpatialDelay#35).
 //==============================================================================
 class PresetSaveOverlay : public juce::Component
 {
@@ -69,7 +69,7 @@ public:
         real plugin's popup: one submenu per category, factory presets first,
         a separator before user presets in the same category, current
         selection ticked, and an always-present (possibly empty) "User"
-        category (Issue #2).
+        category (Issue Spatial-Media-Lab/OpenSpatialDelay#2).
         @param entries          content supplied by the consumer.
         @param currentIndex     originalIndex of the currently active preset.
         @param targetComponent  anchor component for popup placement.

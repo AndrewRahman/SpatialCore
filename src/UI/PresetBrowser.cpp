@@ -22,7 +22,7 @@ PresetSaveOverlay::PresetSaveOverlay()
     setWantsKeyboardFocus (true);
     // v1.0: Do NOT mark opaque — rounded rectangle leaves corner pixels unpainted.
     // Opaque flag with unpainted regions causes corrupted CoreAnimation backing store
-    // → Metal GPU crash (EXC_BAD_ACCESS in AGXMetalG16X). See issue #37.
+    // → Metal GPU crash (EXC_BAD_ACCESS in AGXMetalG16X). See issue Spatial-Media-Lab/OpenSpatialDelay#37.
 
     // Name editor — DM Sans Regular 13px, recessed bg, cyan focus outline
     nameEditor.setMultiLine (false);
@@ -75,7 +75,7 @@ void PresetSaveOverlay::show (const juce::String& existingName, juce::Component*
     if (parentEditor != nullptr)
         setLookAndFeel (&parentEditor->getLookAndFeel());
 
-    // Set bounds BEFORE addToDesktop — ensures valid peer creation (Issue #35 fix)
+    // Set bounds BEFORE addToDesktop — ensures valid peer creation (Issue Spatial-Media-Lab/OpenSpatialDelay#35 fix)
     setSize (cardW, cardH);
     if (parentEditor != nullptr)
     {
@@ -89,7 +89,7 @@ void PresetSaveOverlay::show (const juce::String& existingName, juce::Component*
     addToDesktop (juce::ComponentPeer::windowIsTemporary
                 | juce::ComponentPeer::windowHasDropShadow);
 
-    setAlwaysOnTop (true);  // prevent z-order issues in some hosts (Issue #35 fix)
+    setAlwaysOnTop (true);  // prevent z-order issues in some hosts (Issue Spatial-Media-Lab/OpenSpatialDelay#35 fix)
     setVisible (true);
     toFront (true);
     enterModalState (true);  // non-blocking modal; inputAttemptWhenModal() fires on outside clicks
@@ -132,7 +132,7 @@ void PresetSaveOverlay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
 
-    // Fill entire bounds first for CoreAnimation safety (issue #37)
+    // Fill entire bounds first for CoreAnimation safety (issue Spatial-Media-Lab/OpenSpatialDelay#37)
     g.fillAll (bgPanel);
 
     // Card background (rounded corners painted over the fill)
@@ -232,7 +232,7 @@ void PresetBrowser::showMenu (const std::vector<Entry>& entries,
     }
     flushSubMenu();  // flush last category
 
-    // v0.9: Always show "User" category even if empty (Issue #2)
+    // v0.9: Always show "User" category even if empty (Issue Spatial-Media-Lab/OpenSpatialDelay#2)
     if (lastCategory != "User")
     {
         bool userFound = false;

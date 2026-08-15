@@ -22,7 +22,7 @@ void ReverseSlider::mouseWheelMove(const juce::MouseEvent& e,
                                     const juce::MouseWheelDetails& wheel)
 {
     // Proportion overrides already handle the reversed value mapping,
-    // so pass mousewheel through without negating deltas (fixes #157)
+    // so pass mousewheel through without negating deltas (fixes Spatial-Media-Lab/OpenSpatialDelay#157)
     juce::Slider::mouseWheelMove(e, wheel);
 }
 

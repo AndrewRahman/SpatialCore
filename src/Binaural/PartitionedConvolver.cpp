@@ -4,7 +4,7 @@
 namespace spatialcore
 {
 
-// Process-global FFT cache (issue #131).  Apple's vDSP shares internal
+// Process-global FFT cache (issue Spatial-Media-Lab/OpenSpatialDelay#131).  Apple's vDSP shares internal
 // twiddle factor memory across FFT setups of the same order.  Destroying the
 // last setup of a given order frees the shared table even while another
 // thread's vDSP_fft_zrip is reading from it.  The cache creates each order
@@ -47,7 +47,7 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_)
     if (orderChanged)
         fft = getSharedFFTCache().getOrCreate (fftOrder);
 
-    // v1.0.5: Allocate dual convolution slots (issue #50)
+    // v1.0.5: Allocate dual convolution slots (issue Spatial-Media-Lab/OpenSpatialDelay#50)
     for (int s = 0; s < 2; ++s)
     {
         slots[s].irFreqDomain.assign (static_cast<size_t> (fftSize * 2), 0.0f);
@@ -87,7 +87,7 @@ void PartitionedConvolver::setIR (const float* ir, int length)
 
     irLen = length;
 
-    // v1.0.5: Dual-convolver IR loading strategy (issue #50).
+    // v1.0.5: Dual-convolver IR loading strategy (issue Spatial-Media-Lab/OpenSpatialDelay#50).
     // First IR ever: load directly into the active slot, no crossfade.
     if (slots[static_cast<size_t> (activeSlot)].irFreqDomain.empty() ||
         std::all_of (slots[static_cast<size_t> (activeSlot)].irFreqDomain.begin(),
@@ -119,7 +119,7 @@ void PartitionedConvolver::setIR (const float* ir, int length)
 
 void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* out, int numSamples)
 {
-    // v2.0.0-dev.1 (issue #234): decoupled from the prepared `blockSize`.
+    // v2.0.0-dev.1 (issue Spatial-Media-Lab/OpenSpatialDelay#234): decoupled from the prepared `blockSize`.
     // Every call's `numSamples` (host block, NOT the prepared block) is its
     // own independent overlap-add block. This never waits across calls to
     // accumulate a full prepared-size block, so it stays glitch-free and
@@ -169,7 +169,7 @@ void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* 
 
 void PartitionedConvolver::process (const float* in, float* out, int numSamples)
 {
-    // WR-02: runtime guard against an oversized host block. The #234 decoupling
+    // WR-02: runtime guard against an oversized host block. The Spatial-Media-Lab/OpenSpatialDelay#234 decoupling
     // contract is numSamples <= blockSize (the prepared maxBlockSize); processSlot
     // relies on it — overlapAccum has length fftSize, and the tail memmove of size
     // (fftSize - numSamples) underflows to a huge size_t when numSamples > fftSize,
@@ -197,7 +197,7 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
         return;
     }
 
-    // v1.0.5: Dual-convolver state machine (issue #50).
+    // v1.0.5: Dual-convolver state machine (issue Spatial-Media-Lab/OpenSpatialDelay#50).
     // Three states: Idle (single slot), Warmup (both process, output only active),
     // Crossfading (equal-power cos/sin blend with per-sample gain interpolation).
     switch (state)

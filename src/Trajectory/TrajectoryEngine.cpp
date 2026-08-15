@@ -182,7 +182,7 @@ TrajectoryEngine::computeTrajectory (int shape, float phase,
         {
             float tri = 1.0f - std::abs (2.0f * phase - 1.0f);
             // Flip the trajectory diagonally: negate azimuth offset so
-            // the az–elevation relationship mirrors (issue #100)
+            // the az–elevation relationship mirrors (issue Spatial-Media-Lab/OpenSpatialDelay#100)
             float azSign = reverse ? -1.0f : 1.0f;
             r.azDeg = baseAz - azSign * 90.0f * (2.0f * tri - 1.0f);
             r.elDeg = baseEl - 30.0f * (2.0f * tri - 1.0f);

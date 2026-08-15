@@ -55,7 +55,7 @@ public:
     /** Convert a raw HRIR to minimum-phase in-place using cepstral decomposition.
         Preserves magnitude spectrum but removes excess phase, so time-domain
         interpolation between adjacent HRIRs produces smooth spectral transitions
-        without comb filtering (issue #47). workBuf must be >= fftSize * 2 floats. */
+        without comb filtering (issue Spatial-Media-Lab/OpenSpatialDelay#47). workBuf must be >= fftSize * 2 floats. */
     static void convertToMinPhase (float* ir, int irLength, int fftOrder, float* workBuf);
 
     /** Detect onset sample index of an IR using threshold of peak amplitude.
