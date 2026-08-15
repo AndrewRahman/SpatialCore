@@ -49,12 +49,18 @@ is exactly what the v1 milestone exists to deliver.
 Frozen under DR-7, gated by DR-2. Three of the four 2026-08-09 open questions turned out to be
 doc-counting errors, answerable from the tree without a user decision.
 
-- [ ] **API-01**: The public algorithm count is one number across headers and docs
+- [x] **API-01**: The public algorithm count is one number across headers and docs
   - **Resolved by evidence: 8.** `grep -l "public SpatializationAlgorithm"` returns 8 concrete
     implementations. OQ-1 ("6 vs 7 vs 8") is closed.
 
   - Acceptance: `SpatialCore.h` and `AllAlgorithms.h` expose exactly 8; no source doc states a
     different count.
+
+  - **Complete 2026-08-15 (phase 01, plan 03):** `AllAlgorithms.h` pins `NUM_ALGORITHMS = 8` via
+    `static_assert` (plan 01-01). `docs/integration-guide.md` — the last source doc still stating
+    "7 spatialization algorithms" — corrected in plan 01-03. All five Tier A surfaces (CLAUDE.md,
+    README.md, docs/integration-guide.md, and both auto-loading skill files) now state 8 with no
+    residual stale count.
 
 - [ ] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function
   - **OQ-2 RESOLVED 2026-08-10 (user decision): keep the shipped `tanh` soft ceiling.**
@@ -69,12 +75,19 @@ doc-counting errors, answerable from the tree without a user decision.
   - **Deferred, not discarded:** a selectable hard-clamp mode is recorded as a v2 candidate
     (LIMIT-01, Future Milestones). Adding a mode later is additive and does not break DR-2.
 
-- [ ] **API-03**: The HRTF profile count is one number across docs, headers, and shipped data
+- [x] **API-03**: The HRTF profile count is one number across docs, headers, and shipped data
   - **Resolved by evidence: 5.** `HRTF/` holds exactly 5 `.sofa` files; the identical 5 exist in
     OSD's `HRTF/`, confirming provenance. OQ-3 ("5 vs 6") is closed.
 
   - Acceptance: CLAUDE.md, `docs/development-roadmap.md`, and the header exposing `profileIndex`
     all state 5.
+
+  - **Complete 2026-08-15 (phase 01, plan 03):** CLAUDE.md already stated 5 (verified, unedited).
+    `docs/development-roadmap.md` carries a supersession note pointing to CLAUDE.md/README.md/
+    integration-guide.md as current truth; its own "5 profiles" / "5 SOFA files" mentions were
+    never wrong. README.md and the spatialcore-architecture skill now carry the D-05 canonical
+    two-number sentence (5 SOFA profiles ship; `profileIndex` 0-5, 0 = Simple Woodworth) instead
+    of a bare or conflated count.
 
 - [x] **API-04**: Output-format and speaker-layout counts match the tree
   - **New.** `OutputFormat` has **23** values (`OutputFormat.h:9-28`, cross-checked against 23
@@ -89,7 +102,7 @@ doc-counting errors, answerable from the tree without a user decision.
     mapper miscount in `.planning/codebase/ARCHITECTURE.md:107` that `f0b14f4` copied here under a
     "verified from the tree" label; the tree says 23 / 15. See CONTEXT.md D-04.
 
-- [ ] **API-05**: CLAUDE.md describes the library that actually exists
+- [x] **API-05**: CLAUDE.md describes the library that actually exists
   - **New.** Four verified inaccuracies in the project's own context file: JUCE 8 (is 9.0.0); SOFA
     files "embedded as BinaryData" (they load from disk); the component table omits the `Engine/`
     module entirely; format/layout counts wrong.
@@ -381,11 +394,11 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 
 | Requirement | Source | Phase | Status |
 |-------------|--------|-------|--------|
-| API-01 | OQ-1, resolved by re-map | 1 | Evidence gathered |
+| API-01 | OQ-1, resolved by re-map | 1 | Complete |
 | API-02 | OQ-2 (resolved: keep tanh) | 1 | Pending |
-| API-03 | OQ-3, resolved by re-map | 1 | Evidence gathered |
+| API-03 | OQ-3, resolved by re-map | 1 | Complete |
 | API-04 | Re-map (23 formats / 15 layouts) | 1 | Complete |
-| API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Pending |
+| API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Complete |
 | EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
 | EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
 | EXTR-02 | REQ-extract-binaural-rendering | 3 | Largely verified by tests |
