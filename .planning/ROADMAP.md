@@ -33,15 +33,18 @@ yet consume SpatialCore; the migration is unstarted.
 ## Phase Details
 
 ### Phase 1: Documentation Truth & Contract Freeze
+
 **Goal**: Every ambiguous public contract has one answer that matches the tree, and the project's
 own context file stops describing a library that doesn't exist.
 **Depends on**: Nothing (first phase)
 **Requirements**: API-01, API-02, API-03, API-04, API-05, BUG-03
 **Success Criteria** (what must be TRUE):
+
   1. Headers and docs state 8 algorithms, 5 HRTF profiles, 23 output formats, and 15 speaker layouts — the counts read directly from `OutputFormat.h:9-28` and `SpeakerLayout.h:42-45` on 2026-08-11.
   2. `outputLimiter()` has exactly one governing contract, and it describes the shipped tanh soft ceiling. Per D-06/D-07 (2026-08-11) that contract is the header docblock at `Core/SpatialMath.h:98-99`, which already states the curve correctly; the March scaffold plan's contradicting hard-clamp-at-1.2589f language is stamped historical rather than amended, because a historical doc must not serve as the governing contract (D-01). The implementation is unchanged. A test pins the curve at, below, and above the ceiling, and for non-finite input.
   3. CLAUDE.md's architecture table includes the `Engine/` module, states JUCE 9.0.0, and describes HRTF data the way it actually loads.
   4. Every `#NNN` in a code comment resolves in the tracker it names — OSD references are written `Spatial-Media-Lab/OpenSpatialDelay#NNN`.
+
 **Open questions: none.** All four originals are closed. OQ-1 and OQ-3 were doc-counting errors
 closed by evidence; **OQ-2 was resolved by the user 2026-08-10 — keep the shipped tanh soft
 ceiling and amend the SPEC to match.** Rationale: OSD ships publicly at v1.0.0 with that curve, so
@@ -49,16 +52,18 @@ it is the known sound, and changing it during a zero-regressions migration would
 existing users. A selectable hard-clamp mode is deferred to v2 as LIMIT-01.
 **Why first**: A wrong CLAUDE.md is loaded into every session in this repo, and is the direct cause
 of the 2026-08-09 planning pass being built on false premises. Fix the map before using it.
-**Plans**: 5 plans in 3 waves
+**Plans**: 1/5 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md — Freeze the count contract in code: compile-time assertions for 23 formats / 15 layouts / 8 algorithms, plus a `[counts]` Catch2 backstop *(wave 1)*
+
+- [x] 01-01-PLAN.md — Freeze the count contract in code: compile-time assertions for 23 formats / 15 layouts / 8 algorithms, plus a `[counts]` Catch2 backstop *(wave 1)*
 - [ ] 01-02-PLAN.md — Qualify all 39 cross-repo issue citations across 17 files as `Spatial-Media-Lab/OpenSpatialDelay#N` *(wave 2)*
 - [ ] 01-03-PLAN.md — Correct all five Tier A doc surfaces, including both auto-loading skill files *(wave 2)*
 - [ ] 01-04-PLAN.md — Give `outputLimiter()` one contract: named at/below/above-ceiling tests, and stamp the contradicting scaffold plan historical *(wave 3)*
 - [ ] 01-05-PLAN.md — Stamp the remaining Tier B documents and correct PROJECT.md / REQUIREMENTS.md's own factual errors *(wave 3)*
 
 ### Phase 2: Algorithm & Format Verification
+
 **Goal**: Every algorithm and every advertised format is confirmed correct by a test, and the
 Ambisonics convention is written down.
 **Depends on**: Phase 1
@@ -66,23 +71,28 @@ Ambisonics convention is written down.
 **Starting position**: Algorithms, IO, and Ambisonics already have passing tests. This phase closes
 named gaps, it does not rebuild the modules.
 **Success Criteria** (what must be TRUE):
+
   1. `AmbisonicsCodec`'s channel order and normalisation is confirmed ACN/SN3D or FuMa, stated in code and docs. *(SpatialCore#11)*
   2. The 3D triplet fallback in VBAP/VBIP/MDAP either no longer exists or fails loudly instead of silently degrading to nearest-speaker.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
+
 **Plans**: TBD
 
 ### Phase 3: Binaural Defects & HRTF Packaging
+
 **Goal**: The binaural path renders correct spatial cues, and a consumer gets HRTF data by linking
 rather than by hand-copying a directory.
 **Depends on**: Phase 2
 **Requirements**: EXTR-02, DATA-01, BUG-01, BUG-02
 **Success Criteria** (what must be TRUE):
+
   1. A source at elevation +90° is measurably distinguishable from one at 0°, and azimuth 0° from 180°. *(SpatialCore#15 — the same defect exists in OSD, so this fix reaches both)*
   2. Rendering at 32, 64, and 128 sample blocks produces no artifacts. *(`Spatial-Media-Lab/OpenSpatialDelay#234`, still open, cited in live code at `PartitionedConvolver.cpp:120-124`)*
   3. A freshly cloned consumer links SpatialCore and renders through any of the 5 profiles with no install step and no path configuration. A SOFA file dropped into the shared platform folder is picked up ahead of the embedded copy, and a missing folder falls back silently to embedded rather than failing.
   4. Switching HRTF profile while audio is running produces no click, pop, or dropout.
   5. `PartitionedConvolver` and `BinauralRenderer` have dedicated test files — today they are only exercised indirectly.
+
 **Open questions: none. OQ-6 resolved 2026-08-10 — lookup chain now, embedded default for v1.**
 The user proposed that the 5 profiles live on disk once per machine
 (`/Library/Application Support/Spatial Media Lab/HRTF/` on macOS,
@@ -118,6 +128,7 @@ present and LFS-tracked with a CI guard against pointer stubs. Only the embeddin
 **Plans**: TBD
 
 ### Phase 4: Control Surface & UI
+
 **Goal**: An object's position can be driven by OSC, animated by a trajectory, and dragged on
 screen — each route reaching the renderer.
 **Depends on**: Phase 3
@@ -126,26 +137,31 @@ screen — each route reaching the renderer.
 untested by design — UI lives in the separate `SpatialCoreUI` target that `SpatialCoreTests` does
 not link — so UI verification here is by interaction, not by unit test.
 **Success Criteria** (what must be TRUE):
+
   1. An external ADM-OSC sender moves a rendered object via `/adm/obj/N/{azim,elev,dist,aed,xyz}`.
   2. SpatialCore broadcasts positions at 30 Hz and stops re-sending while positions are static.
   3. Every trajectory shape animates forward and reverse.
   4. A host plugin embeds `SpatialMapComponent`, drags an object, and sees position, distance ring, and elevation opacity update — with SML fonts rendering on a machine with no SML font installed.
+
 **Already verified**: `DATA-02` is done — `fonts/*.ttf` are compiled in as JUCE BinaryData.
 `ADMOSCReceiver.cpp:43` bounds-checks correctly, closing the original RTSF-04 as a non-finding.
 **Plans**: TBD
 **UI hint**: yes
 
 ### Phase 5: Realtime Safety Hardening
+
 **Goal**: Nothing reachable from `processBlock` allocates, locks, or races — proven in a Release
 build with tools.
 **Depends on**: Phase 4
 **Requirements**: RTSF-01, RTSF-02, RTSF-03, RTSF-05, VERIFY-02
 **Success Criteria** (what must be TRUE):
+
   1. Neither `BinauralRenderer.cpp:196-209` (`renderSourceBuffers`) nor `:134,158-163` (`updateSourceHRIR`, reached from `RenderEngine.cpp:178`) can allocate in a Release build. Both currently guard a `resize()` with `jassertfalse`, which is a no-op in Release. *(SpatialCore#19)*
   2. `TrajectoryEngine`'s `finalAz_`/`finalEl_`/`finalDist_` are no longer plain floats read across threads. Clean under thread sanitizer. *(SpatialCore#18)*
   3. `setProfile()` from a UI timer during audio processing does not race on the libmysofa handle.
   4. Several plugin instances in one host process render concurrently without crashing or buzzing. *(SpatialCore#12; regression tests for `OpenSpatialDelay#96` and `#131`)*
   5. A thread-sanitizer plus allocation-detector pass over the `processBlock` path reports zero allocations, zero locks, zero races.
+
 **Why criterion 4 is the highest-value item in v1**: OSD#96 and OSD#131 were multi-instance
 crashes, fixed in OpenSpatialDelay. That fix now lives in SpatialCore's `SharedFFTCache`. If it
 regressed during extraction, migrating OSD reintroduces two crashes into a plugin that is already
@@ -158,16 +174,19 @@ from scope. `SharedFFTCache` is already correctly spinlock-guarded at
 **Plans**: TBD
 
 ### Phase 6: Consumer Readiness & CI
+
 **Goal**: OpenSpatialDelay can adopt SpatialCore as a submodule without surprises, proven by a
 harness and a green CI run.
 **Depends on**: Phase 5
 **Requirements**: INTG-01, INTG-02, CI-01, TEST-01
 **Success Criteria** (what must be TRUE):
+
   1. A minimal harness plugin submodules SpatialCore, links **both** `SpatialCore` and `SpatialCoreUI`, includes only `<SpatialCore/SpatialCore.h>`, resolves HRTF data per the Phase 3 decision, and builds clean in Release on macOS.
   2. A consumer that does not set `engineComputesGains` either gets computed gains anyway or fails loudly — it does not silently fall back to the pass-through path that SpatialCore#14 was filed for.
   3. A green macOS CI run builds against JUCE 9.0.0 and runs the Catch2 suite. *(SpatialCore#9)*
   4. Coverage instrumentation is wired into CMake and reports a real number, and `PartitionedConvolver.cpp` and `BinauralRenderer.cpp` have dedicated tests.
   5. `Spatial-Media-Lab/OpenSpatialDelay#50`, `#89`, `#96`, `#131`, and `#234` each have a regression test that fails against the old behaviour.
+
 **Open question**: OQ-4 — the coverage target. It could not be set before because no coverage
 tooling exists to measure against; the old "~5% today" figure was never measured. Wire up
 instrumentation first, read the real number, then set the target with the user.
@@ -185,7 +204,7 @@ External Dependencies.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Documentation Truth & Contract Freeze | 0/TBD | Not started | - |
+| 1. Documentation Truth & Contract Freeze | 1/5 | In Progress|  |
 | 2. Algorithm & Format Verification | 0/TBD | Not started | - |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |

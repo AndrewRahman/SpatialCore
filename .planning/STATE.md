@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Documentation Truth & Contract Freeze
-status: planned
-stopped_at: Phase 1 planned — 5 plans in 3 waves, checker passed with 0 blockers
-last_updated: "2026-08-11T08:23:00.000Z"
-last_activity: 2026-08-11
-last_activity_desc: Phase 1 researched and planned; canonical counts corrected to 23 formats / 15 layouts after the locked 25/14 pair was traced to a mapper miscount
+current_phase: 01
+current_phase_name: documentation-truth-contract-freeze
+status: executing
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-08-15T00:41:00.556Z"
+last_activity: 2026-08-14
+last_activity_desc: Phase 01 execution started
 progress:
-  total_phases: 6
+  total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 1 — Documentation Truth & Contract Freeze
+**Current focus:** Phase 01 — documentation-truth-contract-freeze
 
 ## Current Position
 
-Phase: 1 of 6 (Documentation Truth & Contract Freeze)
-Plan: 0 of 5 in current phase
-Status: Planned — ready to execute (`/gsd-execute-phase 1`)
-Last activity: 2026-08-11 — Phase 1 researched, pattern-mapped, and planned; 5 plans in 3 waves; plan-checker returned 0 blockers / 3 warnings, all three resolved
+Phase: 01 (documentation-truth-contract-freeze) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-08-14 — Phase 01 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -48,7 +48,7 @@ count context as a defect.
 The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
 described a tree that no longer matched reality. Do not plan against `origin/main` alone.
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -70,6 +70,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 25min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -82,6 +87,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - DR-7 **locked**: `SpatializationAlgorithm` is frozen. Contract ambiguity is a defect, not a preference.
 - **User ruling 2026-08-10:** OpenSpatialDelay is the v1 consumer, not OpenSpatialPanner. OSD is the tree SpatialCore was extracted from and ships publicly at v1.0.0, so it is the only oracle that can prove zero regressions. Verified: OSD does not yet consume SpatialCore — the migration is unstarted.
 - **Discharged:** the 2026-08-09 ruling that `src/` is "partial until audited" has been satisfied by evidence. The suite builds and passes 144 TEST_CASEs / 1585 assertions across 16 files. Phases no longer open with a re-implementation audit.
+- [Phase ?]: Count contract (23 output formats / 15 speaker layouts / 8 algorithms) frozen in code via static_assert + Catch2 [counts] backstop; CLAUDE.md I/O row corrected to match
 
 ### Pending Todos
 
@@ -106,12 +112,13 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-08-11T08:23:00.000Z
-Stopped at: Phase 1 planned — 5 plans in 3 waves, checker passed (0 blockers)
-Resume file: .planning/phases/01-documentation-truth-contract-freeze/01-01-PLAN.md
+Last session: 2026-08-15T00:41:00.550Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
 Next command: `/gsd-execute-phase 1`
 
 **Scope grew during Phase 1 planning — three findings worth carrying forward:**
+
 1. **BUG-03 is ~10× its filed size.** REQUIREMENTS.md named 4 sites; RESEARCH.md corrected that to
    19; the planner's repo-wide sweep found **39 occurrences across 38 lines in 17 files, spanning 15
    distinct issue numbers**, including `tests/` which earlier sweeps never scanned. Material: **`#2`
@@ -119,8 +126,10 @@ Next command: `/gsd-execute-phase 1`
    Presets folder missing after build", `AndrewRahman/SpatialCore#2` is "[OpenSpatialPanner] Preset
    system" (OPEN). SpatialCore's tracker runs to #19, so every low-numbered bare citation is already
    ambiguous and that one already points at the wrong issue. BUG-03 is not cosmetic.
+
 2. **`docs/integration-guide.md:164` says "7 spatialization algorithms"** — a stale count that
    appeared in no prior fix table. Folded into plan 01-03.
+
 3. **Two items are already partly done:** `docs/development-roadmap.md:3` already carries a
    supersession note, and `CLAUDE.md`'s `Engine/` row (`:20`) plus its HRTF-loading description
    (`:74`) were already fixed by `2e3b090` / `87cb7a3`. Plans verify these rather than redo them,
