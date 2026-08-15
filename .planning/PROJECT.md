@@ -157,10 +157,10 @@ side during planning** — surface the decision to the user.
 | # | Question | Positions | Why it matters | Owning phase |
 |---|----------|-----------|----------------|--------------|
 | OQ-1 | How many spatialization algorithms are public? | 6 (`integration-guide` code sample `algorithms[6]`) vs 7 (SPEC, PRD) vs 8 (CLAUDE.md and the actual tree, including `ConstantPowerAlgorithm`) | This is a **frozen, major-version-gated contract**. Publishing the wrong number either hides a shipped algorithm or promises one that isn't there. Either fix the count to 8 everywhere, or declare ConstantPower internal and exclude it from the umbrella header. | Phase 1 (API-01) |
-| OQ-2 | What is `outputLimiter()`'s transfer function? | SPEC: hard clamp at 1.2589f. `include/SpatialCore/DSP/Utilities.h`: `threshold * std::tanh(x / threshold)` | Same ceiling constant, audibly different behaviour, on a public inline API consumers already call. The SPEC is the highest-precedence document present, so the implementation currently contradicts the governing contract. | Phase 1 (API-02) |
+| OQ-2 | ~~What is `outputLimiter()`'s transfer function?~~ **RESOLVED 2026-08-10** | SPEC: hard clamp at 1.2589f. `include/SpatialCore/Core/SpatialMath.h:100-106`: `threshold * std::tanh(x / threshold)` | **Resolved by user decision:** keep the shipped `tanh` soft ceiling — OpenSpatialDelay shipped publicly at v1.0.0 with this curve, and the header docblock at `include/SpatialCore/Core/SpatialMath.h:98-99` is the governing contract. A selectable hard-clamp mode is deferred to v2 as LIMIT-01. | Phase 1 (API-02) — closed |
 | OQ-3 | How many HRTF profiles ship? | 5 (CLAUDE.md, PRD) vs 6 (`.planning/codebase/ARCHITECTURE.md`) | `profileIndex` is part of the public `BinauralContext`. The count determines what gets embedded and Git-LFS tracked, and changing it later forces a rebuild of every consumer plugin (DR-5). | Phase 1 (API-03), consumed by Phase 3 |
 | OQ-4 | What is the test coverage target? | Undefined in all source docs. CONCERNS.md recommends 50% minimum (~2,000 lines of tests) | TEST-01 cannot be sized or called done without a number and a priority order. | Phase 6 (TEST-01) — set the target at phase start |
-| OQ-5 | When does the org repo migration happen? | Remote is `github.com/AndrewRahman/SpatialCore`; `docs/integration-guide.md` already publishes `github.com/Spatial-Media-Lab/SpatialCore` | The integration guide currently instructs consumers to submodule a URL that does not exist. Migration itself is v3, but the guide is wrong *today*. | Not a v1 phase — mark the guide URL as forward-looking, or migrate in v3 |
+| ~~OQ-5~~ | ~~When does the org repo migration happen?~~ **RESOLVED — see Key Decisions "Remote topology."** | — | Not an open question: the personal remote is correct by design, gated on proof, not on a date. | — |
 
 ## Key Decisions
 
@@ -201,11 +201,12 @@ normal planning decision.
 | DR-10 | JUCE 9.0.0 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good — corrected 2026-08-10; DR-10 originally said JUCE 8, tree is pinned 9.0.0 at `CMakeLists.txt:33` |
 | DR-11 | All library code lives in `namespace spatialcore` (DSP utilities in `spatialcore::DSP`) | ✓ Good |
 | DR-12 | Dual license GPL-3.0 + commercial | — Pending — LICENSE file lands in v3 |
-| DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — v3, see OQ-5 |
+| DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — gated on proof, not on a date. See the "Remote topology" decision row below. |
 | DR-14 | Extraction sequenced after OpenSpatialDelay v1.0 ships | ⚠️ Revisit — the PRD's 2026-03-31 OSD deadline has passed and extraction is well underway; the sequencing assumption no longer holds |
 | DR-15 | SpatialCore ships no BinaryData; consumers supply HRTF data | ✗ **Superseded by DR-5** — closed by user ruling |
 | DR-16 | UI components take an abstract Listener interface, never a concrete processor pointer | ✓ Good |
 | DR-17 | Every SML plugin is ~68% SpatialCore framework + ~32% plugin-specific DSP | ✓ Good — the product thesis |
+| DR-18 | **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote, not an accident awaiting cleanup. Development stays on the personal remote until the pipeline is proven, for risk containment: `Spatial-Media-Lab/OpenSpatialDelay` is public and in use by real people right now, so migrating it onto an unproven SpatialCore could break a live plugin. Migration is **gated on proof, not on a date** — SpatialCore, OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner land on the organisation together once the process is proven. `docs/integration-guide.md` carries the working remote as the live instruction and labels the organisation URL as the post-proof destination. | ✓ Decided 2026-08-10 — resolves OQ-5 |
 
 </decisions>
 

@@ -21,9 +21,12 @@ missing 42 commits of work. Verified corrections now folded in:
 | "~5% test coverage; binaural, HRTF, convolver, OSC, Ambisonics untested" | Suite **builds and passes: 144 TEST_CASEs, 1585 assertions**, 16 files covering Core, Algorithms, IO, OSC, Trajectory, Binaural, Engine |
 | "No `.sofa` file exists anywhere in the tree — DATA-01 unstarted" | 5 real HDF5 SOFA files, 1.2–36.6 MB, LFS-tracked, with a CI guard against pointer stubs |
 | JUCE 8 | JUCE **9.0.0** (`CMakeLists.txt:33`) |
-| 22 output formats, 13 layouts | **25** formats, **14** layouts |
+| 22 output formats, 13 layouts | **23** formats, **15** layouts |
 | Existing `src/` is "partial work, treat as unstarted" | Extraction is substantially complete and test-covered; remaining work is **named defects**, not re-implementation |
 | Issue refs `#50/#89/#96/#131` unresolvable | Real issues in `Spatial-Media-Lab/OpenSpatialDelay` (tracker runs to #235) |
+
+*Corrected 2026-08-11: the earlier pair in the row above was a mapper miscount propagated by
+commit `f0b14f4`; the tree has been unchanged since `149d50d` (2026-07-05). See API-04.*
 
 The user's ruling that "the tree is partial until proven otherwise" has now been **discharged by
 evidence**: the proof was run. Requirements below are scoped to what execution showed is missing.
@@ -62,7 +65,11 @@ doc-counting errors, answerable from the tree without a user decision.
     README.md, docs/integration-guide.md, and both auto-loading skill files) now state 8 with no
     residual stale count.
 
-- [x] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function
+- [x] **API-02**: `spatialcore::outputLimiter()` has one defined transfer function
+  - There is no `DSP` namespace and no `include/SpatialCore/DSP/` directory — verified:
+    `include/SpatialCore/Core/SpatialMath.h:7` opens `namespace spatialcore` and `:100` declares
+    `inline float outputLimiter (float x)`, with no intervening namespace (plan-checker Warning 3,
+    2026-08-11; same phantom-`DSP/` defect class as D-09).
   - **OQ-2 RESOLVED 2026-08-10 (user decision): keep the shipped `tanh` soft ceiling.**
     Rationale: OpenSpatialDelay shipped publicly at v1.0.0 with this curve, so it is the known
     sound. Changing it during a migration whose gate is "zero regressions" would alter output
@@ -103,12 +110,19 @@ doc-counting errors, answerable from the tree without a user decision.
     "verified from the tree" label; the tree says 23 / 15. See CONTEXT.md D-04.
 
 - [x] **API-05**: CLAUDE.md describes the library that actually exists
-  - **New.** Four verified inaccuracies in the project's own context file: JUCE 8 (is 9.0.0); SOFA
-    files "embedded as BinaryData" (they load from disk); the component table omits the `Engine/`
-    module entirely; format/layout counts wrong.
+  - **New.** Five verified inaccuracies in the project's own context file:
+    1. JUCE 8 (is 9.0.0)
+    2. SOFA files "embedded as BinaryData" (they load from disk) — **already closed, `87cb7a3`:**
+       CLAUDE.md already states runtime `HRTFDatabase::loadFromFile`, no BinaryData compilation
+       step, before this phase started.
+    3. the component table omits the `Engine/` module entirely — **already closed, `2e3b090`:**
+       CLAUDE.md's Architecture table already carries the `Engine` row before this phase started.
+    4. format/layout counts wrong
+    5. the architecture table's row for `DSP/`, a module directory that does not exist (D-09) —
+       found during this phase's discussion, not part of the 2026-08-10 rewrite's original list.
 
-  - Acceptance: CLAUDE.md's Architecture table lists `Engine/`, and every factual claim in it is
-    reproducible from the tree.
+  - Acceptance: CLAUDE.md's Architecture table lists `Engine/`, carries no `DSP/` row, and every
+    factual claim in it is reproducible from the tree.
 
   - Rationale: CLAUDE.md is loaded into every session in this repo. A wrong CLAUDE.md
     mis-steers every future planning pass — this is the root cause of the 2026-08-09 rewrite.
@@ -288,8 +302,15 @@ New category. These are real bugs in code SpatialCore now owns.
   - Directly blocks the v1 "zero regressions" gate: OSD ships to users who run small buffers.
 
 - [x] **BUG-03**: Cross-repo issue references in code comments are qualified
-  - `SharedFFTCache.h:17`, `PartitionedConvolver.cpp:7` (`#131`), `:46,89` (`#50`),
-    `:120-124` (`#234`) cite OSD issues in bare `#N` form, which resolves to the wrong tracker.
+  - **Full inventory** (repo-wide sweep during Phase 1 planning, superseding the earlier four-site
+    sample): **39 occurrences across 38 lines in 17 files**, spanning **15 distinct issue numbers**,
+    including sites under `tests/`. Per-file table: see Plan 02's SUMMARY
+    (`.planning/phases/01-documentation-truth-contract-freeze/01-02-SUMMARY.md`). All OSD issues
+    cited in bare `#N` form, which resolves to the wrong tracker.
+  - **Motivating finding:** at one site, `#2` resolves in **both** trackers to different issues —
+    `Spatial-Media-Lab/OpenSpatialDelay#2` ("User Presets folder missing after build") vs
+    `AndrewRahman/SpatialCore#2` ("[OpenSpatialPanner] Preset system") — so the bare form there is
+    not merely ambiguous, it is actively wrong.
 
   - Acceptance: each rewritten as `Spatial-Media-Lab/OpenSpatialDelay#N`. Comment-only, low risk.
 
