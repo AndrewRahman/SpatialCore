@@ -10,3 +10,17 @@
 #include <SpatialCore/Algorithms/DBAPAlgorithm.h>
 #include <SpatialCore/Algorithms/MDAPAlgorithm.h>
 #include <SpatialCore/Algorithms/ConstantPowerAlgorithm.h>
+
+namespace spatialcore
+{
+
+// Number of concrete SpatializationAlgorithm implementations in this header,
+// excluding the abstract SpatializationAlgorithm base.
+static constexpr int NUM_ALGORITHMS = 8;
+
+static_assert (NUM_ALGORITHMS == 8,
+    "Algorithm count changed -- update CLAUDE.md, README.md, "
+    "docs/integration-guide.md, .claude/skills/spatialcore-architecture/"
+    "spatialcore-architecture.md");
+
+} // spatialcore

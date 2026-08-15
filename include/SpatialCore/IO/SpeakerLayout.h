@@ -44,6 +44,11 @@ enum LayoutID
     S9_1_4, S9_1_6, Octaphonic, SML13_1, NUM_LAYOUT_DEFS
 };
 
+static_assert (NUM_LAYOUT_DEFS == 15,
+    "LayoutID count changed -- update CLAUDE.md, README.md, "
+    "docs/integration-guide.md, .claude/skills/spatialcore-architecture/"
+    "spatialcore-architecture.md");
+
 const SpeakerLayout& getLayoutDef (LayoutID id);
 
 // v1.0: Check if a speaker layout has height speakers (elevation > 1 degree)
