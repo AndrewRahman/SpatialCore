@@ -145,6 +145,10 @@ None - no external service configuration required.
 - Plans 01-04 and 01-05 remain to execute; plan 01-05 is expected to correct the requirement text that still lists the already-fixed Engine row / HRTF wording as outstanding (per STATE.md's carried-forward note).
 - No blockers identified for subsequent plans in this phase.
 
+## Self-Check: PASSED
+
+All 6 claimed files found on disk; all 4 claimed commit hashes (1a9a8ec, 68a19fb, 8941c71, d4e5ee5) found in git log.
+
 ---
 *Phase: 01-documentation-truth-contract-freeze*
 *Completed: 2026-08-15*
