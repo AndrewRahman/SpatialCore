@@ -70,10 +70,30 @@ TEST_CASE ("outputLimiter: non-finite input returns 0.0", "[spatialmath][outputl
     CHECK (outputLimiter (-std::numeric_limits<float>::infinity()) == 0.0f);
 }
 
-TEST_CASE ("outputLimiter: matches exact 1.2589 * tanh(x/1.2589) formula", "[spatialmath][outputlimiter]")
+TEST_CASE ("outputLimiter: below the ceiling, matches 1.2589 * tanh(x/1.2589)", "[spatialmath][outputlimiter]")
 {
     const float threshold = 1.2589f;
-    for (float x : { -5.0f, -1.2589f, -0.5f, 0.0f, 0.5f, 1.2589f, 2.0f, 5.0f, 100.0f })
+    for (float x : { -0.5f, 0.0f, 0.5f })
+    {
+        float expected = threshold * std::tanh (x / threshold);
+        CHECK_THAT (outputLimiter (x), WithinAbs (expected, 1e-6f));
+    }
+}
+
+TEST_CASE ("outputLimiter: at the ceiling, matches 1.2589 * tanh(x/1.2589)", "[spatialmath][outputlimiter]")
+{
+    const float threshold = 1.2589f;
+    for (float x : { -1.2589f, 1.2589f })
+    {
+        float expected = threshold * std::tanh (x / threshold);
+        CHECK_THAT (outputLimiter (x), WithinAbs (expected, 1e-6f));
+    }
+}
+
+TEST_CASE ("outputLimiter: above the ceiling, matches 1.2589 * tanh(x/1.2589)", "[spatialmath][outputlimiter]")
+{
+    const float threshold = 1.2589f;
+    for (float x : { -5.0f, 2.0f, 5.0f, 100.0f })
     {
         float expected = threshold * std::tanh (x / threshold);
         CHECK_THAT (outputLimiter (x), WithinAbs (expected, 1e-6f));
