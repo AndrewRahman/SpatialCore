@@ -4,16 +4,16 @@ milestone: v1.0.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: documentation-truth-contract-freeze
-status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-08-15T08:37:42.412Z"
+status: verifying
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-08-15T08:45:02.181Z"
 last_activity: 2026-08-14
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 Phase: 01 (documentation-truth-contract-freeze) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-14 — Phase 01 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -48,7 +48,7 @@ count context as a defect.
 The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
 described a tree that no longer matched reality. Do not plan against `origin/main` alone.
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Progress: [████████░░] 80%
 | Phase 01 P02 | 12min | 2 tasks | 17 files |
 | Phase 01 P03 | 6min | 3 tasks | 5 files |
 | Phase 01 P04 | 18min | 2 tasks | 2 files |
+| Phase 01 P05 | 6min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase ?]: Added missing Constant Power bullet to README.md's algorithm list (Rule 2 deviation) — heading said 8 but list named only 7, matching AllAlgorithms.h's own static_assert guidance naming README.md as a required update site
 - [Phase ?]: docs/integration-guide.md submodule URL corrected to AndrewRahman/SpatialCore.git (resolving dev remote); Spatial-Media-Lab/SpatialCore demoted to labelled post-proof-destination prose per D-17
 - [Phase ?]: OQ-2 stays closed: shipped tanh soft ceiling is outputLimiter()'s sole governing contract (SpatialMath.h docblock); the scaffold plan's hard-clamp sketch was stamped historical (Tier B pattern) rather than amended, per D-07/D-01
+- [Phase ?]: OQ-5 (org repo migration timing) retired to decision DR-18: development stays on the personal remote until the pipeline is proven, migration gated on proof not a date
+- [Phase ?]: Phase 01 complete: all Tier B documents stamped historical (zero renumbering); PROJECT.md and REQUIREMENTS.md corrected so they no longer mis-steer future phases with stale counts or a phantom DSP/ path
 
 ### Pending Todos
 
@@ -119,8 +122,8 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-08-15T08:37:42.406Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-08-15T08:44:57.776Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
 Next command: `/gsd-execute-phase 1`
 
