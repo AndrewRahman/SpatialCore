@@ -515,11 +515,11 @@ Speaker layout changes (output format switch) use atomic double-buffer:
 
 ### 9.1 Configuration
 
-- Framework: JUCE 8.0.3 (git submodule at `JUCE/`)
+- Framework: JUCE 9.0.0 (git submodule at `JUCE/`)
 - Language: C++17
 - Build: CMake 3.22+
 - Dependencies: libmysofa v1.3.2 (FetchContent), zlib (system macOS, vcpkg Windows)
-- HRTF data: 5 SOFA files in `HRTF/` embedded as binary resources (Git LFS tracked)
+- HRTF data: 5 SOFA files in `HRTF/` loaded at runtime via `HRTFDatabase::loadFromFile` (Git LFS tracked)
 
 ### 9.2 macOS Build
 
