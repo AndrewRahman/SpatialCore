@@ -52,7 +52,7 @@ is exactly what the v1 milestone exists to deliver.
 Frozen under DR-7, gated by DR-2. Three of the four 2026-08-09 open questions turned out to be
 doc-counting errors, answerable from the tree without a user decision.
 
-- [x] **API-01**: The public algorithm count is one number across headers and docs
+- [ ] **API-01**: The public algorithm count is one number across headers and docs
   - **Resolved by evidence: 8.** `grep -l "public SpatializationAlgorithm"` returns 8 concrete
     implementations. OQ-1 ("6 vs 7 vs 8") is closed.
 
@@ -65,11 +65,12 @@ doc-counting errors, answerable from the tree without a user decision.
     README.md, docs/integration-guide.md, and both auto-loading skill files) now state 8 with no
     residual stale count.
 
-- [x] **API-02**: `spatialcore::outputLimiter()` has one defined transfer function
+- [ ] **API-02**: `spatialcore::outputLimiter()` has one defined transfer function
   - There is no `DSP` namespace and no `include/SpatialCore/DSP/` directory — verified:
     `include/SpatialCore/Core/SpatialMath.h:7` opens `namespace spatialcore` and `:100` declares
     `inline float outputLimiter (float x)`, with no intervening namespace (plan-checker Warning 3,
     2026-08-11; same phantom-`DSP/` defect class as D-09).
+
   - **OQ-2 RESOLVED 2026-08-10 (user decision): keep the shipped `tanh` soft ceiling.**
     Rationale: OpenSpatialDelay shipped publicly at v1.0.0 with this curve, so it is the known
     sound. Changing it during a migration whose gate is "zero regressions" would alter output
@@ -82,7 +83,7 @@ doc-counting errors, answerable from the tree without a user decision.
   - **Deferred, not discarded:** a selectable hard-clamp mode is recorded as a v2 candidate
     (LIMIT-01, Future Milestones). Adding a mode later is additive and does not break DR-2.
 
-- [x] **API-03**: The HRTF profile count is one number across docs, headers, and shipped data
+- [ ] **API-03**: The HRTF profile count is one number across docs, headers, and shipped data
   - **Resolved by evidence: 5.** `HRTF/` holds exactly 5 `.sofa` files; the identical 5 exist in
     OSD's `HRTF/`, confirming provenance. OQ-3 ("5 vs 6") is closed.
 
@@ -96,7 +97,7 @@ doc-counting errors, answerable from the tree without a user decision.
     two-number sentence (5 SOFA profiles ship; `profileIndex` 0-5, 0 = Simple Woodworth) instead
     of a bare or conflated count.
 
-- [x] **API-04**: Output-format and speaker-layout counts match the tree
+- [ ] **API-04**: Output-format and speaker-layout counts match the tree
   - **New.** `OutputFormat` has **23** values (`OutputFormat.h:9-28`, cross-checked against 23
     `OutputFormat::` rows in `OutputFormatRegistry.cpp`); `SpeakerLayout.h`'s `LayoutID` has **15**
     named layouts plus a `NUM_LAYOUT_DEFS` sentinel (`SpeakerLayout.h:42-45`). Every doc says 22
@@ -109,14 +110,16 @@ doc-counting errors, answerable from the tree without a user decision.
     mapper miscount in `.planning/codebase/ARCHITECTURE.md:107` that `f0b14f4` copied here under a
     "verified from the tree" label; the tree says 23 / 15. See CONTEXT.md D-04.
 
-- [x] **API-05**: CLAUDE.md describes the library that actually exists
+- [ ] **API-05**: CLAUDE.md describes the library that actually exists
   - **New.** Five verified inaccuracies in the project's own context file:
     1. JUCE 8 (is 9.0.0)
     2. SOFA files "embedded as BinaryData" (they load from disk) — **already closed, `87cb7a3`:**
        CLAUDE.md already states runtime `HRTFDatabase::loadFromFile`, no BinaryData compilation
        step, before this phase started.
+
     3. the component table omits the `Engine/` module entirely — **already closed, `2e3b090`:**
        CLAUDE.md's Architecture table already carries the `Engine` row before this phase started.
+
     4. format/layout counts wrong
     5. the architecture table's row for `DSP/`, a module directory that does not exist (D-09) —
        found during this phase's discussion, not part of the 2026-08-10 rewrite's original list.
@@ -301,12 +304,13 @@ New category. These are real bugs in code SpatialCore now owns.
   - Acceptance: a regression test renders at 32/64/128 sample blocks without artifacts.
   - Directly blocks the v1 "zero regressions" gate: OSD ships to users who run small buffers.
 
-- [x] **BUG-03**: Cross-repo issue references in code comments are qualified
+- [ ] **BUG-03**: Cross-repo issue references in code comments are qualified
   - **Full inventory** (repo-wide sweep during Phase 1 planning, superseding the earlier four-site
     sample): **39 occurrences across 38 lines in 17 files**, spanning **15 distinct issue numbers**,
     including sites under `tests/`. Per-file table: see Plan 02's SUMMARY
     (`.planning/phases/01-documentation-truth-contract-freeze/01-02-SUMMARY.md`). All OSD issues
     cited in bare `#N` form, which resolves to the wrong tracker.
+
   - **Motivating finding:** at one site, `#2` resolves in **both** trackers to different issues —
     `Spatial-Media-Lab/OpenSpatialDelay#2` ("User Presets folder missing after build") vs
     `AndrewRahman/SpatialCore#2` ("[OpenSpatialPanner] Preset system") — so the bare form there is
@@ -415,11 +419,11 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 
 | Requirement | Source | Phase | Status |
 |-------------|--------|-------|--------|
-| API-01 | OQ-1, resolved by re-map | 1 | Complete |
-| API-02 | OQ-2 (resolved: keep tanh) | 1 | Complete |
-| API-03 | OQ-3, resolved by re-map | 1 | Complete |
-| API-04 | Re-map (23 formats / 15 layouts) | 1 | Complete |
-| API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Complete |
+| API-01 | OQ-1, resolved by re-map | 1 | Gaps Found |
+| API-02 | OQ-2 (resolved: keep tanh) | 1 | Gaps Found |
+| API-03 | OQ-3, resolved by re-map | 1 | Gaps Found |
+| API-04 | Re-map (23 formats / 15 layouts) | 1 | Gaps Found |
+| API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Gaps Found |
 | EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
 | EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
 | EXTR-02 | REQ-extract-binaural-rendering | 3 | Largely verified by tests |
@@ -434,7 +438,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Pending |
 | BUG-01 | SpatialCore#15 | 3 | Pending |
 | BUG-02 | OpenSpatialDelay#234 | 3 | Pending |
-| BUG-03 | CONCERNS.md | 1 | Complete |
+| BUG-03 | CONCERNS.md | 1 | Gaps Found |
 | VERIFY-01 | SpatialCore#11 | 2 | Pending |
 | VERIFY-02 | SpatialCore#12 | 5 | Pending |
 | CI-01 | SpatialCore#9 | 6 | Pending |
