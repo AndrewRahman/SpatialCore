@@ -65,7 +65,9 @@ SpatialCore is a C++ static library extracted from OpenSpatialDelay. It contains
 
 ### Git Submodule
 ```bash
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+# AndrewRahman/SpatialCore is the development remote and the URL to use today;
+# Spatial-Media-Lab/SpatialCore is the post-proof destination and does not resolve yet (DR-18).
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 ```
 
 ### CMake

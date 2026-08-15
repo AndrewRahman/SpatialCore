@@ -63,15 +63,17 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 
 ### Utility DSP
 - `softClip()` — Soft saturation for delay input and feedback
-- `outputLimiter()` — +2dB ceiling rational approximation saturator
+- `outputLimiter()` — +2 dB (1.2589) tanh soft ceiling: `1.2589f * tanh(x / 1.2589f)`
 
 ## Integration
 
 ### Adding SpatialCore to a Plugin
 
 ```bash
-# Add as git submodule
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+# Add as git submodule.
+# AndrewRahman/SpatialCore is the development remote and the URL to use today;
+# Spatial-Media-Lab/SpatialCore is the post-proof destination and does not resolve yet.
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 ```
 
 ```cmake

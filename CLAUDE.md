@@ -5,7 +5,7 @@
 - **Organization:** Spatial Media Lab (spatialmedialab.org)
 - **What it does:** Takes audio objects with 3D positions and renders them to any output format (binaural, stereo, surround, Ambisonics) via 8 spatialization algorithms
 - **License:** GPL-3.0 + commercial (dual license)
-- **GitHub:** `https://github.com/Spatial-Media-Lab/SpatialCore`
+- **GitHub:** `https://github.com/AndrewRahman/SpatialCore` — the development remote, and the URL to clone or submodule today. `Spatial-Media-Lab/SpatialCore` is the post-proof destination and **does not resolve yet** (DR-18); do not substitute it. See `docs/integration-guide.md` "Remote topology".
 
 ## Origin
 SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase was marked as reusable spatial audio infrastructure. The extraction separated framework code (algorithms, HRTF, I/O, OSC, trajectories, UI) from delay-specific code (delay line, pitch shift, feedback, wobble).
