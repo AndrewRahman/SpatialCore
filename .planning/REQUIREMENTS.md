@@ -274,7 +274,7 @@ New category. These are real bugs in code SpatialCore now owns.
   - Acceptance: a regression test renders at 32/64/128 sample blocks without artifacts.
   - Directly blocks the v1 "zero regressions" gate: OSD ships to users who run small buffers.
 
-- [ ] **BUG-03**: Cross-repo issue references in code comments are qualified
+- [x] **BUG-03**: Cross-repo issue references in code comments are qualified
   - `SharedFFTCache.h:17`, `PartitionedConvolver.cpp:7` (`#131`), `:46,89` (`#50`),
     `:120-124` (`#234`) cite OSD issues in bare `#N` form, which resolves to the wrong tracker.
 
@@ -400,7 +400,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Pending |
 | BUG-01 | SpatialCore#15 | 3 | Pending |
 | BUG-02 | OpenSpatialDelay#234 | 3 | Pending |
-| BUG-03 | CONCERNS.md | 1 | Pending |
+| BUG-03 | CONCERNS.md | 1 | Complete |
 | VERIFY-01 | SpatialCore#11 | 2 | Pending |
 | VERIFY-02 | SpatialCore#12 | 5 | Pending |
 | CI-01 | SpatialCore#9 | 6 | Pending |
