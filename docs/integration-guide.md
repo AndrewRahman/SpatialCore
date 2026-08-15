@@ -4,7 +4,7 @@ How to build a new Spatial Media Library plugin using SpatialCore.
 
 ## Prerequisites
 
-- JUCE 8 (C++17)
+- JUCE 9.0.0 (C++17)
 - CMake 3.22+
 - A C++17 compiler (Clang on macOS, MSVC on Windows)
 
@@ -19,12 +19,16 @@ git init
 ## Step 2: Add SpatialCore and JUCE as Submodules
 
 ```bash
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 git submodule add https://github.com/juce-framework/JUCE.git JUCE
 git submodule update --init --recursive   # SpatialCore's HRTF .sofa are Git-LFS
 ```
 
-> **Live remote:** the canonical org is Spatial Media Lab (spatialmedialab.org); the working git remote today is `https://github.com/AndrewRahman/SpatialCore.git` — use whichever your access resolves. Consumers today: OpenSpatialDelay (live) and OpenSpatialPanner (next).
+> **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote and the
+> URL to use today. `Spatial-Media-Lab/SpatialCore` is the post-proof destination: SpatialCore,
+> OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner move to the organisation together once
+> the pipeline is proven, so the migration is gated on proof rather than on a date. The
+> organisation URL does not resolve yet — do not substitute it.
 
 ## Step 3: CMakeLists.txt
 
@@ -75,7 +79,7 @@ class YourProcessor : public juce::AudioProcessor {
 public:
     // SpatialCore components (from framework)
     spatialcore::BinauralRenderer binauralRenderer;
-    spatialcore::SpatializationAlgorithm* algorithms[6];
+    spatialcore::SpatializationAlgorithm* algorithms[8];
     spatialcore::HRTFDatabase hrtfDb;
 
     // Your effect-specific DSP
@@ -161,9 +165,9 @@ Every SML plugin follows the same architecture:
 │               │ calls                        │
 │  ┌────────────▼───────────────────────────┐  │
 │  │  SpatialCore (68%)                     │  │
-│  │  - 7 spatialization algorithms         │  │
+│  │  - 8 spatialization algorithms         │  │
 │  │  - HRTF binaural rendering             │  │
-│  │  - 22 output formats                   │  │
+│  │  - 23 output formats                   │  │
 │  │  - ADM-OSC send/receive                │  │
 │  │  - Trajectory engine                   │  │
 │  │  - Spatial map UI                      │  │
