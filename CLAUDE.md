@@ -18,10 +18,10 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 | Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural |
 | Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
 | Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free double-buffered output-format/HRTF-profile swap, and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
+| Core | `Core/SpatialMath.h` | `softClip()`, `outputLimiter()` (tanh soft ceiling), `distanceAttenuation()`, plus the shared position/gain types in `Core/Types.h` |
 | I/O | `IO/*.h` | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
 | Trajectory | `Trajectory/*.h` | 13 shapes, origin-point architecture, forward/reverse |
-| DSP | `DSP/*.h` | softClip(), outputLimiter() |
 | UI | `UI/*.h` | SpatialMapComponent, SMLLookAndFeel, ReverseSlider, IndicatorToggle, StyledButton |
 
 ### Key Interfaces
@@ -69,7 +69,7 @@ class SpatializationAlgorithm {
 - **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — with one stated exception: stereo-variant gains (`objGainL`/`objGainR`) are computed consumer-side always, because that math is not a `SpatializationAlgorithm`
 
 ## Build System
-- **Framework:** JUCE 8, C++17, CMake 3.22+
+- **Framework:** JUCE 9.0.0, C++17, CMake 3.22+
 - **Dependencies:** libmysofa v1.3.2 (FetchContent), zlib (system)
 - **HRTF data:** 5 SOFA files (Git LFS tracked), loaded at runtime via `HRTFDatabase::loadFromFile` — no BinaryData compilation step is involved. Consumer plugins resolve the files bundle-relative in shipped builds (e.g. OSD: `<bundle>/Contents/Resources/HRTF/`), with a source-tree fallback for dev/test/CI. See OpenSpatialDelay's `Source/PluginProcessor.cpp` `loadHRTFProfileIntoRenderer` for the reference resolver + its packaging scripts for the release-time file placement.
 - **Tests:** Catch2 v3.7.1 via FetchContent
