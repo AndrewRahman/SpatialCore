@@ -55,7 +55,7 @@ TEST_CASE ("SADIE II D2 KU100 — golden HRIR checksum at az=90deg (own control)
     CHECK (checksum == kGoldenChecksum);
 
     // SADIE reports non-zero SOFA delays natively — confirms this profile
-    // bypasses the onset-detection fallback (issue #89), matching the
+    // bypasses the onset-detection fallback (issue Spatial-Media-Lab/OpenSpatialDelay#89), matching the
     // documented behavior in Tests/ConvolverGlitchTests.cpp.
     float maxITD = std::max (std::abs (delayL), std::abs (delayR));
     CHECK (maxITD > 0.1f);

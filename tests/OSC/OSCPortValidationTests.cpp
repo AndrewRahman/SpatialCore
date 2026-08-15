@@ -5,7 +5,7 @@
 using namespace spatialcore;
 
 // ============================================================================
-// OSCPortValidationTests — issue #179 / Phase 10 Plan 10-06. Proves the
+// OSCPortValidationTests — issue Spatial-Media-Lab/OpenSpatialDelay#179 / Phase 10 Plan 10-06. Proves the
 // same-port (loopback) self-feedback conflict definition (D-06): equal
 // receive/send ports on a loopback send host are rejected; different ports,
 // or equal ports aimed at a non-loopback host, are not conflicts.
