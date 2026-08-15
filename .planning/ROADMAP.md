@@ -23,7 +23,7 @@ yet consume SpatialCore; the migration is unstarted.
 
 ## Phases
 
-- [ ] **Phase 1: Documentation Truth & Contract Freeze** - Every public number matches the tree, and CLAUDE.md stops mis-steering future sessions
+- [x] **Phase 1: Documentation Truth & Contract Freeze** - Every public number matches the tree, and CLAUDE.md stops mis-steering future sessions (completed 2026-08-15)
 - [ ] **Phase 2: Algorithm & Format Verification** - Ambisonics convention stated; gain paths verified against the panning laws
 - [ ] **Phase 3: Binaural Defects & HRTF Packaging** - The two inherited binaural bugs are fixed and a consumer gets HRTF data by linking
 - [ ] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction
@@ -204,7 +204,7 @@ External Dependencies.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Documentation Truth & Contract Freeze | 5/5 | In Progress|  |
+| 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 0/TBD | Not started | - |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
