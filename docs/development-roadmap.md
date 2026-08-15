@@ -1,6 +1,7 @@
 # SpatialCore — Development Roadmap
 
 > **⚠️ Status note (superseded — pre-extraction planning doc):** This document dates from before the extraction. As of the `spatialcore-v2-extraction` branch, SpatialCore is fully extracted and implemented — 8 spatialization algorithms, HRTF/SOFA rendering, the `RenderEngine` facade, runtime Git-LFS HRTF loading (NOT BinaryData), and the DSP/UI target split. Sections below describing "stubs," "BinaryData HRTF / rebuild all consumers," or unchecked extraction deliverables are **historical and no longer accurate**. For current truth see `CLAUDE.md`, `README.md`, and `docs/integration-guide.md`. OpenSpatialPanner (listed here as "future") is the committed next consumer.
+> Counts and completion status in this document are a dated snapshot and are not maintained; the current roadmap and phase status live in `.planning/ROADMAP.md` (rewritten 2026-08-10). In particular, the "What Does NOT Exist Yet" section lists five extraction requirements as missing that are in fact implemented and test-covered.
 
 Last updated: 2026-03-22
 

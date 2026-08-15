@@ -1,5 +1,11 @@
 # Synthesis
 
+> **Historical — superseded by `.planning/ROADMAP.md`, 2026-08-10.** This document was derived
+> from the 2026-08-09 ingest, which ran against a branch missing 42 commits. Counts, status,
+> and constraints below are a dated snapshot and are not maintained. For current canonical
+> counts see `CLAUDE.md` and `README.md`; for current requirements and phase status see
+> `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md`.
+
 Generated: 2026-08-09 — /gsd-ingest-docs (MODE: new)
 Repo root: `/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/`
 Entry point for `gsd-roadmapper`. Read the per-type intel files below for detail.
