@@ -62,7 +62,7 @@ doc-counting errors, answerable from the tree without a user decision.
     README.md, docs/integration-guide.md, and both auto-loading skill files) now state 8 with no
     residual stale count.
 
-- [ ] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function
+- [x] **API-02**: `spatialcore::DSP::outputLimiter()` has one defined transfer function
   - **OQ-2 RESOLVED 2026-08-10 (user decision): keep the shipped `tanh` soft ceiling.**
     Rationale: OpenSpatialDelay shipped publicly at v1.0.0 with this curve, so it is the known
     sound. Changing it during a migration whose gate is "zero regressions" would alter output
@@ -395,7 +395,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | Requirement | Source | Phase | Status |
 |-------------|--------|-------|--------|
 | API-01 | OQ-1, resolved by re-map | 1 | Complete |
-| API-02 | OQ-2 (resolved: keep tanh) | 1 | Pending |
+| API-02 | OQ-2 (resolved: keep tanh) | 1 | Complete |
 | API-03 | OQ-3, resolved by re-map | 1 | Complete |
 | API-04 | Re-map (23 formats / 15 layouts) | 1 | Complete |
 | API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Complete |

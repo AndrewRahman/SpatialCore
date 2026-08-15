@@ -52,14 +52,14 @@ it is the known sound, and changing it during a zero-regressions migration would
 existing users. A selectable hard-clamp mode is deferred to v2 as LIMIT-01.
 **Why first**: A wrong CLAUDE.md is loaded into every session in this repo, and is the direct cause
 of the 2026-08-09 planning pass being built on false premises. Fix the map before using it.
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 
 Plans:
 
 - [x] 01-01-PLAN.md — Freeze the count contract in code: compile-time assertions for 23 formats / 15 layouts / 8 algorithms, plus a `[counts]` Catch2 backstop *(wave 1)*
 - [x] 01-02-PLAN.md — Qualify all 39 cross-repo issue citations across 17 files as `Spatial-Media-Lab/OpenSpatialDelay#N` *(wave 2)*
 - [x] 01-03-PLAN.md — Correct all five Tier A doc surfaces, including both auto-loading skill files *(wave 2)*
-- [ ] 01-04-PLAN.md — Give `outputLimiter()` one contract: named at/below/above-ceiling tests, and stamp the contradicting scaffold plan historical *(wave 3)*
+- [x] 01-04-PLAN.md — Give `outputLimiter()` one contract: named at/below/above-ceiling tests, and stamp the contradicting scaffold plan historical *(wave 3)*
 - [ ] 01-05-PLAN.md — Stamp the remaining Tier B documents and correct PROJECT.md / REQUIREMENTS.md's own factual errors *(wave 3)*
 
 ### Phase 2: Algorithm & Format Verification
@@ -204,7 +204,7 @@ External Dependencies.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Documentation Truth & Contract Freeze | 3/5 | In Progress|  |
+| 1. Documentation Truth & Contract Freeze | 4/5 | In Progress|  |
 | 2. Algorithm & Format Verification | 0/TBD | Not started | - |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
