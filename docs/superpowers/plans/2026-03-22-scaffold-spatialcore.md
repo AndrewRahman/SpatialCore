@@ -1,5 +1,15 @@
 # SpatialCore Library Scaffolding Plan
 
+> **Historical — superseded by `.planning/ROADMAP.md`, 2026-08-10.** Counts, status, and
+> implementation sketches in this document are a dated snapshot from the pre-extraction
+> scaffolding stage and are not maintained. See `CLAUDE.md`, `README.md`, and
+> `docs/integration-guide.md` for current canonical counts.
+>
+> **Specifically:** the `outputLimiter()` sketch below describes a hard clamp. That is not
+> what ships. The governing contract for `outputLimiter()` is the docblock directly above the
+> function in `include/SpatialCore/Core/SpatialMath.h`, which describes the tanh soft ceiling
+> `1.2589f * tanh(x / 1.2589f)`. Do not implement from the sketch below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create the complete directory structure, build system, public API headers, stub implementations, and test infrastructure for SpatialCore — a JUCE 8 C++17 static library extracted from OpenSpatialDelay.

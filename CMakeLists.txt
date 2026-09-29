@@ -29,7 +29,7 @@ if(NOT TARGET juce::juce_core)
             FetchContent_Declare(
                 JUCE
                 GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-                GIT_TAG        8.0.4
+                GIT_TAG        9.0.0
                 GIT_SHALLOW    TRUE
             )
             FetchContent_MakeAvailable(JUCE)
@@ -37,20 +37,31 @@ if(NOT TARGET juce::juce_core)
     endif()
 endif()
 
-# --- libmysofa ---
-FetchContent_Declare(
-    mysofa
-    GIT_REPOSITORY https://github.com/hoene/libmysofa.git
-    GIT_TAG v1.3.2
-)
-set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(mysofa)
+# --- libmysofa (skip fetch if a consumer already provides the mysofa-static
+# target — e.g. OSD's own top-level FetchContent of the same hoene/libmysofa
+# v1.3.2 tag under the name "libmysofa"; both declarations produce the same
+# "mysofa-static" CMake target, so fetching twice is a duplicate-target error
+# when SpatialCore is add_subdirectory()'d into a consumer that already
+# fetched it) ---
+if(NOT TARGET mysofa-static)
+    FetchContent_Declare(
+        mysofa
+        GIT_REPOSITORY https://github.com/hoene/libmysofa.git
+        GIT_TAG v1.3.2
+    )
+    set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(mysofa)
+endif()
 
 find_package(ZLIB REQUIRED)
 
-# --- SpatialCore static library ---
+# --- SpatialCore static library (DSP-ONLY — no GUI modules, no UI sources) ---
+# NOTE: src/UI/*.cpp (SpatialMapComponent, SMLLookAndFeel, ReverseSlider,
+# IndicatorToggle, StyledButton) is deliberately NOT compiled into this target.
+# UI lives in the separate SpatialCoreUI CMake target below (D-03 scope split),
+# added by Phase 9 Plan 09-02. SpatialCoreUI links PUBLIC against this target.
 add_library(SpatialCore STATIC
     # Algorithms
     src/Algorithms/VBAPAlgorithm.cpp
@@ -74,14 +85,12 @@ add_library(SpatialCore STATIC
     # OSC
     src/OSC/ADMOSCReceiver.cpp
     src/OSC/ADMOSCSender.cpp
+    src/OSC/OSCPortValidation.cpp
     # Trajectory
     src/Trajectory/TrajectoryEngine.cpp
-    # UI
-    src/UI/SpatialMapComponent.cpp
-    src/UI/SMLLookAndFeel.cpp
-    src/UI/ReverseSlider.cpp
-    src/UI/IndicatorToggle.cpp
-    src/UI/StyledButton.cpp
+    src/Trajectory/DopplerVelocity.cpp
+    # Engine
+    src/Engine/RenderEngine.cpp
 )
 
 target_include_directories(SpatialCore
@@ -90,26 +99,181 @@ target_include_directories(SpatialCore
         $<INSTALL_INTERFACE:include>
 )
 
+# DSP-only link set (JUCE-Independence Boundary, 08-PATTERNS.md): no
+# juce_gui_basics, no juce_audio_utils/juce_audio_plugin_client. Only
+# juce_core, juce_dsp, juce_osc, plus the audio-basics/formats modules the
+# transplanted DSP bodies (HRTFDatabase SOFA I/O) require.
+#
+# NOTE on the standalone-vs-consumed split below: JUCE module targets
+# (juce::juce_core etc.) are CMake INTERFACE libraries whose .cpp/.mm unity
+# sources get compiled directly into whichever CONCRETE target links them
+# (target_sources(... INTERFACE ...) propagates sources, not just symbols/
+# include-dirs) — PUBLIC or PRIVATE both trigger this, only the downstream
+# propagation differs. When SpatialCore is add_subdirectory()'d into OSD,
+# OSD's own plugin/test/harness targets ALSO independently compile full
+# copies of the same JUCE module sources (existing pre-Phase-8 pattern, one
+# copy per standalone JUCE "app" target). Linking libSpatialCore.a (which
+# would otherwise carry its OWN third copy) into those targets collides at
+# final link with thousands of duplicate symbols. So: in consumed mode, link
+# the juce:: module targets INTERFACE-only (SpatialCore's own .cpp files
+# still get the needed include dirs + compile definitions via
+# $<BUILD_INTERFACE:...INTERFACE_INCLUDE_DIRECTORIES...> below, without a
+# second compiled copy of the module sources ending up in libSpatialCore.a —
+# the consumer's own module compilation is the single source of truth for
+# those symbols, per D-06's "consumer's JUCE wins" rule). In standalone mode
+# (SpatialCore's own CI / SpatialCoreTests, no consumer present), there is no
+# other target to supply the compiled module code, so link PUBLIC as before.
+set(_spatialcore_juce_modules
+    juce::juce_core
+    juce::juce_audio_basics
+    juce::juce_audio_formats
+    juce::juce_dsp
+    juce::juce_osc
+)
+
+if(PROJECT_IS_TOP_LEVEL)
+    target_link_libraries(SpatialCore PUBLIC ${_spatialcore_juce_modules})
+else()
+    target_link_libraries(SpatialCore INTERFACE ${_spatialcore_juce_modules})
+    foreach(_scjm IN LISTS _spatialcore_juce_modules)
+        target_include_directories(SpatialCore PRIVATE
+            $<TARGET_PROPERTY:${_scjm},INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(SpatialCore PRIVATE
+            $<TARGET_PROPERTY:${_scjm},INTERFACE_COMPILE_DEFINITIONS>)
+    endforeach()
+endif()
+
 target_link_libraries(SpatialCore
-    PUBLIC
-        juce::juce_core
-        juce::juce_audio_basics
-        juce::juce_audio_formats
-        juce::juce_dsp
-        juce::juce_gui_basics
-        juce::juce_osc
     PRIVATE
         mysofa-static
         ZLIB::ZLIB
 )
 
+# JUCE_USE_CURL=0: avoids juce_core's optional libcurl dependency (WebInputStream/
+# URL download support), which SpatialCore's DSP code never uses. Without this,
+# Linux builds (standalone CI, ubuntu-latest) fail to link with "undefined
+# reference to curl_easy_init" etc. — matches OSD's own root CMakeLists.txt,
+# which sets this on every one of its targets for the identical reason.
+# PUBLIC so it also applies to SpatialCoreTests (propagates via the
+# SpatialCore link dependency) and to any other target compiling these JUCE
+# module sources transitively through SpatialCore.
+target_compile_definitions(SpatialCore PUBLIC JUCE_USE_CURL=0)
+
 target_compile_features(SpatialCore PUBLIC cxx_std_17)
 
+# NOTE: -ffast-math / /fp:fast are deliberately NOT applied to SpatialCore
+# (unlike OSD's own root CMakeLists.txt, which does apply them to the
+# OpenSpatialDelay/OpenSpatialDelayTests/RegressionHarness targets). Phase 8
+# Plan 08-02 discovered empirically that applying -ffast-math to code compiled
+# in a SEPARATE translation unit (SpatialCore/src/Trajectory/TrajectoryEngine.cpp
+# as its own .o inside libSpatialCore.a) versus the ORIGINAL single-TU
+# compilation (Source/TrajectoryEngine.cpp compiled directly into
+# OpenSpatialDelayTests alongside PluginProcessor.cpp) produces different
+# floating-point reassociation choices per translation unit — bit-different
+# but equally "correct" results that compound over thousands of processBlock
+# calls into a large final divergence. This broke the Phase 7 bit-identical
+# regression harness gate (INT-03) for zero logic-level reason. Confirmed via
+# `ctest -R RegressionHarness` before/after: removing -ffast-math here (while
+# OSD's own targets keep it) restores bit-identical output. If a future plan
+# needs -ffast-math perf back on SpatialCore, it must re-verify the full
+# regression harness (not just spot-check) and update the golden manifest
+# deliberately, not silently.
 if(APPLE)
-    target_compile_options(SpatialCore PRIVATE -ffast-math -Wno-nan-infinity-disabled)
+    target_compile_options(SpatialCore PRIVATE -Wno-nan-infinity-disabled)
 elseif(MSVC)
-    target_compile_options(SpatialCore PRIVATE /fp:fast)
 endif()
+
+# --- SpatialCoreUI static library (GUI-linked — SMLLookAndFeel + widgets) ---
+# Separate target from the DSP-only SpatialCore above (Pattern 4, 09-RESEARCH.md
+# lines 367-405): a future DSP-only consumer never pulls GUI modules transitively.
+# Landed incrementally: Plan 09-02 added the four leaf classes; Plan 09-03 added
+# the generic N-object SpatialMapComponent; Plan 09-04 added GlobalTapDrawer and
+# PresetBrowser (+ PresetSaveOverlay); Plan 09-05 added IOSectionComponent and
+# OSCSectionComponent, closing CUI-04; Plan 09-06 added ObjectPanel (tab row +
+# spatial cluster building blocks), closing CUI-03.
+add_library(SpatialCoreUI STATIC
+    src/UI/SMLLookAndFeel.cpp
+    src/UI/ReverseSlider.cpp
+    src/UI/IndicatorToggle.cpp
+    src/UI/StyledButton.cpp
+    src/UI/SpatialMapComponent.cpp
+    src/UI/GlobalTapDrawer.cpp
+    src/UI/PresetBrowser.cpp
+    src/UI/IOSectionComponent.cpp
+    src/UI/OSCSectionComponent.cpp
+    src/UI/ObjectPanel.cpp
+)
+
+# UI consumes Core types (e.g. MAX_SOURCES) — see SpatialCore/include/SpatialCore/Core/Types.h.
+# NOTE: cannot simply `target_link_libraries(SpatialCoreUI PUBLIC SpatialCore)` — SpatialCore
+# links its own JUCE modules (juce_core, juce_audio_basics, etc.) as INTERFACE in consumed mode,
+# and INTERFACE-declared sources compile into ANY concrete target that links them at ANY depth
+# (see the DSP target's own comment above). SpatialCoreUI is itself an intermediate static lib,
+# not the final consumer executable, so a PUBLIC/PRIVATE link here would compile a second copy
+# of those JUCE module sources straight into libSpatialCoreUI.a — producing duplicate symbols
+# at OSD's final link step. Forward only SpatialCore's public include dirs in consumed mode
+# (mirrors the same PROJECT_IS_TOP_LEVEL branch used for the raw juce:: modules below); in
+# standalone mode there is no other target to resolve SpatialCore's own INTERFACE JUCE
+# dependencies, so link it normally.
+if(PROJECT_IS_TOP_LEVEL)
+    target_link_libraries(SpatialCoreUI PUBLIC SpatialCore)
+else()
+    target_include_directories(SpatialCoreUI PUBLIC
+        $<TARGET_PROPERTY:SpatialCore,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
+
+# --- SpatialCoreUI fonts — DM Sans, JetBrains Mono, Roboto embedded as BinaryData ---
+# Relocated from OSD's own fonts/ (D-05): SMLLookAndFeel's constructor loads these
+# via SpatialCoreUIFontData:: symbols. OSD's own juce_add_binary_data(FontData ...)
+# target and all its link sites are removed in the same commit (Pitfall 2 in
+# 09-RESEARCH.md — leaving both compiling risks a silent dual-BinaryData font bug).
+juce_add_binary_data(SpatialCoreUIFontData
+    HEADER_NAME "SpatialCoreUIFontData.h"
+    NAMESPACE SpatialCoreUIFontData
+    SOURCES
+        fonts/DM_Sans-Regular.ttf
+        fonts/DM_Sans-Medium.ttf
+        fonts/DM_Sans-SemiBold.ttf
+        fonts/DM_Sans-Bold.ttf
+        fonts/JetBrains_Mono-Regular.ttf
+        fonts/JetBrains_Mono-Medium.ttf
+        fonts/JetBrains_Mono-Bold.ttf
+        fonts/Roboto-Medium.ttf
+)
+
+target_link_libraries(SpatialCoreUI PUBLIC SpatialCoreUIFontData)
+
+# GUI-linked set — juce_gui_basics/juce_graphics only (Pattern 4). Apply the
+# IDENTICAL PROJECT_IS_TOP_LEVEL INTERFACE-vs-PUBLIC branching the DSP target
+# uses above, for the same duplicate-symbol-at-link reason (see the DSP
+# target's comment block).
+set(_spatialcoreui_juce_modules
+    juce::juce_gui_basics
+    juce::juce_graphics
+)
+
+if(PROJECT_IS_TOP_LEVEL)
+    target_link_libraries(SpatialCoreUI PUBLIC ${_spatialcoreui_juce_modules})
+else()
+    target_link_libraries(SpatialCoreUI INTERFACE ${_spatialcoreui_juce_modules})
+    foreach(_scuijm IN LISTS _spatialcoreui_juce_modules)
+        target_include_directories(SpatialCoreUI PRIVATE
+            $<TARGET_PROPERTY:${_scuijm},INTERFACE_INCLUDE_DIRECTORIES>)
+        target_compile_definitions(SpatialCoreUI PRIVATE
+            $<TARGET_PROPERTY:${_scuijm},INTERFACE_COMPILE_DEFINITIONS>)
+    endforeach()
+endif()
+
+target_include_directories(SpatialCoreUI
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+# JUCE_USE_CURL=0: same Linux libcurl link-failure avoidance as the DSP target above.
+target_compile_definitions(SpatialCoreUI PUBLIC JUCE_USE_CURL=0)
+
+target_compile_features(SpatialCoreUI PUBLIC cxx_std_17)
 
 # --- Tests ---
 option(SPATIALCORE_BUILD_TESTS "Build SpatialCore tests" ON)

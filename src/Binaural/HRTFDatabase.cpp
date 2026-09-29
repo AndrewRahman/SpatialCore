@@ -20,6 +20,28 @@ HRTFDatabase::~HRTFDatabase()
 
 bool HRTFDatabase::loadFromMemory (const void* data, int dataSize, float targetSampleRate)
 {
+    return loadFromBytes (data, dataSize, targetSampleRate);
+}
+
+bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleRate)
+{
+    // Read the LFS-tracked raw .sofa bytes from disk. A checkout that returned
+    // LFS pointer text instead of real bytes (T-08-05b) fails mysofa_open_data's
+    // parse below (or the checksum assertion in the per-profile tests), never
+    // silently succeeds with garbage HRIR data.
+    juce::MemoryBlock fileBytes;
+    if (! sofaFile.loadFileAsData (fileBytes))
+    {
+        DBG ("HRTFDatabase: Failed to read SOFA file: " + sofaFile.getFullPathName());
+        loaded = false;
+        return false;
+    }
+
+    return loadFromBytes (fileBytes.getData(), static_cast<int> (fileBytes.getSize()), targetSampleRate);
+}
+
+bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSampleRate)
+{
     unload();
 
     int filterLength = 0;
@@ -94,7 +116,7 @@ void HRTFDatabase::getAlignedHRIR (float azimuthRad, float elevationRad,
     int shiftL = static_cast<int> (delayL);
     int shiftR = static_cast<int> (delayR);
 
-    // v1.0.11 (issue #89): If SOFA reports zero delay for both channels,
+    // v1.0.11 (issue Spatial-Media-Lab/OpenSpatialDelay#89): If SOFA reports zero delay for both channels,
     // the ITD is baked into the HRIR waveform (confirmed for MIT KEMAR,
     // likely CIPIC/HUTUBS/Bernschuetz). Detect onset from the waveform
     // itself so the dual-slot crossfade blends time-aligned HRIRs.
@@ -145,7 +167,7 @@ void HRTFDatabase::unload()
 }
 
 //==============================================================================
-// v1.0.4: Minimum-phase HRIR conversion via cepstral decomposition (issue #47).
+// v1.0.4: Minimum-phase HRIR conversion via cepstral decomposition (issue Spatial-Media-Lab/OpenSpatialDelay#47).
 // Converts a raw HRIR to its minimum-phase equivalent in-place.
 // Preserves magnitude spectrum but removes excess phase, enabling smooth
 // time-domain EMA interpolation between adjacent HRIRs without comb filtering.
@@ -283,7 +305,7 @@ void HRTFDatabase::correctLowFrequency (float* ir, int irLength, int fftOrder,
     // Step 5: Magnitude-only correction below lfCutoff.
     // Scale each bin's magnitude up to meanMag while preserving its original phase.
     // This avoids the phase discontinuities between adjacent positions that caused
-    // glitches when full phase extrapolation was used (same issue as min-phase, #47).
+    // glitches when full phase extrapolation was used (same issue as min-phase, Spatial-Media-Lab/OpenSpatialDelay#47).
     for (int k = 0; k < lfBin; ++k)
     {
         float currentMag = std::abs (cBuf[k]);

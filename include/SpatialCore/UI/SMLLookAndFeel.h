@@ -55,12 +55,6 @@ public:
     juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override;
 
     juce::Label* createSliderTextBox(juce::Slider& slider) override;
-
-    // SML colour constants
-    static constexpr uint32_t kBackground  = 0xFF0A0A14;
-    static constexpr uint32_t kCyan        = 0xFF00D4FF;
-    static constexpr uint32_t kPurple      = 0xFFA855F7;
-    static constexpr uint32_t kAmber       = 0xFFF59E0B;
 };
 
 } // namespace spatialcore

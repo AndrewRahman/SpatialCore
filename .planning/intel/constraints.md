@@ -1,5 +1,11 @@
 # Constraints
 
+> **Historical — superseded by `.planning/ROADMAP.md`, 2026-08-10.** This document was derived
+> from the 2026-08-09 ingest, which ran against a branch missing 42 commits. Counts, status,
+> and constraints below are a dated snapshot and are not maintained. For current canonical
+> counts see `CLAUDE.md` and `README.md`; for current requirements and phase status see
+> `.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md`.
+
 Synthesized: 2026-08-09
 Paths are relative to repo root `/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/`.
 

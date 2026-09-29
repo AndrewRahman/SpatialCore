@@ -4,7 +4,7 @@ How to build a new Spatial Media Library plugin using SpatialCore.
 
 ## Prerequisites
 
-- JUCE 8 (C++17)
+- JUCE 9.0.0 (C++17)
 - CMake 3.22+
 - A C++17 compiler (Clang on macOS, MSVC on Windows)
 
@@ -19,9 +19,16 @@ git init
 ## Step 2: Add SpatialCore and JUCE as Submodules
 
 ```bash
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 git submodule add https://github.com/juce-framework/JUCE.git JUCE
+git submodule update --init --recursive   # SpatialCore's HRTF .sofa are Git-LFS
 ```
+
+> **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote and the
+> URL to use today. `Spatial-Media-Lab/SpatialCore` is the post-proof destination: SpatialCore,
+> OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner move to the organisation together once
+> the pipeline is proven, so the migration is gated on proof rather than on a date. The
+> organisation URL does not resolve yet — do not substitute it.
 
 ## Step 3: CMakeLists.txt
 
@@ -44,8 +51,10 @@ juce_add_plugin(OpenSpatialYourEffect
     NEEDS_MIDI_INPUT FALSE  # TRUE for instruments
 )
 
-# Link SpatialCore
-target_link_libraries(OpenSpatialYourEffect PRIVATE SpatialCore)
+# Link SpatialCore (DSP) and SpatialCoreUI (shared spatial map + look-and-feel).
+# Both targets are defined by add_subdirectory(SpatialCore). Drop SpatialCoreUI
+# only if your plugin builds its entire UI from scratch (Step 5 uses it).
+target_link_libraries(OpenSpatialYourEffect PRIVATE SpatialCore SpatialCoreUI)
 
 # Source files
 target_sources(OpenSpatialYourEffect PRIVATE
@@ -70,7 +79,7 @@ class YourProcessor : public juce::AudioProcessor {
 public:
     // SpatialCore components (from framework)
     spatialcore::BinauralRenderer binauralRenderer;
-    spatialcore::SpatializationAlgorithm* algorithms[6];
+    spatialcore::SpatializationAlgorithm* algorithms[8];
     spatialcore::HRTFDatabase hrtfDb;
 
     // Your effect-specific DSP
@@ -96,6 +105,17 @@ public:
     }
 };
 ```
+
+> **The real render entry point is `spatialcore::RenderEngine`.** The snippet above is
+> conceptual — in practice you do NOT hand-roll `spatialize()` or dispatch render paths
+> yourself. `RenderEngine` (`#include <SpatialCore/SpatialCore.h>`, header
+> `Engine/RenderEngine.h`) owns all five render paths (direct-binaural HRTF, simple
+> binaural, stereo variants, Ambisonics, discrete surround) and the glitch-free
+> double-buffered layout swap. Call `engine.prepare(sampleRate, maxBlock)` and
+> `engine.setOutputFormat(fmt)` in `prepareToPlay`; then per block fill a `RenderSources`
+> (the per-object mono signals produced by YOUR effect DSP) plus a `RenderBlockContext`
+> (per-block format/layout snapshot) and call `engine.renderBlock(sources, ctx, buffer)`.
+> See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
 ## Step 5: PluginEditor — Using SpatialCore UI
 
@@ -127,7 +147,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-The post-build script copies AU and VST3 to `~/Library/Audio/Plug-Ins/` on macOS.
+If your plugin's own CMake defines a post-build copy step, it installs the AU and VST3 to `~/Library/Audio/Plug-Ins/` on macOS. SpatialCore itself is a static library and defines no such step — that belongs to the consumer plugin (see OpenSpatialDelay's `scripts/build_version.sh` for the reference install flow).
 
 ## Architecture Pattern
 
@@ -145,9 +165,9 @@ Every SML plugin follows the same architecture:
 │               │ calls                        │
 │  ┌────────────▼───────────────────────────┐  │
 │  │  SpatialCore (68%)                     │  │
-│  │  - 7 spatialization algorithms         │  │
+│  │  - 8 spatialization algorithms         │  │
 │  │  - HRTF binaural rendering             │  │
-│  │  - 22 output formats                   │  │
+│  │  - 23 output formats                   │  │
 │  │  - ADM-OSC send/receive                │  │
 │  │  - Trajectory engine                   │  │
 │  │  - Spatial map UI                      │  │

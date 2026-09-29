@@ -1,36 +1,15 @@
 #pragma once
-
-#include <SpatialCore/Core/Types.h>
-#include <SpatialCore/Core/SourcePosition.h>
-#include <SpatialCore/Core/BinauralGains.h>
-#include <SpatialCore/IO/SpeakerLayout.h>
 #include <juce_core/juce_core.h>
-#include <vector>
+#include <SpatialCore/Core/Types.h>
 
 namespace spatialcore
 {
 
 //==============================================================================
-// Context structs passed to spatialization algorithms
-//==============================================================================
-struct LayoutContext
-{
-    const SpeakerLayout&             layout;
-    const std::vector<VBAPTriplet>&  triplets;   // empty for 2D-only layouts
-    const float (*ambiDecodeMatrix)[MAX_SPEAKERS];  // Ambisonics decode matrix [speaker][channel]
-    int ambiNumSpeakers;
-};
-
-struct BinauralContext
-{
-    int    profileIndex;
-    double sampleRate;
-    const BinauralProfile* profiles;             // pointer to the 5-profile array
-};
-
-//==============================================================================
 // Abstract spatialization algorithm interface
-// Shared across the Spatial Media Library plugin suite
+// Shared across the Spatial Media Library plugin suite.
+// FROZEN (D-02) — moved verbatim from Source/PluginProcessor.h:104-132.
+// Do not add, remove, or change any virtual method signature.
 //==============================================================================
 class SpatializationAlgorithm
 {

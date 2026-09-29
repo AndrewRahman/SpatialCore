@@ -14,7 +14,7 @@ namespace spatialcore
 // vDSP shares internal twiddle factor memory across setups of the same order;
 // destroying the last setup frees the shared table even if another thread's
 // vDSP_fft_zrip is reading from it.  The cache creates once, never destroys.
-// (issue #131)
+// (issue Spatial-Media-Lab/OpenSpatialDelay#131)
 //==============================================================================
 struct SharedFFTCache
 {

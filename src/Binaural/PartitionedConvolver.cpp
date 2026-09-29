@@ -4,7 +4,7 @@
 namespace spatialcore
 {
 
-// Process-global FFT cache (issue #131).  Apple's vDSP shares internal
+// Process-global FFT cache (issue Spatial-Media-Lab/OpenSpatialDelay#131).  Apple's vDSP shares internal
 // twiddle factor memory across FFT setups of the same order.  Destroying the
 // last setup of a given order frees the shared table even while another
 // thread's vDSP_fft_zrip is reading from it.  The cache creates each order
@@ -47,14 +47,12 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_)
     if (orderChanged)
         fft = getSharedFFTCache().getOrCreate (fftOrder);
 
-    // v1.0.5: Allocate dual convolution slots (issue #50)
+    // v1.0.5: Allocate dual convolution slots (issue Spatial-Media-Lab/OpenSpatialDelay#50)
     for (int s = 0; s < 2; ++s)
     {
         slots[s].irFreqDomain.assign (static_cast<size_t> (fftSize * 2), 0.0f);
-        slots[s].inputAccum.resize (static_cast<size_t> (fftSize * 2), 0.0f);
         slots[s].fftWorkBuf.resize (static_cast<size_t> (fftSize * 2), 0.0f);
-        slots[s].overlapBuf.resize (static_cast<size_t> (fftSize), 0.0f);
-        slots[s].inputAccumPos = 0;
+        slots[s].overlapAccum.assign (static_cast<size_t> (fftSize), 0.0f);
     }
 
     // Work buffers for dual-slot output mixing
@@ -79,10 +77,8 @@ void PartitionedConvolver::loadIRIntoSlot (ConvSlot& slot, const float* ir, int 
 
 void PartitionedConvolver::resetSlot (ConvSlot& slot)
 {
-    std::fill (slot.inputAccum.begin(), slot.inputAccum.end(), 0.0f);
-    std::fill (slot.overlapBuf.begin(), slot.overlapBuf.end(), 0.0f);
+    std::fill (slot.overlapAccum.begin(), slot.overlapAccum.end(), 0.0f);
     std::fill (slot.fftWorkBuf.begin(), slot.fftWorkBuf.end(), 0.0f);
-    slot.inputAccumPos = 0;
 }
 
 void PartitionedConvolver::setIR (const float* ir, int length)
@@ -91,7 +87,7 @@ void PartitionedConvolver::setIR (const float* ir, int length)
 
     irLen = length;
 
-    // v1.0.5: Dual-convolver IR loading strategy (issue #50).
+    // v1.0.5: Dual-convolver IR loading strategy (issue Spatial-Media-Lab/OpenSpatialDelay#50).
     // First IR ever: load directly into the active slot, no crossfade.
     if (slots[static_cast<size_t> (activeSlot)].irFreqDomain.empty() ||
         std::all_of (slots[static_cast<size_t> (activeSlot)].irFreqDomain.begin(),
@@ -115,9 +111,6 @@ void PartitionedConvolver::setIR (const float* ir, int length)
     // Idle: load new IR into inactive slot, enter Warmup
     int inactiveSlot = 1 - activeSlot;
     resetSlot (slots[static_cast<size_t> (inactiveSlot)]);
-    // Sync input accumulator position so both slots process in lockstep
-    slots[static_cast<size_t> (inactiveSlot)].inputAccumPos =
-        slots[static_cast<size_t> (activeSlot)].inputAccumPos;
     loadIRIntoSlot (slots[static_cast<size_t> (inactiveSlot)], ir, length);
 
     state = State::Warmup;
@@ -126,64 +119,76 @@ void PartitionedConvolver::setIR (const float* ir, int length)
 
 void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* out, int numSamples)
 {
-    // Standard overlap-save convolution on a single ConvSlot
-    int samplesProcessed = 0;
+    // v2.0.0-dev.1 (issue Spatial-Media-Lab/OpenSpatialDelay#234): decoupled from the prepared `blockSize`.
+    // Every call's `numSamples` (host block, NOT the prepared block) is its
+    // own independent overlap-add block. This never waits across calls to
+    // accumulate a full prepared-size block, so it stays glitch-free and
+    // latency-neutral for numSamples < blockSize and for variable numSamples.
+    jassert (numSamples > 0 && numSamples <= blockSize);
+    jassert (numSamples + irLen - 1 <= fftSize);  // linear-conv always fits (numSamples <= blockSize by contract)
 
-    while (samplesProcessed < numSamples)
+    // Zero-pad this call's new input into the FFT work buffer.
+    std::fill (slot.fftWorkBuf.begin(), slot.fftWorkBuf.end(), 0.0f);
+    for (int i = 0; i < numSamples; ++i)
+        slot.fftWorkBuf[static_cast<size_t> (i)] = in[i];
+
+    // Forward FFT of input
+    fft->performRealOnlyForwardTransform (slot.fftWorkBuf.data(), true);
+
+    // Complex multiply with slot's IR spectrum
+    for (int i = 0; i < fftSize * 2; i += 2)
     {
-        int spaceInAccum = blockSize - slot.inputAccumPos;
-        int samplesToAccum = std::min (spaceInAccum, numSamples - samplesProcessed);
-
-        for (int i = 0; i < samplesToAccum; ++i)
-            slot.inputAccum[static_cast<size_t> (slot.inputAccumPos + i)] = in[samplesProcessed + i];
-
-        slot.inputAccumPos += samplesToAccum;
-        samplesProcessed += samplesToAccum;
-
-        if (slot.inputAccumPos >= blockSize)
-        {
-            // Copy input to work buffer, zero-pad to fftSize
-            std::fill (slot.fftWorkBuf.begin(), slot.fftWorkBuf.end(), 0.0f);
-            for (int i = 0; i < blockSize; ++i)
-                slot.fftWorkBuf[static_cast<size_t> (i)] = slot.inputAccum[static_cast<size_t> (i)];
-
-            // Forward FFT of input
-            fft->performRealOnlyForwardTransform (slot.fftWorkBuf.data(), true);
-
-            // Complex multiply with slot's IR spectrum
-            for (int i = 0; i < fftSize * 2; i += 2)
-            {
-                float re1 = slot.fftWorkBuf[static_cast<size_t> (i)],     im1 = slot.fftWorkBuf[static_cast<size_t> (i + 1)];
-                float re2 = slot.irFreqDomain[static_cast<size_t> (i)],   im2 = slot.irFreqDomain[static_cast<size_t> (i + 1)];
-                slot.fftWorkBuf[static_cast<size_t> (i)]     = re1 * re2 - im1 * im2;
-                slot.fftWorkBuf[static_cast<size_t> (i + 1)] = re1 * im2 + im1 * re2;
-            }
-
-            fft->performRealOnlyInverseTransform (slot.fftWorkBuf.data());
-
-            int outStart = samplesProcessed - blockSize;
-            int outSamples = std::min (blockSize, numSamples - outStart);
-
-            for (int i = 0; i < outSamples; ++i)
-            {
-                out[outStart + i] = slot.fftWorkBuf[static_cast<size_t> (i)]
-                                  + slot.overlapBuf[static_cast<size_t> (i)];
-            }
-
-            // Save overlap for next block
-            int overlapLen = fftSize - blockSize;
-            for (int i = 0; i < overlapLen; ++i)
-                slot.overlapBuf[static_cast<size_t> (i)] = slot.fftWorkBuf[static_cast<size_t> (blockSize + i)];
-            for (int i = overlapLen; i < fftSize; ++i)
-                slot.overlapBuf[static_cast<size_t> (i)] = 0.0f;
-
-            slot.inputAccumPos = 0;
-        }
+        float re1 = slot.fftWorkBuf[static_cast<size_t> (i)],     im1 = slot.fftWorkBuf[static_cast<size_t> (i + 1)];
+        float re2 = slot.irFreqDomain[static_cast<size_t> (i)],   im2 = slot.irFreqDomain[static_cast<size_t> (i + 1)];
+        slot.fftWorkBuf[static_cast<size_t> (i)]     = re1 * re2 - im1 * im2;
+        slot.fftWorkBuf[static_cast<size_t> (i + 1)] = re1 * im2 + im1 * re2;
     }
+
+    fft->performRealOnlyInverseTransform (slot.fftWorkBuf.data());
+
+    // Accumulate this block's own linear-conv result into the persistent
+    // overlap-add accumulator (position 0 == next not-yet-delivered sample).
+    for (int i = 0; i < fftSize; ++i)
+        slot.overlapAccum[static_cast<size_t> (i)] += slot.fftWorkBuf[static_cast<size_t> (i)];
+
+    // The first numSamples positions are now final: no future block's input
+    // (which starts at or after the current position + numSamples) can ever
+    // contribute to them.
+    for (int i = 0; i < numSamples; ++i)
+        out[i] = slot.overlapAccum[static_cast<size_t> (i)];
+
+    // Shift the accumulator left by numSamples, discarding delivered samples
+    // and zero-filling the newly exposed tail. Any still-pending contribution
+    // from an earlier block that spilled further than this call's numSamples
+    // (possible when numSamples shrinks between calls) is preserved by the
+    // shift rather than dropped.
+    std::memmove (slot.overlapAccum.data(), slot.overlapAccum.data() + numSamples,
+                  sizeof (float) * static_cast<size_t> (fftSize - numSamples));
+    std::fill (slot.overlapAccum.end() - numSamples, slot.overlapAccum.end(), 0.0f);
 }
 
 void PartitionedConvolver::process (const float* in, float* out, int numSamples)
 {
+    // WR-02: runtime guard against an oversized host block. The Spatial-Media-Lab/OpenSpatialDelay#234 decoupling
+    // contract is numSamples <= blockSize (the prepared maxBlockSize); processSlot
+    // relies on it — overlapAccum has length fftSize, and the tail memmove of size
+    // (fftSize - numSamples) underflows to a huge size_t when numSamples > fftSize,
+    // causing OOB read/write and a likely crash. The jassert there compiles out in
+    // Release, so a host that ever delivers a larger block (some exceed
+    // maximumExpectedSamplesPerBlock) is unprotected. Split any oversized block into
+    // <= blockSize chunks: each chunk is an independent, valid overlap-add sub-block
+    // (processSlot carries overlapAccum across calls), so the output stays correct.
+    if (blockSize > 0 && numSamples > blockSize)
+    {
+        for (int offset = 0; offset < numSamples; )
+        {
+            const int chunk = std::min (blockSize, numSamples - offset);
+            process (in + offset, out + offset, chunk);
+            offset += chunk;
+        }
+        return;
+    }
+
     if (fftSize == 0 || irLen == 0)
     {
         // Pass-through if no IR set
@@ -192,7 +197,7 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
         return;
     }
 
-    // v1.0.5: Dual-convolver state machine (issue #50).
+    // v1.0.5: Dual-convolver state machine (issue Spatial-Media-Lab/OpenSpatialDelay#50).
     // Three states: Idle (single slot), Warmup (both process, output only active),
     // Crossfading (equal-power cos/sin blend with per-sample gain interpolation).
     switch (state)

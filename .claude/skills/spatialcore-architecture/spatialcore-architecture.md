@@ -39,11 +39,11 @@ SpatialCore is a C++ static library extracted from OpenSpatialDelay. It contains
 
 | Component | What It Does |
 |-----------|-------------|
-| 7 Spatialization Algorithms | VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics (HOA), DirectBinaural (Woodworth) |
+| 8 Spatialization Algorithms | ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics (HOA), DirectBinaural (Woodworth) |
 | HRTF Binaural Rendering | HRTFDatabase, PartitionedConvolver, BinauralRenderer (12 per-source convolvers) |
-| 6 HRTF Profiles | Simple (Woodworth), MIT KEMAR, SADIE II D2, CIPIC Subject003, HUTUBS PP2, Bernschuetz KU100 |
-| 22 Output Formats | 1 Binaural + 1 Stereo (5 modes) + 13 Surround (Quad–9.1.6) + 6 Ambisonics (FOA–6OA) |
-| 13 Speaker Layouts | ITU-R BS.775/BS.2051, SMPTE channel ordering |
+| HRTF Profiles | 5 SOFA HRTF profiles ship; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles |
+| 23 Output Formats | 1 Binaural + 1 Stereo (5 modes) + 15 Surround (Quad–9.1.6) + 6 Ambisonics (FOA–6OA) |
+| 15 Speaker Layouts | ITU-R BS.775/BS.2051, SMPTE channel ordering |
 | Bus Negotiation | Automatic format detection from DAW track I/O |
 | ADM-OSC Send/Receive | `/adm/obj/N/` message parsing, 30Hz position broadcast |
 | Trajectory Engine | 13 shapes, origin-point architecture, forward/reverse |
@@ -65,7 +65,9 @@ SpatialCore is a C++ static library extracted from OpenSpatialDelay. It contains
 
 ### Git Submodule
 ```bash
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+# AndrewRahman/SpatialCore is the development remote and the URL to use today;
+# Spatial-Media-Lab/SpatialCore is the post-proof destination and does not resolve yet (DR-18).
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 ```
 
 ### CMake

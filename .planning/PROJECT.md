@@ -3,7 +3,7 @@
 ## What This Is
 
 SpatialCore is the shared spatial audio rendering engine for the Spatial Media Library, built by
-Spatial Media Lab (spatialmedialab.org). It is a JUCE 8 / C++17 static library that takes audio
+Spatial Media Lab (spatialmedialab.org). It is a JUCE 9.0.0 / C++17 static library that takes audio
 objects carrying 3D positions and renders them to any output format — binaural, stereo, surround,
 or Ambisonics — through a set of spatialization algorithms, with HRTF convolution, ADM-OSC
 control, trajectory animation, and shared UI widgets included.
@@ -79,7 +79,7 @@ Milestone v1 scope. Full detail and acceptance in `.planning/REQUIREMENTS.md`.
 - **OpenSpatialDelay repository work** — seven requirements live in that repo. Tracked below as external dependencies, deliberately given no SpatialCore phase.
 - **Future plugin suite (OpenSpatialReverb, OpenSpatialGranular, OpenSpatialPanner, OpenSpatialChorus)** — 2027 targets. One of them becomes the v2 milestone.
 - **Windows and Linux CI verification** — cross-platform support is an intent and the build flags exist, but v1 verification is macOS-only. Adding CI matrices before a second consumer exists is premature.
-- **Custom / vendor-specific speaker layouts** — only the 13 ITU-R layouts. Generalizing the layout API is a post-v1 API addition.
+- **Custom / vendor-specific speaker layouts** — only the 14 built-in layouts. Generalizing the layout API is a post-v1 API addition.
 - **Replacing the JUCE FFT dependency** — noted as a medium risk in CONCERNS.md; swapping FFT libraries is disproportionate to v1.
 
 ## External Dependencies
@@ -125,16 +125,22 @@ as fact. The git remote is still `github.com/AndrewRahman/SpatialCore.git` while
 resolve.
 
 **Known realtime-safety violations.** `.planning/codebase/CONCERNS.md` documents four live
-breaches of locked rule DR-1. These are named requirements (RTSF-01 through RTSF-04) with their
-own phase, not assumptions folded into a general verification sweep.
+breaches of locked rule DR-1. These are named requirements (RTSF-01 through RTSF-05) with their
+own phase, not assumptions folded into a general verification sweep. *(Corrected 2026-08-10:
+RTSF-04 was closed as a non-finding — `ADMOSCReceiver.cpp:43` already bounds-checks correctly —
+while RTSF-01 widened to two allocation sites and a new unfiled TrajectoryEngine race was found.)*
 
-**Test coverage.** CONCERNS.md measures 209 lines of test code against 4,084 lines of source
-(~5%). Binaural rendering, HRTF database, convolver, OSC, Ambisonics, format registry, and UI are
-entirely untested.
+**Test coverage.** *(Corrected 2026-08-10 — the previous figure was measured against the wrong
+branch.)* The suite builds and passes: **144 TEST_CASE blocks, 1585 assertions across 16 test
+files**, covering Core, Algorithms, IO, OSC, Trajectory, Binaural (against all 5 real SOFA
+profiles), and Engine. No coverage tooling is configured anywhere in the build, so no percentage
+can be measured — the earlier "~5%" was never a real measurement. Modules with no dedicated tests:
+`src/Binaural/PartitionedConvolver.cpp`, `src/Binaural/BinauralRenderer.cpp`, and all of
+`src/UI/*.cpp` (the last by design — UI lives in the separate `SpatialCoreUI` target).
 
 ## Constraints
 
-- **Tech stack**: JUCE 8, C++17, CMake 3.22+, libmysofa v1.3.2 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
+- **Tech stack**: JUCE 9.0.0, C++17, CMake 3.22+, libmysofa v1.3.2 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
 - **Distribution**: Static library consumed via git submodule + `add_subdirectory(SpatialCore)` + `target_link_libraries(... PRIVATE SpatialCore)`. Consumers include only `<SpatialCore/SpatialCore.h>`.
 - **Platform**: macOS is primary — arm64, deployment target 12.0, `-ffast-math`. Windows (MSVC, `/fp:fast`) and Linux are intended but not verified in v1.
 - **Realtime**: No malloc, locks, or logging in any function reachable from `processBlock`. Algorithms are stateless; all computation state lives in context structs. Layout changes use dual-buffered atomic swap.
@@ -150,11 +156,11 @@ side during planning** — surface the decision to the user.
 
 | # | Question | Positions | Why it matters | Owning phase |
 |---|----------|-----------|----------------|--------------|
-| OQ-1 | How many spatialization algorithms are public? | 6 (`integration-guide` code sample `algorithms[6]`) vs 7 (SPEC, PRD) vs 8 (CLAUDE.md and the actual tree, including `ConstantPowerAlgorithm`) | This is a **frozen, major-version-gated contract**. Publishing the wrong number either hides a shipped algorithm or promises one that isn't there. Either fix the count to 8 everywhere, or declare ConstantPower internal and exclude it from the umbrella header. | Phase 1 (API-01) |
-| OQ-2 | What is `outputLimiter()`'s transfer function? | SPEC: hard clamp at 1.2589f. `include/SpatialCore/DSP/Utilities.h`: `threshold * std::tanh(x / threshold)` | Same ceiling constant, audibly different behaviour, on a public inline API consumers already call. The SPEC is the highest-precedence document present, so the implementation currently contradicts the governing contract. | Phase 1 (API-02) |
-| OQ-3 | How many HRTF profiles ship? | 5 (CLAUDE.md, PRD) vs 6 (`.planning/codebase/ARCHITECTURE.md`) | `profileIndex` is part of the public `BinauralContext`. The count determines what gets embedded and Git-LFS tracked, and changing it later forces a rebuild of every consumer plugin (DR-5). | Phase 1 (API-03), consumed by Phase 3 |
+| ~~OQ-1~~ | ~~How many spatialization algorithms are public?~~ **RESOLVED 2026-08-11 — 8** | 6 (`integration-guide` code sample `algorithms[6]`) vs 7 (SPEC, PRD) vs 8 (CLAUDE.md and the actual tree, including `ConstantPowerAlgorithm`) | **Closed by evidence, then frozen in code.** The answer is 8. `include/SpatialCore/Algorithms/AllAlgorithms.h` now derives `NUM_ALGORITHMS` from a `AlgorithmTypeList<...>` pack rather than a literal, so a 9th implementation cannot be added without failing the build and forcing every doc surface to be updated with it. | Phase 1 (API-01) — closed |
+| ~~OQ-2~~ | ~~What is `outputLimiter()`'s transfer function?~~ **RESOLVED 2026-08-10** | SPEC: hard clamp at 1.2589f. `include/SpatialCore/Core/SpatialMath.h:100-106`: `threshold * std::tanh(x / threshold)` | **Resolved by user decision:** keep the shipped `tanh` soft ceiling — OpenSpatialDelay shipped publicly at v1.0.0 with this curve, and the header docblock at `include/SpatialCore/Core/SpatialMath.h:98-99` is the governing contract. A selectable hard-clamp mode is deferred to v2 as LIMIT-01. | Phase 1 (API-02) — closed |
+| ~~OQ-3~~ | ~~How many HRTF profiles ship?~~ **RESOLVED 2026-08-11 — 5** | 5 (CLAUDE.md, PRD) vs 6 (`.planning/codebase/ARCHITECTURE.md`) | **Closed by evidence:** `HRTF/` holds exactly 5 `.sofa` files, the same 5 as OSD's `HRTF/`. `profileIndex` remains part of the public `BinauralContext`; Phase 3 still owns packaging (SUITE-01), but the count itself is settled. | Phase 1 (API-03) — closed; packaging consumed by Phase 3 |
 | OQ-4 | What is the test coverage target? | Undefined in all source docs. CONCERNS.md recommends 50% minimum (~2,000 lines of tests) | TEST-01 cannot be sized or called done without a number and a priority order. | Phase 6 (TEST-01) — set the target at phase start |
-| OQ-5 | When does the org repo migration happen? | Remote is `github.com/AndrewRahman/SpatialCore`; `docs/integration-guide.md` already publishes `github.com/Spatial-Media-Lab/SpatialCore` | The integration guide currently instructs consumers to submodule a URL that does not exist. Migration itself is v3, but the guide is wrong *today*. | Not a v1 phase — mark the guide URL as forward-looking, or migrate in v3 |
+| ~~OQ-5~~ | ~~When does the org repo migration happen?~~ **RESOLVED — see Key Decisions "Remote topology."** | — | Not an open question: the personal remote is correct by design, gated on proof, not on a date. | — |
 
 ## Key Decisions
 
@@ -192,14 +198,15 @@ normal planning decision.
 |----|----------|---------|
 | DR-8 | Static library, 7 modules (Algorithms, Binaural, IO, OSC, Trajectory, DSP, UI) plus shared `Core/`, fixed `include/` / `src/` / `tests/` layout | ✓ Good — tree matches, with additive extras (`Core/SpatialMath`, `Algorithms/ConstantPower`, `Algorithms/AllAlgorithms.h`, `Binaural/SharedFFTCache.h`) |
 | DR-9 | Consumers integrate via git submodule + CMake `add_subdirectory()` | — Pending — unverified by a real consumer until INTG-01 |
-| DR-10 | JUCE 8 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good |
+| DR-10 | JUCE 9.0.0 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good — corrected 2026-08-10; DR-10 originally said JUCE 8, tree is pinned 9.0.0 at `CMakeLists.txt:33` |
 | DR-11 | All library code lives in `namespace spatialcore` (DSP utilities in `spatialcore::DSP`) | ✓ Good |
 | DR-12 | Dual license GPL-3.0 + commercial | — Pending — LICENSE file lands in v3 |
-| DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — v3, see OQ-5 |
+| DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — gated on proof, not on a date. See the "Remote topology" decision row below. |
 | DR-14 | Extraction sequenced after OpenSpatialDelay v1.0 ships | ⚠️ Revisit — the PRD's 2026-03-31 OSD deadline has passed and extraction is well underway; the sequencing assumption no longer holds |
 | DR-15 | SpatialCore ships no BinaryData; consumers supply HRTF data | ✗ **Superseded by DR-5** — closed by user ruling |
 | DR-16 | UI components take an abstract Listener interface, never a concrete processor pointer | ✓ Good |
 | DR-17 | Every SML plugin is ~68% SpatialCore framework + ~32% plugin-specific DSP | ✓ Good — the product thesis |
+| DR-18 | **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote, not an accident awaiting cleanup. Development stays on the personal remote until the pipeline is proven, for risk containment: `Spatial-Media-Lab/OpenSpatialDelay` is public and in use by real people right now, so migrating it onto an unproven SpatialCore could break a live plugin. Migration is **gated on proof, not on a date** — SpatialCore, OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner land on the organisation together once the process is proven. `docs/integration-guide.md` carries the working remote as the live instruction and labels the organisation URL as the post-proof destination. | ✓ Decided 2026-08-10 — resolves OQ-5 |
 
 </decisions>
 

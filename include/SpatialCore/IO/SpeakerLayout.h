@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SpatialCore/Core/Types.h>
+#include <vector>
 
 namespace spatialcore
 {
@@ -33,27 +34,29 @@ struct SpeakerLayout
     Speaker speakers[MAX_SPEAKERS] = {};
 };
 
-namespace Layouts
+// ITU-R BS.775 / BS.2051 / SMPTE ST 2098-1 standard speaker layouts, moved
+// verbatim from Source/PluginProcessor.cpp's layoutDefs table + makeLayoutFromDef().
+// Convention: 0 deg = front, positive azimuth = left, negative = right.
+// LFE is tracked but excluded from spatialization.
+enum LayoutID
 {
-    SpeakerLayout getQuad();
-    SpeakerLayout get5_0();
-    SpeakerLayout get5_1();
-    SpeakerLayout get7_0();
-    SpeakerLayout get7_1();
-    SpeakerLayout get9_1();
-    SpeakerLayout getOctaphonic();
-    SpeakerLayout get5_1_2();
-    SpeakerLayout get5_1_4();
-    SpeakerLayout get7_1_2();
-    SpeakerLayout get7_1_4();
-    SpeakerLayout get7_1_6();
-    SpeakerLayout get9_1_4();
-    SpeakerLayout get9_1_6();
-    SpeakerLayout getSML13_1();
-    SpeakerLayout getVirtualBinaural16();
-} // namespace Layouts
+    Quad, S5_0, S5_1, S7_0, S7_1, S9_1, S5_1_2, S5_1_4, S7_1_2, S7_1_4, S7_1_6,
+    S9_1_4, S9_1_6, Octaphonic, SML13_1, NUM_LAYOUT_DEFS
+};
 
-void buildVBAPTripletsForLayout(const SpeakerLayout& layout,
-                                std::vector<VBAPTriplet>& triplets);
+static_assert (NUM_LAYOUT_DEFS == 15,
+    "LayoutID count changed -- update CLAUDE.md, README.md, "
+    "docs/integration-guide.md, .claude/skills/spatialcore-architecture/"
+    "spatialcore-architecture.md");
+
+const SpeakerLayout& getLayoutDef (LayoutID id);
+
+// v1.0: Check if a speaker layout has height speakers (elevation > 1 degree)
+bool layoutHasHeight (const SpeakerLayout& layout);
+
+// Build 3D VBAP triplets for a speaker layout with height speakers (empty
+// result for 2D-only layouts -- VBAP uses pair-wise panning, no triplets needed)
+void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
+                                  std::vector<VBAPTriplet>& triplets);
 
 } // namespace spatialcore

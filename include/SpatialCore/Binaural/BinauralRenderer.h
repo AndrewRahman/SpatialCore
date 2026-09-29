@@ -18,7 +18,7 @@ class BinauralRenderer
 public:
     BinauralRenderer() = default;
 
-    /** Per-renderer HRTF database (issue #96: eliminates shared-state race
+    /** Per-renderer HRTF database (issue Spatial-Media-Lab/OpenSpatialDelay#96: eliminates shared-state race
         between timer thread loading and audio thread HRIR lookups). */
     HRTFDatabase hrtfDatabase;
 

@@ -1,289 +1,258 @@
-<!-- refreshed: 2026-08-09 -->
+<!-- refreshed: 2026-08-10 -->
 # Architecture
 
-**Analysis Date:** 2026-08-09
+**Analysis Date:** 2026-08-10
+
+**Scope note:** Analyzed on branch `gsd-remap` (HEAD `8d1868e`, a merge of `origin/spatialcore-v2-extraction` code + `origin/main` planning docs). All claims below are verified against the tree at that commit via `ls`/`grep`/`git show`. `docs/` and `CLAUDE.md` contain some stale claims (e.g. "8 spatialization algorithms" in `CLAUDE.md` table header text is actually correct — 8 confirmed below — but `CLAUDE.md`'s omission of `Engine/` as a component and `SpatialCoreUI` as a second link target is out of date; both are documented here from the tree).
 
 ## System Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Consumer Plugin / DAW                              │
-└───────────────────────────────────────┬─────────────────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                 SpatialCore                                  │
-│                        (Static Library: libSpatialCore.a)                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │   Core       │  │  Algorithms  │  │  Binaural    │  │     IO       │    │
-│  │ (Types,      │  │  (7 algos)   │  │  (HRTF)      │  │  (22 formats)│    │
-│  │  SourcePos)  │  │              │  │              │  │              │    │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│  `Core/*.h`        `Algorithms/*.h`  `Binaural/*.h`    `IO/*.h`             │
-│                                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │     OSC      │  │ Trajectory   │  │     DSP      │  │      UI      │    │
-│  │  (ADM-OSC)   │  │  (13 shapes) │  │  (softClip)  │  │  (Components)│    │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘    │
-│  `OSC/*.h`        `Trajectory/*.h`   `DSP/*.h`         `UI/*.h`             │
-│                                                                               │
-└─────────────────────────────────────────────────────────────────────────────┘
-         │                    │                    │                │
-         ▼                    ▼                    ▼                ▼
-    ┌─────────┐         ┌─────────┐         ┌─────────┐      ┌─────────┐
-    │ Binaural│         │ Surround│         │Ambisonics│     │   UI    │
-    │ Headphs │         │ Speakers│         │ (HOA)   │      │  Output │
-    └─────────┘         └─────────┘         └─────────┘      └─────────┘
-    2 channels         4-16 channels         4-49 channels   JUCE GUI
-    (HRTF/Simple)      (Algorithm)           (SH domain)     Components
+┌──────────────────────────────────────────────────────────────────────┐
+│                    CONSUMER (e.g. OpenSpatialDelay/Panner)           │
+│  owns: delay line, feedback, pitch-shift, Doppler, tap-fade ramps,   │
+│  dry/wet mix, output limiter, stereo-variant gain math (D-06)        │
+└───────────────────────────┬────────────────────────────────────────┘
+                             │  fills RenderSources + RenderBlockContext
+                             ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│              spatialcore::RenderEngine  (facade, SC-13)              │
+│  `include/SpatialCore/Engine/RenderEngine.h` /                       │
+│  `src/Engine/RenderEngine.cpp`                                       │
+│  renderBlock() dispatches to one of 5 verbatim-transplanted paths:   │
+│  stereo / direct-binaural-HRTF / simple-binaural-Woodworth /         │
+│  ambisonics / discrete-surround. Owns glitch-free output-format      │
+│  double-buffer swap, gain-interpolation state, and (opt-in) gain     │
+│  computation via computeObjectGains().                               │
+└───────┬───────────────────┬───────────────────────┬──────────────────┘
+        │                   │                       │
+        ▼                   ▼                       ▼
+┌──────────────────┐ ┌──────────────────────┐ ┌───────────────────────┐
+│ Algorithms        │ │ Binaural              │ │ IO                    │
+│ `Algorithms/*.h`  │ │ `Binaural/*.h`        │ │ `IO/*.h`               │
+│ 8 concrete         │ │ BinauralRenderer (12  │ │ OutputFormatRegistry, │
+│ SpatializationAlgo │ │ per-source            │ │ SpeakerLayout (14     │
+│ implementations,   │ │ PartitionedConvolvers)│ │ ITU-R layouts),       │
+│ stateless          │ │ HRTFDatabase (SOFA)   │ │ AmbisonicsCodec       │
+│ computeGains()     │ │ SharedFFTCache        │ │                       │
+└──────────────────┘ └──────────────────────┘ └───────────────────────┘
+                             │
+                             ▼
+                 float* outChannels[numOutCh]
+                 (consumer-owned output buffer;
+                  RAW WET signal only — no dry/wet
+                  mix, no limiter, no PDC)
 ```
+
+Two independent, orthogonal subsystems also exist and are NOT wired through RenderEngine:
+
+- **OSC** (`OSC/*.h`, `src/OSC/*.cpp`) — ADM-OSC receive/send, parses/broadcasts object positions; the consumer reads/writes `ObjectState` that eventually flows into `RenderSources::objects`.
+- **Trajectory** (`Trajectory/*.h`, `src/Trajectory/*.cpp`) — `TrajectoryEngine` (13 shapes) and `DopplerVelocity` (Doppler/pitch estimation) run consumer-side, upstream of `RenderEngine::renderBlock` (per the ENGINE BOUNDARY comment in `RenderEngine.h:33-43`, Doppler/pitch-shift is explicitly OUTSIDE the engine).
+- **UI** (`UI/*.h`, `src/UI/*.cpp`) — compiled into a *separate* CMake target, `SpatialCoreUI` (see Entry Points / Two Link Targets below), not linked into `SpatialCore` itself.
 
 ## Component Responsibilities
 
-| Component | Responsibility | Location |
-|-----------|----------------|----------|
-| **Core Types** | Defines shared data structures (SourcePosition, ObjectState, BinauralProfile) and fundamental constants (MAX_SOURCES=12, MAX_SPEAKERS=16) | `include/SpatialCore/Core/Types.h` |
-| **SpatializationAlgorithm** | Abstract base class defining the interface all 8 algorithms implement; defines LayoutContext and BinauralContext | `include/SpatialCore/Algorithms/SpatializationAlgorithm.h` |
-| **Algorithm Implementations** | 8 concrete spatialization algorithms: VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural, ConstantPower | `src/Algorithms/*.cpp`, `include/SpatialCore/Algorithms/*.h` |
-| **HRTFDatabase** | SOFA file loading via libmysofa, KD-tree interpolation, ITD extraction | `src/Binaural/HRTFDatabase.cpp`, `include/SpatialCore/Binaural/HRTFDatabase.h` |
-| **PartitionedConvolver** | Real-time FFT overlap-save convolution for HRTF application | `src/Binaural/PartitionedConvolver.cpp`, `include/SpatialCore/Binaural/PartitionedConvolver.h` |
-| **BinauralRenderer** | Manages 12 per-source PartitionedConvolvers, profile management, per-sample HRIR updates | `src/Binaural/BinauralRenderer.cpp`, `include/SpatialCore/Binaural/BinauralRenderer.h` |
-| **SharedFFTCache** | Process-global FFT singleton for HRTF convolution | `include/SpatialCore/Binaural/SharedFFTCache.h` |
-| **OutputFormatRegistry** | 22 output format definitions (binaural, stereo, surround, Atmos, Ambisonics) with channel requirements and metadata | `src/IO/OutputFormatRegistry.cpp`, `include/SpatialCore/IO/OutputFormat.h` |
-| **SpeakerLayout** | ITU-R speaker position definitions, VBAP triplet generation, 13 standard layouts | `src/IO/SpeakerLayout.cpp`, `include/SpatialCore/IO/SpeakerLayout.h` |
-| **AmbisonicsCodec** | Spherical harmonic encoding/decoding, ACN/SN3D format support, max-rE weighting | `src/IO/AmbisonicsCodec.cpp`, `include/SpatialCore/IO/AmbisonicsCodec.h` |
-| **ADMOSCReceiver** | ADM-OSC listener on port 4002, parses `/adm/obj/N/azim|elev|dist|aed|xyz` | `src/OSC/ADMOSCReceiver.cpp`, `include/SpatialCore/OSC/ADMOSCReceiver.h` |
-| **ADMOSCSender** | Broadcasts object positions at 30Hz via ADM-OSC with position-change gating | `src/OSC/ADMOSCSender.cpp`, `include/SpatialCore/OSC/ADMOSCSender.h` |
-| **TrajectoryEngine** | 13 animation shapes (Orbit, Circle, Spiral, etc.), origin-point architecture, forward/reverse | `src/Trajectory/TrajectoryEngine.cpp`, `include/SpatialCore/Trajectory/TrajectoryEngine.h` |
-| **SpatialMapComponent** | 2D top-down spatial visualization, object dragging, distance rings, elevation encoding via opacity | `src/UI/SpatialMapComponent.cpp`, `include/SpatialCore/UI/SpatialMapComponent.h` |
-| **SMLLookAndFeel** | Dark theme, cyan/purple/amber color palette, JUCE component styling | `src/UI/SMLLookAndFeel.cpp`, `include/SpatialCore/UI/SMLLookAndFeel.h` |
-| **UI Widgets** | ReverseSlider (azimuth knob), IndicatorToggle, StyledButton | `src/UI/*.cpp`, `include/SpatialCore/UI/*.h` |
-| **DSP Utilities** | softClip() (asymptotic saturation), outputLimiter() (tanh-based +2dB ceiling) | `include/SpatialCore/DSP/Utilities.h` |
+| Component | Responsibility | File |
+|-----------|----------------|------|
+| RenderEngine | Consumer-facing render facade; 5-branch format dispatch; owns gain-interpolation, HRTF-renderer double-buffer, output-layout double-buffer, optional gain computation | `include/SpatialCore/Engine/RenderEngine.h`, `src/Engine/RenderEngine.cpp` |
+| SpatializationAlgorithm (+ 8 impls) | Pure-function per-speaker gain computation from a source position + layout context | `include/SpatialCore/Algorithms/SpatializationAlgorithm.h`, `include/SpatialCore/Algorithms/{VBAP,VBIP,KNN,DBAP,MDAP,Ambisonics,DirectBinaural,ConstantPower}Algorithm.h` |
+| BinauralRenderer | Per-source HRTF convolution engine (12 parallel L/R convolver pairs), ITD buffering, low-shelf compensation | `include/SpatialCore/Binaural/BinauralRenderer.h`, `src/Binaural/BinauralRenderer.cpp` |
+| HRTFDatabase | SOFA file loading (libmysofa) and HRIR lookup by azimuth/elevation | `include/SpatialCore/Binaural/HRTFDatabase.h`, `src/Binaural/HRTFDatabase.cpp` |
+| PartitionedConvolver | Single-source FFT overlap-save convolution primitive | `include/SpatialCore/Binaural/PartitionedConvolver.h`, `src/Binaural/PartitionedConvolver.cpp` |
+| SharedFFTCache | Process-global FFT plan singleton shared across all convolvers | `include/SpatialCore/Binaural/SharedFFTCache.h` |
+| OutputFormatRegistry | Single source of truth mapping `OutputFormat` enum → channel count / name / LFE / height flags | `include/SpatialCore/IO/OutputFormat.h`, `include/SpatialCore/IO/OutputFormatRegistry.h`, `src/IO/OutputFormatRegistry.cpp` |
+| SpeakerLayout | 15 ITU-R/SMPTE speaker layouts + VBAP triplet builder | `include/SpatialCore/IO/SpeakerLayout.h`, `src/IO/SpeakerLayout.cpp` |
+| AmbisonicsCodec | Spherical-harmonic evaluation and Ambisonics decode-matrix construction | `include/SpatialCore/IO/AmbisonicsCodec.h`, `src/IO/AmbisonicsCodec.cpp` |
+| ADMOSCReceiver / ADMOSCSender | Parse `/adm/obj/N/...` OSC messages; broadcast object state at 30 Hz | `include/SpatialCore/OSC/ADMOSCReceiver.h`, `include/SpatialCore/OSC/ADMOSCSender.h` |
+| TrajectoryEngine | 13 named trajectory shapes, origin-point-relative, forward/reverse playback | `include/SpatialCore/Trajectory/TrajectoryEngine.h`, `src/Trajectory/TrajectoryEngine.cpp` |
+| DopplerVelocity | Per-object velocity/Doppler-semitone smoothing, independent `kMaxObjects` sizing | `include/SpatialCore/Trajectory/DopplerVelocity.h`, `src/Trajectory/DopplerVelocity.cpp` |
+| UI widgets | SpatialMapComponent, SMLLookAndFeel, ReverseSlider, IndicatorToggle, StyledButton, GlobalTapDrawer, PresetBrowser, IOSectionComponent, OSCSectionComponent, ObjectPanel | `include/SpatialCore/UI/*.h`, `src/UI/*.cpp` |
 
 ## Pattern Overview
 
-**Overall:** Layered architecture with plugin consumer at top, core library below, organized into functional domains (algorithms, binaural rendering, I/O, OSC, trajectory, UI, DSP).
+**Overall:** Layered DSP-library-as-static-archive, with a single narrow facade (`RenderEngine`) added on top of previously-independent leaf modules. Algorithms are stateless strategy objects; the engine is the only stateful orchestration layer exposed to consumers.
 
 **Key Characteristics:**
-- **Lock-free audio path:** No malloc, locks, or logging in processBlock-called functions
-- **Stateless algorithms:** All computation state passed in context structs; algorithms are pure functions
-- **Virtual interface inheritance:** 8 concrete algorithms via SpatializationAlgorithm base class
-- **Dual-buffered layout management:** Atomic swap for lock-free audio thread reads during format changes
-- **Per-source HRTF convolution:** 12 independent PartitionedConvolvers; normalization via `targetRMS = 1/sqrt(irLen)`
-- **Namespace isolation:** All code in `spatialcore::` namespace to avoid conflicts with consumer plugins
+- Consumer owns everything upstream (delay, feedback, pitch-shift, Doppler, dry/wet mix) and downstream (output gain, limiter, PDC) of `RenderEngine::renderBlock`.
+- Algorithms are pure functions over `SourcePosition` + `LayoutContext` — no allocation, no locks, callable from the audio thread (`Algorithms/SpatializationAlgorithm.h:9-13`, "FROZEN (D-02) — moved verbatim... Do not add, remove, or change any virtual method signature").
+- Lock-free, glitch-free live reconfiguration via dual-buffered state with atomic index swap, used in two places: HRTF-profile swap (`RenderEngine.h:326-336`, `binauralRenderers[2]` + `activeRendererIndex`) and output-format/layout swap (`RenderEngine.h:378-380`, `layoutBuffers[2]` + `activeLayoutIndex`).
+- Opt-in architecture change (SC-13, commit `8ba19fc`): `RenderBlockContext::engineComputesGains` (default `false`) lets the engine take over per-object gain computation instead of requiring the consumer to hand-build a `LayoutContext` and call an algorithm itself. Default-off preserves byte-identical behavior for existing callers.
 
 ## Layers
 
-**Core Abstractions:**
-- Purpose: Define fundamental data types, constants, and math utilities shared by all components
-- Location: `include/SpatialCore/Core/`, `src/Core/`
-- Contains: Types.h (ObjectState, TrajectoryState, BinauralProfile), SourcePosition.h, SpatialMath.cpp
-- Depends on: JUCE core only
-- Used by: All higher layers
+**Engine (facade):**
+- Purpose: single per-block entry point (`renderBlock`) reproducing the original 5-branch `OpenSpatialDelayProcessor::processBlock` dispatch, plus engine-owned persistent DSP/interpolation state and format-switching machinery.
+- Location: `include/SpatialCore/Engine/RenderEngine.h`, `src/Engine/RenderEngine.cpp`
+- Contains: `RenderEngine` class, `RenderSources`/`RenderBlockContext` hand-off structs.
+- Depends on: Algorithms (`VBAPAlgorithm`, `DirectBinauralAlgorithm` for SC-13 gain computation), Binaural (`BinauralRenderer[2]`), IO (`OutputFormat`, `SpeakerLayout`, `AmbisonicsCodec` decode matrices).
+- Used by: the consumer plugin's audio-thread `processBlock`.
 
-**Algorithms Layer:**
-- Purpose: Provide 8 spatialization algorithms implementing SpatializationAlgorithm interface
-- Location: `include/SpatialCore/Algorithms/`, `src/Algorithms/`
-- Contains: Abstract base class + 8 concrete implementations (VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural, ConstantPower)
-- Depends on: Core abstractions, SpeakerLayout, math utilities
-- Used by: Consumer plugins for computing speaker gains or binaural HRTF output
+**Algorithms (strategy layer):**
+- Purpose: compute per-speaker or per-ear gains from a source position.
+- Location: `include/SpatialCore/Algorithms/*.h`, `src/Algorithms/*.cpp`
+- Contains: `SpatializationAlgorithm` abstract base + 8 concrete implementations (VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural, ConstantPower).
+- Depends on: Core (`Types.h` structs only).
+- Used by: RenderEngine (SC-13 path) and, historically, the consumer directly (pre-SC-13 callers still build `LayoutContext` themselves).
 
-**Binaural Rendering Layer:**
-- Purpose: HRTF-based spatial audio convolution for headphone output
-- Location: `include/SpatialCore/Binaural/`, `src/Binaural/`
-- Contains: HRTFDatabase (SOFA loading), PartitionedConvolver (FFT convolution), BinauralRenderer (12 convolvers), SharedFFTCache (process singleton)
-- Depends on: libmysofa, JUCE DSP, Core abstractions
-- Used by: Consumer plugins rendering to binaural output
-- Note: Per-renderer HRTFDatabase eliminates shared-state race (issue #96)
+**Binaural (convolution layer):**
+- Purpose: HRTF-based binaural rendering — SOFA loading, per-source FFT convolution, ITD application.
+- Location: `include/SpatialCore/Binaural/*.h`, `src/Binaural/*.cpp`
+- Contains: `SharedFFTCache` (process-global singleton), `HRTFDatabase`, `PartitionedConvolver`, `BinauralRenderer` (array of `MAX_SOURCES` convolver pairs).
+- Depends on: libmysofa (via `HRTFDatabase.cpp`), JUCE dsp module.
+- Used by: RenderEngine's `renderDirectBinauralHRTF` path.
 
-**I/O Layer:**
-- Purpose: Manage output formats, speaker layouts, Ambisonics encoding/decoding
-- Location: `include/SpatialCore/IO/`, `src/IO/`
-- Contains: OutputFormatRegistry (22 formats), SpeakerLayout (13 ITU-R layouts + virtual binaural), AmbisonicsCodec (SH domain)
-- Depends on: Core abstractions
-- Used by: Consumer plugins for output format negotiation and Ambisonics encoding
+**IO (format/layout layer):**
+- Purpose: describe and resolve output formats to concrete speaker geometry / Ambisonics decode matrices.
+- Location: `include/SpatialCore/IO/*.h`, `src/IO/*.cpp`
+- Contains: `OutputFormat` enum (23 values), `OutputFormatRegistry`, `SpeakerLayout`/`LayoutID` (15 named layouts + `NUM_LAYOUT_DEFS` sentinel), `AmbisonicsCodec`.
+- Used by: RenderEngine's `activateLayout`/`computeAmbiDecodeForLayout`.
 
-**OSC Integration Layer:**
-- Purpose: ADM-OSC protocol for spatial audio object position communication
-- Location: `include/SpatialCore/OSC/`, `src/OSC/`
-- Contains: ADMOSCReceiver (listen on 4002), ADMOSCSender (broadcast 30Hz)
-- Depends on: JUCE OSC, Core abstractions
-- Used by: Plugins integrating with DAWs or external spatial controllers
+**OSC layer:** parses/emits ADM-OSC object-position messages; consumer-side glue feeds results into `RenderSources::objects`. Independent of RenderEngine.
 
-**Trajectory Engine:**
-- Purpose: Animated source trajectories (13 shapes) with origin-point architecture
-- Location: `include/SpatialCore/Trajectory/`, `src/Trajectory/`
-- Contains: TrajectoryEngine (shape evaluation, random noise generation, forward/reverse)
-- Depends on: Core abstractions
-- Used by: UI and plugins implementing animated spatial motion
+**Trajectory layer:** shape generation + Doppler/velocity smoothing; consumer-side, upstream of RenderEngine per the documented engine boundary.
 
-**UI Layer:**
-- Purpose: Shared JUCE GUI components for spatial audio editing
-- Location: `include/SpatialCore/UI/`, `src/UI/`
-- Contains: SpatialMapComponent (2D top-down view), SMLLookAndFeel (styling), ReverseSlider, IndicatorToggle, StyledButton
-- Depends on: JUCE GUI, Trajectory engine, Core abstractions
-- Used by: Consumer plugins building spatial audio UI
+**UI layer:** JUCE GUI components; compiled into the separate `SpatialCoreUI` target (see below), never linked into the DSP-only `SpatialCore` target.
 
-**DSP Utilities:**
-- Purpose: Utility DSP functions for saturation and limiting
-- Location: `include/SpatialCore/DSP/Utilities.h`
-- Contains: softClip() (threshold 0.8), outputLimiter() (+2dB ceiling)
-- Depends on: cmath only
-- Used by: Consumer plugins for audio protection
+**Core (shared types):**
+- Purpose: plain data structs and constants shared across all layers.
+- Location: `include/SpatialCore/Core/Types.h`, `SourcePosition.h`, `BinauralGains.h`, `SpatialMath.h`/`.cpp`
+- Contains: `MAX_SOURCES`, `MAX_SPEAKERS`, `ObjectState`, `BinauralGains`, `SourcePosition`, `LayoutContext`, `BinauralContext`, `BinauralProfile` + `kDefaultBinauralProfiles[5]`.
 
 ## Data Flow
 
-### Primary Rendering Path (Algorithm → Speaker/Binaural Output)
+### Primary Render Path (per audio block)
 
-1. **Input:** Consumer plugin receives audio objects with 3D positions (azimuth, elevation, distance in SourcePosition struct)
-2. **Algorithm Selection:** Consumer selects a SpatializationAlgorithm concrete class
-3. **Gain Computation:** Algorithm.computeGains() reads SourcePosition and LayoutContext (speaker positions, VBAP triplets, Ambisonics decode matrix)
-   - 2D layouts: Uses VBAP or nearest-speaker fallback
-   - 3D layouts with triplets: Full 3D VBAP via triplet inversion
-   - Ambisonics: Spherical harmonic encoding
-4. **Output Routing:**
-   - **Surround output:** Send speaker gains directly to DAW output channels
-   - **Binaural output:** Route per-source accumulation buffers through BinauralRenderer.renderSourceBuffers()
-5. **HRTF Convolution (Binaural only):**
-   - updateSourceHRIR() called at block boundaries when position changes (KD-tree + in-place FFT, realtime-safe)
-   - renderSourceBuffers() applies 12 PartitionedConvolvers (overlap-save FFT convolution)
-   - Interleaved L/R channels output to 2-channel bus
+1. Consumer's `processBlock` runs delay/feedback/pitch-shift/Doppler (outside SpatialCore), producing per-object mono buffers.
+2. Consumer populates `RenderSources` (mono buffers, tap-fade envelope, distance-gain trajectory, `ObjectState` positions, live flags) and `RenderBlockContext` (target gains per path, active format, `engineComputesGains` flag) — `include/SpatialCore/Engine/RenderEngine.h:72-172`.
+3. Consumer calls `RenderEngine::renderBlock(sources, blockCtx, outChannels, numOutCh)` (`RenderEngine.h:218-221`).
+4. If `blockCtx.engineComputesGains == true`, `RenderEngine::computeObjectGains()` fills `objChannelGains` (via internal `VBAPAlgorithm surroundAlgorithm_`) and `objGains` (via internal `DirectBinauralAlgorithm binauralAlgorithm_` + `kDefaultBinauralProfiles`) before dispatch (`RenderEngine.h:298-304`, `src/Engine/RenderEngine.cpp`).
+5. `renderBlock` dispatches on `blockCtx` flags to exactly one of 5 private methods, in this fixed priority order (`RenderEngine.h:199-206`):
+   - `isStereoVariant` → `renderStereoVariant`
+   - `isBinaural && useHRTF` → `renderDirectBinauralHRTF` (routes through `BinauralRenderer`)
+   - `isBinaural` → `renderSimpleBinauralWoodworth`
+   - `isAmbiOutput` → `renderAmbisonicsOutput` (uses `AmbisonicsCodec` + NFC-HOA IIR filters)
+   - else → `renderDiscreteSurround`
+6. Selected path writes RAW WET signal directly into `outChannels` — no dry/wet mix, output gain, limiter, or PDC (explicitly out of scope; consumer applies these after `renderBlock` returns).
+
+### Output-Format Switching (message thread)
+
+1. Consumer calls `RenderEngine::setOutputFormat(format)`.
+2. Engine computes the new `LayoutState` (speaker layout, Ambisonics decode matrix, VBAP triplets) into the inactive `layoutBuffers[]` slot via `activateLayout()`.
+3. Atomic swap of `activeLayoutIndex` makes the new layout visible to the audio thread with no glitch (`RenderEngine.h:378-380`).
+
+### HRTF Profile Swap (message thread)
+
+1. Consumer loads a new SOFA profile into the inactive `binauralRenderers[]` slot via the `getPrepareRendererIndex()`/`getBinauralRenderer()` escape hatches.
+2. Consumer calls `swapActiveRenderer()`, which atomically flips `activeRendererIndex` and begins an 8-block crossfade (`kRendererXfadeBlocks`) to avoid a pop (`RenderEngine.h:267-274`, `330-336`).
 
 **State Management:**
-- ObjectState and TrajectoryState maintained per source in consumer plugin
-- BinauralRenderer holds per-profile normGain for consistent levels across HRTF profiles
-- PartitionedConvolver state (FFT history) reset on playback restart via BinauralRenderer.reset()
-- Profile swaps use dual-buffered layout management (atomic swap for lock-free audio thread reads)
-
-### ADM-OSC Receive Path
-
-1. ADMOSCReceiver connects on port 4002
-2. Parses `/adm/obj/N/azim`, `/adm/obj/N/elev`, `/adm/obj/N/dist`, `/adm/obj/N/aed`, `/adm/obj/N/xyz`
-3. Converts Cartesian (x,y,z) to Polar (azimuth, elevation, distance) via ITU-R BS.2127-0
-4. Notifies Listener interface with admPositionReceived(objectIndex, azimuthDeg, elevationDeg, distance)
-5. Consumer plugin updates ObjectState with received positions
-
-### Trajectory Animation Path
-
-1. TrajectoryEngine.tick(ObjectInput) evaluates current shape at phase [0..1]
-2. Returns TrajectoryResult with azimuth, elevation, distance computed from origin + trajectory offset
-3. Consumer plugin blends origin (manual knob) + trajectory output each sample
-4. SpatialMapComponent visualizes trajectory as glow trail around object
+- All engine-owned block-to-block state (gain-interpolation "previous" arrays, NFC-HOA filter state, LFE filter, double-buffered renderer/layout state) lives as private members of `RenderEngine` (`RenderEngine.h:317-390`), not in `RenderSources`/`RenderBlockContext` which are re-supplied fresh every call.
 
 ## Key Abstractions
 
 **SpatializationAlgorithm:**
-- Purpose: Abstract interface for spatialization computation
-- Examples: `VBAPAlgorithm`, `AmbisonicsAlgorithm`, `DirectBinauralAlgorithm`
-- Pattern: Virtual method override; stateless (all state in LayoutContext/BinauralContext)
-- Methods: computeGains(), supportsBinauralDirect(), supportsSurround(), supportsSHDomain(), getName()
+- Purpose: stateless strategy for per-speaker/per-ear gain computation.
+- Examples: `include/SpatialCore/Algorithms/VBAPAlgorithm.h`, `VBIPAlgorithm.h`, `KNNAlgorithm.h`, `DBAPAlgorithm.h`, `MDAPAlgorithm.h`, `AmbisonicsAlgorithm.h`, `DirectBinauralAlgorithm.h`, `ConstantPowerAlgorithm.h` (8 total, verified via `grep -l "public SpatializationAlgorithm"`).
+- Pattern: abstract base with `computeGains()` pure virtual (frozen signature, D-02) plus optional-capability virtuals (`supportsBinauralDirect`, `supportsSurround`, `supportsSHDomain`) defaulting to base-class behavior.
 
-**LayoutContext:**
-- Purpose: Bundle speaker layout, VBAP triplets, Ambisonics decode matrix as immutable algorithm input
-- Contains: SpeakerLayout ref, triplets vector, ambiDecodeMatrix pointer, ambiNumSpeakers
-- Usage: Passed to algorithm.computeGains() for gain computation
+**RenderSources / RenderBlockContext (hand-off structs):**
+- Purpose: the full parameter surface `RenderEngine::renderBlock` needs, split into per-sample source data (`RenderSources`) and per-block format/gain context (`RenderBlockContext`).
+- Location: `include/SpatialCore/Engine/RenderEngine.h:72-172`.
+- Pattern: C-style flat array layout (`float* monoBuffers[MAX_SOURCES]`, `ObjectState objects[MAX_SOURCES]`, etc.), explicitly documented as PROVISIONAL — "flagged for ergonomic review in the Phase 10+ post-extraction refactor... do not redesign it now" (`RenderEngine.h:47-50`).
 
-**SpeakerLayout:**
-- Purpose: Represent physical or virtual speaker configuration with azimuth/elevation positions and SMPTE channel ordering
-- Contains: numSpeakers, lfeChannelIndex, speakers[MAX_SPEAKERS], totalChannels
-- Factory functions: Layouts::get5_1(), Layouts::get7_1_4(), etc. (13 ITU-R standard layouts)
+**Consumer- vs. engine-filled fields (RenderSources — always consumer-filled):**
+| Field | Filled by |
+|---|---|
+| `monoBuffers[MAX_SOURCES]` | Consumer (already delayed/feedback/Doppler/pitch-shifted) |
+| `sourceEnabledBlock[MAX_SOURCES]` | Consumer (unused by renderBlock itself; retained for symmetry) |
+| `tapFadeGainPerSample[MAX_SOURCES]` | Consumer (pre-advanced per-sample ramp) |
+| `distGainPerSample[MAX_SOURCES]` | Consumer (pre-interpolated block-start→block-end) |
+| `objects[MAX_SOURCES]` (ObjectState) | Consumer |
+| `objectLive[MAX_SOURCES]` | Consumer |
+| `numSamples` | Consumer |
 
-**OutputFormat enum + OutputFormatInfo:**
-- Purpose: Enumerate 22 supported output configurations and their metadata
-- Covers: Binaural (1), Stereo (1), Surround (7), Atmos (7), Ambisonics (6)
-- Metadata: requiredChannels, hasLFE, hasHeight, ambiOrder
+**Consumer- vs. engine-filled fields (RenderBlockContext):**
+| Field | Filled by | Notes |
+|---|---|---|
+| `objGains[MAX_SOURCES]` (BinauralGains) | Consumer by default; **ENGINE** if `engineComputesGains == true` | via internal `DirectBinauralAlgorithm` + `kDefaultBinauralProfiles` |
+| `objGainL/objGainR[MAX_SOURCES]`, `stereoMode` | Always Consumer | stereo-variant gain math is explicitly NOT a `SpatializationAlgorithm` concern (D-06); never engine-computed even with the flag set |
+| `objChannelGains[MAX_SOURCES][MAX_SPEAKERS]` | Consumer by default; **ENGINE** if `engineComputesGains == true` | via internal fixed `VBAPAlgorithm` (not runtime-selectable — that is a separate future concern, SPAT-01) |
+| `ambiOrder`, `sampleRate` | Always Consumer | |
+| `activeFormat`, `isStereoVariant`, `isBinaural`, `isAmbiOutput`, `useHRTF` | Always Consumer (pre-resolved via `getActiveLayout()`) | kept explicit per-block rather than cached, so `renderBlock` stays a pure function of its inputs for testability |
+| `engineComputesGains` | Consumer (opt-in flag) | defaults `false` |
 
-**HRTFDatabase:**
-- Purpose: Load and interpolate SOFA HRTF files
-- Wraps: libmysofa for KD-tree HRIR lookup
-- Supports: 6 embedded profiles (Simple Woodworth, MIT KEMAR, SADIE II D2, CIPIC003, HUTUBS PP2, Bernschuetz KU100)
-- Methods: loadFromMemory(), getInterpolatedHRIR(), getAlignedHRIR() (ITD-free)
+**RenderEngine ↔ SpatializationAlgorithm ↔ BinauralRenderer relationship:**
+- `RenderEngine` does NOT implement `SpatializationAlgorithm` and is not itself an algorithm. It *owns and calls* two hardcoded algorithm instances (`VBAPAlgorithm surroundAlgorithm_`, `DirectBinauralAlgorithm binauralAlgorithm_`) only when `engineComputesGains` is set, inside the private `computeObjectGains()` method (`RenderEngine.h:387-389`, `304`).
+- For all other cases (the default), gain arrays (`objGains`, `objChannelGains`) arrive pre-computed from the consumer, meaning the consumer may call any of the 8 `SpatializationAlgorithm` implementations directly and hand results to `RenderEngine` — the engine has no compile-time or runtime dependency forcing use of a particular algorithm outside the SC-13 opt-in path.
+- `BinauralRenderer` is a separate, lower-level subsystem RenderEngine owns two instances of (`binauralRenderers[2]`) for double-buffered HRTF profile swap; it performs FFT convolution, not gain-vector computation — `SpatializationAlgorithm::computeGains()` and `BinauralRenderer`'s convolution are architecturally parallel, not layered on each other. `DirectBinauralAlgorithm::computeBinauralGains()` (an algorithm capability) produces the target `BinauralGains` (gain values), while `BinauralRenderer` separately does the actual per-sample HRIR convolution using those/HRTF-derived gains.
 
-**TrajectoryEngine:**
-- Purpose: Evaluate 13 parameterized animation shapes
-- Shapes: None, Bounce, Circle, Cross, Figure8, Heart, Helix, Infinity, Line, Orbit, Random, Spiral, Square, Triangle
-- Input: TrajectoryEngine::ObjectInput (shape, speed, reverse, origin position)
-- Output: TrajectoryResult (azDeg, elDeg, dist + bool flags indicating which dimensions are controlled)
+## `MAX_SOURCES` Constant and Sizing
+
+`spatialcore::MAX_SOURCES = 12` is defined once, in `include/SpatialCore/Core/Types.h:8`. `MAX_SPEAKERS = 16` is defined immediately after (`Types.h:9`).
+
+**Arrays sized by `MAX_SOURCES`** (verified via `grep -rn "MAX_SOURCES\]"` across `include/SpatialCore`):
+- `Engine/RenderEngine.h`: `RenderSources::{monoBuffers, sourceEnabledBlock, tapFadeGainPerSample, distGainPerSample, objects, objectLive}`; `RenderBlockContext::{objGains, objGainL, objGainR, objChannelGains[][MAX_SPEAKERS]}`; engine-private `sourceAccumBufPtrs`, `prevBinauralGains`, `prevStereoGainL/R`, `prevChannelGains[][MAX_SPEAKERS]`, `prevSHCoeffs[][kMaxAmbiChannels]`, `nfcFilters[][kMaxAmbiOrder]`, `smoothedNfcDistance`, `prevNfcDistance`.
+- `Binaural/BinauralRenderer.h`: `sourceConvL/R`, `cachedSourceAz/El`, `sourceConvReady`, `currentITDL/R`, `targetITDL/R`, `itdBufferL/R[][kITDBufferSize]`, `itdWritePos`, `lfShelfStateL/R[][2]`.
+- `OSC/ADMOSCSender.h`: `prevAz`, `prevEl`, `prevDist`.
+- `UI/SpatialMapComponent.h`: `objectColours[MAX_SOURCES]`.
+
+**Independent, non-tracking constant:** `include/SpatialCore/Trajectory/DopplerVelocity.h:17` defines its own `static constexpr int kMaxObjects = 12;`, **not** derived from or referencing `spatialcore::MAX_SOURCES`. It happens to equal 12 today but is a textually separate literal — changing `MAX_SOURCES` in `Types.h` will NOT change `DopplerVelocity::kMaxObjects`, and vice versa. Arrays sized by it: `prevAz_`, `prevEl_`, `prevDist_`, `smoothedVelocity_`, `rawSemitones_`, `smoothedSemitones_`, `prevSmoothedSemitones_`, `intermediateSmoothed_`, `posChanged_` (all `DopplerVelocity.h:51-61`). This is a latent drift risk: bumping `MAX_SOURCES` without also updating `DopplerVelocity::kMaxObjects` would silently create a mismatched per-object array bound between the trajectory/Doppler subsystem and everything else.
 
 ## Entry Points
 
-**Library Export (include/SpatialCore/SpatialCore.h):**
+**`spatialcore::RenderEngine::renderBlock`:**
+- Location: `include/SpatialCore/Engine/RenderEngine.h:218`, implemented `src/Engine/RenderEngine.cpp`
+- Triggers: consumer plugin's audio-thread `processBlock`, once per audio block.
+- Responsibilities: dispatches to exactly one of 5 render paths, writes raw wet output; no dry/wet, gain, or limiting.
+
+**`SpatialCore.h` (umbrella header, DSP-only):**
 - Location: `include/SpatialCore/SpatialCore.h`
-- Triggers: `#include <SpatialCore/SpatialCore.h>` in consumer plugin
-- Responsibilities: Umbrella header aggregating all public API headers (Core, Algorithms, Binaural, IO, OSC, Trajectory, DSP, UI)
+- Includes: Core, Algorithms (all 8 + `AllAlgorithms.h`), Binaural, IO, OSC, Trajectory, and `Engine/RenderEngine.h`.
+- Explicitly excludes UI headers — comment at top: "UI headers... are deliberately NOT included here; they land in a separate SpatialCoreUI umbrella in Phase 9. Consumers that need UI widgets include `<SpatialCore/UI/*.h>` directly for now." (No separate `SpatialCoreUI.h` umbrella header was found in the tree as of this analysis — only the CMake target exists; consumers include individual `UI/*.h` files.)
 
-**Build Integration (CMakeLists.txt):**
-- Location: `/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna/CMakeLists.txt`
-- Triggers: `add_subdirectory(SpatialCore)` in consumer plugin CMakeLists.txt
-- Responsibilities: Fetches JUCE 8, libmysofa v1.3.2, zlib; builds libSpatialCore.a; defines target_link_libraries
+**Two CMake link targets (confirmed, `CMakeLists.txt`):**
+1. `SpatialCore` (STATIC) — DSP-only: Algorithms, Core, Binaural, IO, OSC, Trajectory, Engine `.cpp` sources. Links `juce::juce_core`, `juce_audio_basics`, `juce_audio_formats`, `juce_dsp`, `juce_osc` (INTERFACE-only when consumed via `add_subdirectory`, PUBLIC when built standalone), plus `mysofa-static` and `ZLIB::ZLIB` (PRIVATE).
+2. `SpatialCoreUI` (STATIC) — GUI-linked: `src/UI/{SMLLookAndFeel,ReverseSlider,IndicatorToggle,StyledButton,SpatialMapComponent,GlobalTapDrawer,PresetBrowser,IOSectionComponent,OSCSectionComponent,ObjectPanel}.cpp`. Separate target so a DSP-only consumer never pulls GUI modules transitively (per `CMakeLists.txt` comment "Pattern 4, 09-RESEARCH.md"). Confirmed by commit `3da7d89` ("docs: clarify consumer integration (link SpatialCore + SpatialCoreUI...)") which fixed docs that previously showed only the `SpatialCore` target, causing UI-consuming plugins to fail to link.
 
-**Test Harness (tests/CMakeLists.txt):**
-- Location: `tests/CMakeLists.txt`
-- Triggers: `cmake --build build --target SpatialCoreTests` or via CTest
-- Responsibilities: Fetches Catch2 v3.7.1, compiles test executables, discovers tests via Catch2
+Consumers must `add_subdirectory(SpatialCore)` and `target_link_libraries(MyPlugin PRIVATE SpatialCore SpatialCoreUI)` if they use any UI widget — linking only `SpatialCore` is valid for DSP-only consumers.
 
 ## Architectural Constraints
 
-- **Threading:** Single-threaded audio processing (JUCE plugin lifecycle). OSC receiver runs on internal JUCE message thread. Dual-buffering (atomic swap) protects audio thread from profile changes.
-- **Global state:** SharedFFTCache is process-global singleton (FFT buffer shared across all PartitionedConvolvers in the process). Per-renderer HRTFDatabase eliminates per-source race conditions.
-- **Circular imports:** No circular dependencies by design. Algorithms depend on Core + IO, but IO and algorithms never depend on each other.
-- **Max sources/speakers:** Hardcoded MAX_SOURCES=12, MAX_SPEAKERS=16 as compile-time constants (enables stack allocation in audio thread).
-- **Real-time safety:** No malloc/new, no blocking I/O, no logging in any function called from processBlock (audio path is lock-free).
-- **FFT buffer size:** PartitionedConvolver uses fixed FFT size (typically 2048) for HRTF convolution. No dynamic resizing.
+- **Threading:** Audio-thread path (`renderBlock` and everything it calls — Algorithms, `BinauralRenderer` convolution) must be lock-free/alloc-free. Message-thread-only APIs are explicitly marked in comments: `setBinauralProfileIndex`, `getPrepareRendererIndex`/`swapActiveRenderer`, HRTF profile loading via `getBinauralRenderer()` escape hatch (`RenderEngine.h:234-239`, `260-266`).
+- **Double-buffered lock-free swap:** two independent instances of the pattern — `binauralRenderers[2]`/`activeRendererIndex` (HRTF profile) and `layoutBuffers[2]`/`activeLayoutIndex` (output format) — both use `std::atomic<int>` index swap, never mutate the active slot in place.
+- **Global state:** `SharedFFTCache` (`include/SpatialCore/Binaural/SharedFFTCache.h`) is described in `CLAUDE.md` as a "process-global FFT singleton" — verify singleton implementation in `SharedFFTCache.h` before relying on this claim in downstream planning, as it was not directly re-verified line-by-line in this pass beyond file existence.
+- **Frozen interface:** `SpatializationAlgorithm`'s virtual method set is marked FROZEN (D-02) in `SpatializationAlgorithm.h:9-13` — adding/removing/changing any virtual signature requires a major version bump per `CLAUDE.md`'s versioning policy.
+- **Independent per-object constant drift:** see `MAX_SOURCES` section above — `DopplerVelocity::kMaxObjects` does not track `spatialcore::MAX_SOURCES`.
+- **Float-associativity sensitivity:** `CMakeLists.txt` deliberately does NOT apply `-ffast-math`/`/fp:fast` to the `SpatialCore` target (unlike the consumer's own targets), because per-translation-unit `-ffast-math` reassociation broke a bit-identical regression harness gate (documented at length in `CMakeLists.txt` around the `TrajectoryEngine.cpp` note).
 
 ## Anti-Patterns
 
-### Triplet Missing for 3D Layout
+### Provisional flat-array hand-off treated as permanent
 
-**What happens:** If a 3D speaker layout (has height speakers) is passed to VBAP without precomputed VBAP triplets, the code falls back to nearestSpeaker3DFallback().
+**What happens:** `RenderSources`/`RenderBlockContext` use raw C arrays and pointer arrays sized to `MAX_SOURCES`, mirroring the pre-extraction `OpenSpatialDelayProcessor` member layout verbatim.
+**Why it's wrong:** The struct comments explicitly flag this as "the least-diff shape against the existing call site... PROVISIONAL and flagged for ergonomic review in the Phase 10+ post-extraction refactor" — it is a known-temporary shape, not an idiomatic public API, and any new consumer integrating today inherits that awkwardness.
+**Do this instead:** Treat `RenderSources`/`RenderBlockContext` as unstable/low-ergonomics by design; do not build additional public API surface that assumes this exact shape is permanent. Any refactor of this hand-off is a locked-decision item requiring the Phase 10+ process, not an ad hoc change.
 
-**Why it's wrong:** 3D VBAP without triplets routes to height speakers using 2D math, producing spatial artifacts. The triplets must be precomputed via buildVBAPTripletsForLayout().
+### Independently-declared per-object size constants
 
-**Do this instead:** Always call buildVBAPTripletsForLayout() before passing 3D layouts to VBAP algorithm. See `src/Algorithms/VBAPAlgorithm.cpp:15-20` for the guard and `include/SpatialCore/IO/SpeakerLayout.h:56-57` for the function.
-
-### Shared HRTF State Race Condition
-
-**What happens:** Old code (before issue #96) used a single shared HRTFDatabase across all PartitionedConvolvers. Timer thread loading a SOFA file raced with audio thread HRIR lookups, causing crashes or garbage audio.
-
-**Why it's wrong:** Audio thread is real-time, cannot wait for I/O. Shared mutable state violates lock-free requirements.
-
-**Do this instead:** BinauralRenderer holds its own HRTFDatabase instance. Profile loading happens on timer thread; audio thread only reads prepared HRIRs. See `src/Binaural/BinauralRenderer.h:23`.
-
-### Direct FFT on Audio Thread
-
-**What happens:** If HRTF convolution tried to compute FFTs inside processBlock, real-time performance would stall.
-
-**Why it's wrong:** FFTs are expensive O(N log N) and cannot meet strict audio thread deadlines.
-
-**Do this instead:** PartitionedConvolver precomputes IR FFTs during updateSourceHRIR() (called at block boundaries during position changes, not every sample). processBlock only does overlap-save accumulation (cheap). See `src/Binaural/PartitionedConvolver.cpp`.
+**What happens:** `DopplerVelocity.h` declares its own `kMaxObjects = 12` instead of referencing `spatialcore::MAX_SOURCES` from `Core/Types.h`.
+**Why it's wrong:** Two sources of truth for "max concurrent objects" that happen to agree today but have no compiler-enforced link; changing one without the other silently creates mismatched bounds between the Doppler/trajectory subsystem and every other `MAX_SOURCES`-sized array (Engine, Binaural, OSC, UI).
+**Do this instead:** New code needing a per-object bound should reference `spatialcore::MAX_SOURCES` directly; if `DopplerVelocity` cannot be changed immediately, any future change to `MAX_SOURCES` must include an explicit grep-and-check step for `kMaxObjects`.
 
 ## Error Handling
 
-**Strategy:** Minimal error handling in audio path. Validation and error reporting deferred to setup/configuration time.
+**Strategy:** Not fully audited in this pass. `computeGains`/`renderBlock` are `void`-returning hot-path functions consistent with a no-exceptions, no-allocation audio-thread policy implied by `CLAUDE.md`'s "NEVER allocate memory in any function called from processBlock" rule. HRTF/SOFA file loading (`HRTFDatabase`) is message-thread-only and more likely to use return-value/bool-success patterns — not verified line-by-line here.
 
 **Patterns:**
-- HRTFDatabase.loadFromMemory() returns bool (true if SOFA parse succeeds, false on error)
-- OutputFormatRegistry returns OutputFormatInfo by value; invalid format returns zeroed struct
-- Algorithm.computeGains() assumes valid SourcePosition and LayoutContext; no validation
-- ADMOSCReceiver.connect() returns bool (true if UDP bind succeeds)
-- No exceptions thrown; all errors communicated via return codes or boolean flags
+- Optional-capability virtuals default to safe no-ops (`SpatializationAlgorithm::computeBinauralGains` returns `{}` by default; `supportsBinauralDirect`/`supportsSHDomain` default `false`).
 
 ## Cross-Cutting Concerns
 
-**Logging:** None in audio path (lock-free requirement). Console output only in setup/test code.
-
-**Validation:** Input validation (null checks, bounds checks) happens in public API entry points (HRTFDatabase, OutputFormatRegistry, ADMOSCReceiver), not in hot audio path. Algorithm.computeGains() assumes valid inputs.
-
-**Authentication:** No authentication; OSC receiver listens on localhost 4002 by default (consumer plugin chooses port).
-
-**Coordinate Conversion:** Polar (azimuth [radians], elevation [radians], distance [meters]) is the canonical internal format. UI and OSC work in degrees; conversion happens at boundaries:
-- SourcePosition uses radians (internal canonical)
-- ObjectState uses degrees (UI-facing)
-- ADMOSCReceiver converts Cartesian → Polar (ITU-R BS.2127-0)
-- SpatialMapComponent uses degrees (UI display)
+**Logging:** None found in the audio-thread-facing headers reviewed (`RenderEngine.h`, `SpatializationAlgorithm.h`) — consistent with the lock-free audio-path rule in `CLAUDE.md`.
+**Validation:** `OSC/OSCPortValidation.h`/`.cpp` exists as a dedicated validation module for OSC port configuration (message-thread, not audio-thread).
+**Authentication:** Not applicable — this is an embedded DSP library, no network auth surface beyond OSC receive/send.
 
 ---
 
-*Architecture analysis: 2026-08-09*
+*Architecture analysis: 2026-08-10*
+</content>

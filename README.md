@@ -18,7 +18,8 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 
 ## Components
 
-### Spatialization Algorithms (7)
+### Spatialization Algorithms (8)
+- **Constant Power** — Cosine-distance all-speaker weighting, constant-power normalized (smooth, wide image)
 - **VBAP** — Vector Base Amplitude Panning (Pulkki 1997)
 - **VBIP** — Vector Base Intensity Panning (squared gains for tighter focus)
 - **KNN** — K-Nearest Neighbor (inverse-distance-squared weighting)
@@ -31,16 +32,16 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 - **HRTFDatabase** — SOFA file loading via libmysofa, KD-tree HRIR lookup
 - **PartitionedConvolver** — Real-time FFT overlap-save convolution
 - **BinauralRenderer** — 12 per-source convolvers, double-buffered profile swap
-- **6 HRTF Profiles:** Simple (Woodworth), MIT KEMAR, SADIE II D2, CIPIC Subject003, HUTUBS PP2, Bernschuetz KU100
+- **HRTF Profiles:** 5 SOFA HRTF profiles ship; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles. The five SOFA files are MIT KEMAR, SADIE II D2, CIPIC Subject003, HUTUBS PP2, and Bernschuetz KU100.
 
-### Output Format Support (22 formats)
+### Output Format Support (23 formats)
 - 1 Binaural (HRTF head model)
 - 1 Stereo (5 mic simulation sub-modes)
-- 13 Surround (Quad through 9.1.6 Atmos)
+- 15 Surround (Quad through 9.1.6 Atmos)
 - 6 Ambisonics (FOA through 6th Order)
 
 ### Speaker Layouts
-- 13 ITU-R BS.775/BS.2051 standard layouts with SMPTE channel ordering
+- 15 ITU-R BS.775/BS.2051 standard layouts with SMPTE channel ordering
 - 16-speaker virtual array for binaural rendering (9 ear-level + 6 height + zenith)
 - Automatic bus negotiation — format detected from DAW track I/O
 
@@ -62,21 +63,27 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 
 ### Utility DSP
 - `softClip()` — Soft saturation for delay input and feedback
-- `outputLimiter()` — +2dB ceiling rational approximation saturator
+- `outputLimiter()` — +2 dB (1.2589) tanh soft ceiling: `1.2589f * tanh(x / 1.2589f)`
 
 ## Integration
 
 ### Adding SpatialCore to a Plugin
 
 ```bash
-# Add as git submodule
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+# Add as git submodule.
+# AndrewRahman/SpatialCore is the development remote and the URL to use today;
+# Spatial-Media-Lab/SpatialCore is the post-proof destination and does not resolve yet.
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 ```
 
 ```cmake
 # In your CMakeLists.txt
-add_subdirectory(SpatialCore)
+add_subdirectory(SpatialCore)          # defines both SpatialCore + SpatialCoreUI targets
+
+# DSP engine only:
 target_link_libraries(YourPlugin PRIVATE SpatialCore)
+# ...or DSP + shared UI (spatial map, SML look-and-feel, widgets):
+target_link_libraries(YourPlugin PRIVATE SpatialCore SpatialCoreUI)
 ```
 
 ```cpp
@@ -88,7 +95,7 @@ See [docs/integration-guide.md](docs/integration-guide.md) for the complete inte
 
 ## Dependencies
 
-- **JUCE 8** (C++17) — audio plugin framework
+- **JUCE 9.0.0** (C++17) — audio plugin framework
 - **libmysofa** v1.3.2 (FetchContent) — SOFA file parsing
 - **zlib** (system) — compression for SOFA files
 - **Catch2** v3.7.1 (FetchContent, tests only) — unit testing
@@ -113,6 +120,14 @@ SpatialCore follows semantic versioning (`v1.0.0`). Each plugin pins to a specif
 - **Major:** Breaking API changes (new virtual methods, removed functions)
 - **Minor:** New features (new algorithm, new output format, new UI widget)
 - **Patch:** Bug fixes
+
+### Updating SpatialCore in a consumer
+
+A change to SpatialCore only reaches a plugin after you:
+1. Commit + push the change in the SpatialCore repo.
+2. In the consumer repo, `cd SpatialCore && git pull` (or checkout the tag), then `git add SpatialCore` in the consumer to bump the submodule pointer, and commit.
+
+The consumer builds whatever commit its submodule pointer references — editing SpatialCore in place without bumping the pointer changes nothing in a clean build (this is what `build_version.sh` and CI both do).
 
 ## License
 
