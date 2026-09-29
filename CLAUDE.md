@@ -15,7 +15,7 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 ### Core Components
 | Component | Headers | Description |
 |-----------|---------|-------------|
-| Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural |
+| Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural. `AllAlgorithms.h`'s `AllAlgorithmTypes` list is the source of truth for the count |
 | Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
 | Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free double-buffered output-format/HRTF-profile swap, and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
 | Core | `Core/SpatialMath.h` | `softClip()`, `outputLimiter()` (tanh soft ceiling), `distanceAttenuation()`, plus the shared position/gain types in `Core/Types.h` |
@@ -97,3 +97,4 @@ A SpatialCore change reaches a consumer only after: commit + push here, then bum
 - ALWAYS maintain backward compatibility with existing plugins when adding features
 - ALWAYS run the full test suite before tagging a release
 - HRTF profiles are Git-LFS-tracked raw `.sofa` files loaded at runtime, not BinaryData — adding/removing profiles updates the consumer plugin's packaging copy step (and the runtime resolver's filename switch), not a BinaryData rebuild
+- Adding a spatialization algorithm means editing `AllAlgorithmTypes` in `Algorithms/AllAlgorithms.h`, not just adding an `#include`. That type list is the single source of truth for `NUM_ALGORITHMS` — the count is derived from it, so a header that is included but not listed compiles fine and is silently uncounted. Adding to the list moves the count and deliberately fails the build until every doc surface named in the `static_assert` message is updated with it (D-04)
