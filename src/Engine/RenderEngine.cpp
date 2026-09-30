@@ -27,9 +27,16 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     // which under block-periodic input falls into a rounding limit cycle whose
     // shape is compiler/platform dependent (macOS vs MSVC differ). Double keeps
     // the LFE deterministic across platforms; output is still rounded to float.
+    //
+    // Order matters: a default-constructed Filter holds order-1 coefficients,
+    // makeLowPass is order 2. Filter::check() (run on every processSample)
+    // calls reset() -> memory.malloc() whenever the coefficient order differs
+    // from the state order. Assigning the order-2 coefficients FIRST means
+    // prepare()/reset() size the state for order 2 here, so the audio thread
+    // never reallocates on its first block.
+    *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<double>::makeLowPass (sampleRate, 120.0);
     lfeFilter.prepare (spec);
     lfeFilter.reset();
-    *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<double>::makeLowPass (sampleRate, 120.0);
 
     // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
     for (int obj = 0; obj < MAX_SOURCES; ++obj)
