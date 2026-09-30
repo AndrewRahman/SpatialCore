@@ -77,7 +77,23 @@ named gaps, it does not rebuild the modules.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+**Wave 1**
+- [ ] 02-01-PLAN.md — Tracer: EAR lower-hemisphere panning end to end on 7.1.4, one height threshold, the Release layout-build abort, and deletion of the empty-triplet nearest-speaker branches *(wave 1)*
+- [ ] 02-02-PLAN.md — Independent reference oracles (scipy SH, PyPI ear 2.1.0, textbook panning) checked in under `tests/reference/`, behind a blocking package-legitimacy gate *(wave 1)*
+- [ ] 02-03-PLAN.md — File the coplanar-quad tie-break issue with the measured jumps, after human approval of the text *(wave 1)*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 02-04-PLAN.md — Playback safety in both layers (non-finite silence, bounded wrap, best-triplet fallback, engine hold-last-good) and the ear-oracle / coverage verification of the lower hemisphere *(wave 2)*
+- [ ] 02-05-PLAN.md — Textbook single-band VBIP, MDAP/DBAP corrections, and the panning-law suite for all 8 algorithms with D-18-scoped continuity *(wave 2)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 02-06-PLAN.md — One SH evaluator with corrected SN3D orders 4-6, the ACN/SN3D/no-Condon-Shortley convention in code, the decode guard, one decoder, and the 23-format cross-check *(wave 3)*
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 02-07-PLAN.md — README, integration guide and skill brought in line with the code; OpenSpatialDelay DR-3 build; phase gate; cross-repo follow-ups recorded *(wave 4)*
 
 ### Phase 3: Binaural Defects & HRTF Packaging
 
@@ -205,7 +221,7 @@ External Dependencies.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
-| 2. Algorithm & Format Verification | 0/TBD | Not started | - |
+| 2. Algorithm & Format Verification | 0/7 | Planned | - |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |

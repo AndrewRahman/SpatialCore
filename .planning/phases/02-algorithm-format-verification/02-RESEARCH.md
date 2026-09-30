@@ -675,16 +675,34 @@ Use a `std::async` + `wait_for` watchdog (or a bounded-iteration proof by constr
 | A7 | Optional epsilon in the min-sum comparison would make ties deterministic (not tried; changes above-horizon bits) | F5 | Only relevant if the user later wants it |
 | A8 | `[CITED]` ITU-R BS.2127 section numbers and Zotter & Frank chapter are taken from CONTEXT's reference list; only `ear` source and the DAFx/ICMC papers were read this session | State of the Art | Low |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **D-13 "360-degree continuity sweep, no jumps" on height layouts (F5).**
+All five were closed at plan-phase on 2026-09-30. Questions 1-3 were decided by the user and recorded
+as D-18, D-19 and D-20 in `02-CONTEXT.md` § "Planning-Time Amendments"; question 4 needs no decision
+and is carried by a plan; question 5 was declined.
+
+1. **D-13 "360-degree continuity sweep, no jumps" on height layouts (F5).** — **RESOLVED by D-18:**
+   the tests are scoped and the triangulation is not fixed in this phase.
    - What we know: existing all-triples/min-sum gives 0.45-0.85 steps at el=20/40; exact ties; band jumps of ~0.10 also exist in the new lower band; KNN jumps by design.
    - What's unclear: whether the user wants the phase to *fix* the triangulation (out of the four approved audible changes) or scope the test.
    - Recommendation: scope the tests as in §Validation Architecture, file the ticket with these numbers, and record the exceptions in test comments.
+   - Resolution: adopted as recommended. Plan 02-03 files the tie-break issue with the F5 numbers;
+     Plan 02-05 (`[panning-law][continuity]`) carries the scoped sweeps and cites the issue for the
+     excluded ranges; Plan 02-04 (`[ear][continuity]`) checks the continuous horizon seam.
 2. **Sanitiser scope beyond the letter of D-06(a) (F7).** Adding the algorithm-layer guard, wrap of huge finite azimuths and `distance` hold-last-good goes slightly past D-06's text but is squarely inside its stated stance ("playback never crashes"). Recommend including; needs a one-line confirmation.
+   — **RESOLVED by D-19:** confirmed; the guard lives in both layers (algorithm-layer silence and
+   bounded wrap, engine-layer hold-last-good including `distance`). Implemented in Plan 02-04
+   (`[robust]`, `[sanitize]`).
 3. **`getDecodeMatrix` guard for `numSpeakers > MAX_SPEAKERS` (F6).** Recommended free hardening (no shipped caller can trigger it); confirm it is welcome in this phase.
+   — **RESOLVED by D-20:** confirmed; early return for `numSpeakers > MAX_SPEAKERS`. Implemented in
+   Plan 02-06 (`[decode-guard]`).
 4. **Release-notes wording for VBIP (F1):** "wider and up to 3 dB louder between speakers".
+   — **RESOLVED (no decision needed):** the wording is used as written. OSD release notes are a
+   cross-repo follow-up outside this phase (CONTEXT Deferred Ideas); Plan 02-07 Task 3 records it,
+   with this wording, in its "Cross-repo follow-ups" SUMMARY section.
 5. **Optional: deterministic tie epsilon** (A7) — not recommended in this phase.
+   — **RESOLVED (declined):** not adopted. D-18 keeps the triangulation and tie-break unchanged in this
+   phase; the epsilon is listed as an undecided option in the Plan 02-03 tie-break issue.
 
 ## Environment Availability
 
