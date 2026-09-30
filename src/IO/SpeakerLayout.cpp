@@ -87,11 +87,19 @@ const SpeakerLayout& getLayoutDef (LayoutID id)
     return cached[static_cast<size_t> (id)];
 }
 
-// v1.0: Check if a speaker layout has height speakers (elevation > 1 degree)
+namespace
+{
+// The one height threshold (D-03): about 1 degree. layoutHasHeight and
+// buildVBAPTripletsForLayout both use it, so a layout is either height-and-
+// triangulated or flat-and-untriangulated, never mismatched.
+constexpr float kHeightThresholdRad = 0.0175f;
+} // namespace
+
+// v1.0: Check if a speaker layout has height speakers (|elevation| > 0.0175 rad)
 bool layoutHasHeight (const SpeakerLayout& layout)
 {
     for (int s = 0; s < layout.numSpeakers; ++s)
-        if (std::abs (layout.speakers[s].elevationRad) > 0.0175f)  // ~1 degree
+        if (std::abs (layout.speakers[s].elevationRad) > kHeightThresholdRad)
             return true;
     return false;
 }
@@ -105,13 +113,8 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
     triplets.clear();
     const int N = layout.numSpeakers;
 
-    // Check if layout has height speakers (any elevation != 0)
-    bool hasHeight = false;
-    for (int s = 0; s < N; ++s)
-        if (std::abs (layout.speakers[s].elevationRad) > 0.01f)
-        { hasHeight = true; break; }
-
-    if (! hasHeight)
+    // One shared height predicate with the public height test (D-03).
+    if (! layoutHasHeight (layout))
         return;  // 2D-only layout -- VBAP uses pair-wise panning, no triplets needed
 
     for (int a = 0; a < N - 2; ++a)

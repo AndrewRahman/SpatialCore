@@ -1,6 +1,7 @@
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/Core/SpatialMath.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
@@ -635,11 +636,21 @@ void RenderEngine::activateLayout (OutputFormat format)
     // Build 3D VBAP triplets using the SpatialCore IO helper
     buildVBAPTripletsForLayout (buf.layout, buf.vbapTriplets);
 
-    jassert (buf.vbapTriplets.empty() == ! layoutHasHeight (buf.layout));
+    // D-02a: a height layout must yield regular triplets and a flat layout must
+    // yield none. This is the layout-build path (message/prepare thread, already
+    // allocating), reachable only by a SpatialCore developer editing layoutDefs
+    // or the triplet builder: OutputFormat is a closed enum, activateLayout is
+    // private, and there is no custom-layout entry point. DR-1 does not apply
+    // here, so a crash in every build type is the correct loud failure (D-02).
+    if (buf.vbapTriplets.empty() == layoutHasHeight (buf.layout))
+    {
+        jassertfalse;   // Debug: stop at the cause
+        std::abort();   // Release: layout table / builder mismatch
+    }
 
     // Append the ITU-R BS.2127 lower-hemisphere triplets (D-04) after the
-    // regular build and its check, so the check still sees the regular list
-    // alone. Message/prepare thread: allocation is fine here.
+    // guard above, so the guard still sees the regular list alone (F11).
+    // Message/prepare thread: allocation is fine here.
     appendLowerHemisphereTriplets (buf.layout, buf.vbapTriplets);
 
     // Atomic swap: audio thread now reads the fully-populated buffer

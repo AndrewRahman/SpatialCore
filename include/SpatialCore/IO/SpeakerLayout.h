@@ -75,7 +75,10 @@ static_assert (NUM_LAYOUT_DEFS == 15,
 
 const SpeakerLayout& getLayoutDef (LayoutID id);
 
-// v1.0: Check if a speaker layout has height speakers (elevation > 1 degree)
+// v1.0: Check if a speaker layout has height speakers: any speaker with
+// |elevation| > 0.0175 rad (about 1 degree). buildVBAPTripletsForLayout uses
+// this same predicate, so a layout is height-and-triangulated or
+// flat-and-untriangulated, never mismatched (D-03).
 bool layoutHasHeight (const SpeakerLayout& layout);
 
 // Build 3D VBAP triplets for a speaker layout with height speakers (empty
