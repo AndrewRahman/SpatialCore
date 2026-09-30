@@ -211,6 +211,34 @@ Requirements and success criteria served:
   virtual sources", IEEE WASPAA 1999.** The code says 2000 at `MDAPAlgorithm.cpp:8` and
   `tests/Algorithms/SpatializationAlgorithmTests.cpp:271`. Comment-only.
 
+### Planning-Time Amendments (2026-09-30, after 02-RESEARCH.md)
+
+Decided by the user at plan-phase on the research's Open Questions 1-3. Corrections to numbers
+above come from the research findings named in brackets; the research is the source of truth for them.
+
+- **D-18:** **Continuity tests are scoped, not universal; the triangulation is not fixed in this
+  phase.** Existing 3D VBAP has exact coplanar ties that flip on float rounding (0.45-0.85 gain jumps
+  at el=20/40, RESEARCH F5). D-13's "360 degree sweep, no jumps" is asserted only where the algorithm
+  is continuous (RESEARCH §Validation Architecture, continuity scoping table). The tie-break GitHub
+  issue is filed in this phase with the F5 measurements and referenced from the scoped tests.
+- **D-19:** **The non-finite guard lives in both layers** (extends D-06(a), RESEARCH F7). OSD calls
+  `algo->computeGains` directly, so the engine sanitiser alone does not protect it, and
+  `computeVBAPGains2D` hangs on `+inf` or azimuth >= ~1e9 rad. (i) Algorithm layer:
+  `computeVBAPGains2D/3D` return silence for non-finite az/el and wrap large finite angles with a
+  bounded `std::remainder`/`fmod` instead of the unbounded `while` loops. (ii) Engine layer: D-06(a)
+  hold-last-good covers az, el **and distance**. Every `isfinite` guard goes in a SpatialCore `.cpp`,
+  never a header inline (OSD compiles with `-ffast-math`, RESEARCH F9).
+- **D-20:** **`AmbisonicsCodec::getDecodeMatrix` gets an early return when
+  `numSpeakers > MAX_SPEAKERS`** (out-of-bounds write on public API, RESEARCH F6). No behaviour change
+  for valid input.
+- **Corrections carried from research (not new decisions):** DBAP D-13 values are right but in code
+  speaker order `45, -45, 135, -135` they are `0.9984304, 0.0459007, 0.0270259, 0.0173052` (F2).
+  Today's VBIP output at Quad az30 is `0.9330127 / 0.0669873` and its power is not 1, so D-14 also
+  raises VBIP level by up to 3 dB between speakers (F1). "MDAP spread=0 equals VBAP" is untestable
+  (no spread parameter, F3); replaced by a numpy-port cross-check plus properties. D-04 uses the
+  lower-hemisphere-only hull (ear-level speakers + their -30 degree copies + nadir), stored as
+  flagged extra triplets built outside `buildVBAPTripletsForLayout` (F4, F11).
+
 ### Claude's Discretion
 
 - **Tie `kLayoutExpectations` to `NUM_LAYOUT_DEFS`.** `tests/IO/SpeakerLayoutTests.cpp:87` is a
