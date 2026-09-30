@@ -164,4 +164,176 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
     }
 }
 
+//==============================================================================
+// Lower-hemisphere triplets (D-04, ITU-R BS.2127 / EAR construction).
+//
+// Built once at layout-build time on the message/prepare thread (it allocates);
+// computeVBAPGains3D only ever reads the result through a const reference.
+//
+// Hull of {ear-level speakers, a virtual -30 degree copy under each, a virtual
+// nadir}. The lower-hemisphere-only hull is deliberate (RESEARCH F4): a full-
+// sphere hull has facets that skip the ear-level speakers on sparse-rear
+// layouts and pan below-horizon sources onto height speakers.
+//==============================================================================
+namespace
+{
+constexpr double kEarLevelLimitRad    = 10.0 * 3.14159265358979323846 / 180.0;
+constexpr double kVirtualRingElevRad  = -30.0 * 3.14159265358979323846 / 180.0;
+constexpr double kHullDetEpsilon      = 1e-3;
+constexpr double kSupportPlaneEpsilon = 1e-7;
+
+struct HullVertex
+{
+    double x, y, z;
+    int    target;      // real speaker index this vertex downmixes onto
+    bool   isVirtual;
+    bool   isNadir;
+};
+
+HullVertex makeHullVertex (double azRad, double elRad, int target, bool isVirtual)
+{
+    return { std::cos (elRad) * std::sin (azRad),
+             std::cos (elRad) * std::cos (azRad),
+             std::sin (elRad),
+             target, isVirtual, false };
+}
+} // namespace
+
+void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
+                                    std::vector<VBAPTriplet>& triplets)
+{
+    if (! layoutHasHeight (layout))
+        return;
+
+    const int N = layout.numSpeakers;
+
+    // A speaker below the ear-level band would cover the lower hemisphere
+    // natively; no shipped layout has one, so treat it as "no extras".
+    for (int s = 0; s < N; ++s)
+        if (static_cast<double> (layout.speakers[s].elevationRad) < -kEarLevelLimitRad)
+            return;
+
+    std::vector<HullVertex> verts;
+    verts.reserve (static_cast<size_t> (2 * N + 1));
+
+    std::uint16_t earMask = 0;
+    int earCount = 0;
+    int firstEar = -1;
+
+    for (int s = 0; s < N; ++s)
+    {
+        const double az = static_cast<double> (layout.speakers[s].azimuthRad);
+        const double el = static_cast<double> (layout.speakers[s].elevationRad);
+        if (std::abs (el) > kEarLevelLimitRad)
+            continue;
+
+        verts.push_back (makeHullVertex (az, el, s, false));
+        earMask = static_cast<std::uint16_t> (earMask | (1u << s));
+        ++earCount;
+        if (firstEar < 0)
+            firstEar = s;
+    }
+
+    if (earCount < 3)
+        return;
+
+    const size_t numReal = verts.size();
+    for (size_t v = 0; v < numReal; ++v)
+    {
+        const int s = verts[v].target;
+        verts.push_back (makeHullVertex (static_cast<double> (layout.speakers[s].azimuthRad),
+                                         kVirtualRingElevRad, s, true));
+    }
+
+    HullVertex nadir { 0.0, 0.0, -1.0, firstEar, true, true };
+    verts.push_back (nadir);
+
+    const float nadirShare = static_cast<float> (1.0 / std::sqrt (static_cast<double> (earCount)));
+    const size_t V = verts.size();
+
+    for (size_t a = 0; a + 2 < V; ++a)
+    {
+        for (size_t b = a + 1; b + 1 < V; ++b)
+        {
+            for (size_t c = b + 1; c < V; ++c)
+            {
+                const HullVertex& va = verts[a];
+                const HullVertex& vb = verts[b];
+                const HullVertex& vc = verts[c];
+
+                // Regular (all real) triples belong to buildVBAPTripletsForLayout.
+                if (! (va.isVirtual || vb.isVirtual || vc.isVirtual))
+                    continue;
+
+                const double m[3][3] = {
+                    { va.x, vb.x, vc.x },
+                    { va.y, vb.y, vc.y },
+                    { va.z, vb.z, vc.z }
+                };
+
+                const double det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                                 - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                                 + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+                if (std::abs (det) < kHullDetEpsilon)
+                    continue;
+
+                // Plane normal (b - a) x (c - a), oriented away from the origin.
+                const double e1x = vb.x - va.x, e1y = vb.y - va.y, e1z = vb.z - va.z;
+                const double e2x = vc.x - va.x, e2y = vc.y - va.y, e2z = vc.z - va.z;
+                double nx = e1y * e2z - e1z * e2y;
+                double ny = e1z * e2x - e1x * e2z;
+                double nz = e1x * e2y - e1y * e2x;
+                if (nx * va.x + ny * va.y + nz * va.z < 0.0)
+                {
+                    nx = -nx;  ny = -ny;  nz = -nz;
+                }
+
+                // Keep only supporting planes (hull facets): no vertex may lie
+                // outside. Coplanar quads keep all four triangles, as the
+                // regular set does.
+                bool isFacet = true;
+                for (size_t v = 0; v < V; ++v)
+                {
+                    const double side = nx * (verts[v].x - va.x)
+                                      + ny * (verts[v].y - va.y)
+                                      + nz * (verts[v].z - va.z);
+                    if (side > kSupportPlaneEpsilon)
+                    {
+                        isFacet = false;
+                        break;
+                    }
+                }
+                if (! isFacet)
+                    continue;
+
+                const double invDet = 1.0 / det;
+                VBAPTriplet t;
+                t.i = va.target;
+                t.j = vb.target;
+                t.k = vc.target;
+                t.inv[0][0] = static_cast<float> (  (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * invDet);
+                t.inv[0][1] = static_cast<float> ( -(m[0][1] * m[2][2] - m[0][2] * m[2][1]) * invDet);
+                t.inv[0][2] = static_cast<float> (  (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * invDet);
+                t.inv[1][0] = static_cast<float> ( -(m[1][0] * m[2][2] - m[1][2] * m[2][0]) * invDet);
+                t.inv[1][1] = static_cast<float> (  (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * invDet);
+                t.inv[1][2] = static_cast<float> ( -(m[0][0] * m[1][2] - m[0][2] * m[1][0]) * invDet);
+                t.inv[2][0] = static_cast<float> (  (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * invDet);
+                t.inv[2][1] = static_cast<float> ( -(m[0][0] * m[2][1] - m[0][1] * m[2][0]) * invDet);
+                t.inv[2][2] = static_cast<float> (  (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * invDet);
+
+                t.lowerHemisphere = true;
+                t.nadirVertex = va.isNadir ? 0 : (vb.isNadir ? 1 : (vc.isNadir ? 2 : -1));
+                if (t.nadirVertex >= 0)
+                {
+                    t.nadirMask = earMask;
+                    t.nadirGain = nadirShare;
+                }
+
+                triplets.push_back (t);
+            }
+        }
+    }
+}
+
 } // namespace spatialcore

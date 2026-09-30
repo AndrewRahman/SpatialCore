@@ -637,6 +637,11 @@ void RenderEngine::activateLayout (OutputFormat format)
 
     jassert (buf.vbapTriplets.empty() == ! layoutHasHeight (buf.layout));
 
+    // Append the ITU-R BS.2127 lower-hemisphere triplets (D-04) after the
+    // regular build and its check, so the check still sees the regular list
+    // alone. Message/prepare thread: allocation is fine here.
+    appendLowerHemisphereTriplets (buf.layout, buf.vbapTriplets);
+
     // Atomic swap: audio thread now reads the fully-populated buffer
     activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
     prepareLayoutIndex = 1 - prepareLayoutIndex;

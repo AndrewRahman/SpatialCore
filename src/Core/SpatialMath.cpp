@@ -238,29 +238,39 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
     int bestTri = -1;
     float bestG[3] = {};
 
-    for (int t = 0; t < static_cast<int> (triplets.size()); ++t)
+    // Regular triplets are always tried before lower-hemisphere ones (pass 0
+    // then pass 1), so above-horizon output is bit-identical to the pre-change
+    // function (D-04, D-06b). Pass 1 only runs when pass 0 found nothing.
+    for (int pass = 0; pass < 2 && bestTri < 0; ++pass)
     {
-        const auto& tri = triplets[static_cast<size_t> (t)];
+        const bool wantLower = (pass == 1);
 
-        float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;
-        float g1 = tri.inv[1][0] * px + tri.inv[1][1] * py + tri.inv[1][2] * pz;
-        float g2 = tri.inv[2][0] * px + tri.inv[2][1] * py + tri.inv[2][2] * pz;
-
-        if (g0 >= -1e-6f && g1 >= -1e-6f && g2 >= -1e-6f)
+        for (int t = 0; t < static_cast<int> (triplets.size()); ++t)
         {
-            float sum = g0 + g1 + g2;
-            if (sum < bestGainSum)   // Min sum = tightest triangle (fixes L/R swap)
+            const auto& tri = triplets[static_cast<size_t> (t)];
+            if (tri.lowerHemisphere != wantLower)
+                continue;
+
+            float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;
+            float g1 = tri.inv[1][0] * px + tri.inv[1][1] * py + tri.inv[1][2] * pz;
+            float g2 = tri.inv[2][0] * px + tri.inv[2][1] * py + tri.inv[2][2] * pz;
+
+            if (g0 >= -1e-6f && g1 >= -1e-6f && g2 >= -1e-6f)
             {
-                bestGainSum = sum;
-                bestTri = t;
-                bestG[0] = std::max (0.0f, g0);
-                bestG[1] = std::max (0.0f, g1);
-                bestG[2] = std::max (0.0f, g2);
+                float sum = g0 + g1 + g2;
+                if (sum < bestGainSum)   // Min sum = tightest triangle (fixes L/R swap)
+                {
+                    bestGainSum = sum;
+                    bestTri = t;
+                    bestG[0] = std::max (0.0f, g0);
+                    bestG[1] = std::max (0.0f, g1);
+                    bestG[2] = std::max (0.0f, g2);
+                }
             }
         }
     }
 
-    if (bestTri >= 0)
+    if (bestTri >= 0 && ! triplets[static_cast<size_t> (bestTri)].lowerHemisphere)
     {
         float power = bestG[0] * bestG[0] + bestG[1] * bestG[1] + bestG[2] * bestG[2];
         float scale = (power > 1e-12f) ? (1.0f / std::sqrt (power)) : 0.0f;
@@ -268,6 +278,41 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
         outGains[triplets[static_cast<size_t> (bestTri)].i] = bestG[0] * scale;
         outGains[triplets[static_cast<size_t> (bestTri)].j] = bestG[1] * scale;
         outGains[triplets[static_cast<size_t> (bestTri)].k] = bestG[2] * scale;
+    }
+    else if (bestTri >= 0)
+    {
+        // Lower-hemisphere triplet (D-04): each slot's gain accumulates onto
+        // the real ear-level speaker it downmixes to (duplicates are legal);
+        // the virtual nadir's gain is spread over nadirMask, then the result
+        // is power-normalised. Stack floats and a const vector only (DR-1).
+        const auto& tri = triplets[static_cast<size_t> (bestTri)];
+        const int slot[3] = { tri.i, tri.j, tri.k };
+
+        for (int v = 0; v < 3; ++v)
+        {
+            if (v == tri.nadirVertex)
+            {
+                const float share = bestG[v] * tri.nadirGain;
+                for (int s = 0; s < N; ++s)
+                    if ((tri.nadirMask >> s) & 1u)
+                        outGains[s] += share;
+            }
+            else
+            {
+                outGains[slot[v]] += bestG[v];
+            }
+        }
+
+        float power = 0.0f;
+        for (int s = 0; s < N; ++s)
+            power += outGains[s] * outGains[s];
+
+        if (power > 1e-12f)
+        {
+            const float scale = 1.0f / std::sqrt (power);
+            for (int s = 0; s < N; ++s)
+                outGains[s] *= scale;
+        }
     }
     else
     {
