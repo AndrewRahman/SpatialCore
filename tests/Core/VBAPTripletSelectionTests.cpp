@@ -5,6 +5,7 @@
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 
 #include <cmath>
+#include <type_traits>
 #include <vector>
 
 using namespace spatialcore;
@@ -305,4 +306,57 @@ TEST_CASE ("VBAP 3D: above-horizon output is bit-identical to the pre-change fun
         INFO ("layout " << layoutName (id));
         CHECK (mismatches == 0);
     }
+}
+
+// ----------------------------------------------------------------------------
+// DR-3: the public surface OpenSpatialDelay compiles against is unchanged.
+// These are compile-time pins first (a signature change breaks the build) and
+// runtime checks second.
+// ----------------------------------------------------------------------------
+
+TEST_CASE ("DR-3: the public surface OpenSpatialDelay compiles against is unchanged (D-02b)",
+           "[consumer-surface]")
+{
+    // setOutputFormat stays void (D-02b).
+    static_assert (std::is_same_v<decltype (&RenderEngine::setOutputFormat),
+                                  void (RenderEngine::*) (OutputFormat)>,
+                   "RenderEngine::setOutputFormat must stay void (OutputFormat)");
+
+    // VBAPTriplet built field by field, the way OSD builds it; the new members
+    // keep their default initialisers.
+    VBAPTriplet tri;
+    tri.i = 1;
+    tri.j = 2;
+    tri.k = 3;
+    tri.inv[0][0] = 1.0f;
+    CHECK (tri.i == 1);
+    CHECK (tri.inv[0][0] == 1.0f);
+    CHECK_FALSE (tri.lowerHemisphere);
+    CHECK (tri.nadirVertex == -1);
+
+    // LayoutContext stays a 4-member aggregate OSD brace-initialises.
+    SpeakerLayout layout {};
+    std::vector<VBAPTriplet> triplets;
+    float ambi[MAX_SPEAKERS][MAX_SPEAKERS] = {};
+    const LayoutContext ctx { layout, triplets, ambi, 0 };
+    CHECK (ctx.ambiNumSpeakers == 0);
+    CHECK (ctx.triplets.empty());
+
+    // Free functions keep their exact signatures.
+    float (*evalSHFn) (int, float, float) = &evalSH;
+    float (*evaluateSHFn) (int, float, float) = &AmbisonicsCodec::evaluateSH;
+    void (*nearestFn) (const SpeakerLayout&, float, float, float*, int) = &nearestSpeaker3DFallback;
+    void (*vbap2dFn) (const SpeakerLayout&, float, float*) = &computeVBAPGains2D;
+    void (*vbap3dFn) (const SpeakerLayout&, const std::vector<VBAPTriplet>&, float, float, float*)
+        = &computeVBAPGains3D;
+    bool (*heightFn) (const SpeakerLayout&) = &layoutHasHeight;
+    void (*buildFn) (const SpeakerLayout&, std::vector<VBAPTriplet>&) = &buildVBAPTripletsForLayout;
+
+    CHECK (evalSHFn != nullptr);
+    CHECK (evaluateSHFn != nullptr);
+    CHECK (nearestFn != nullptr);
+    CHECK (vbap2dFn != nullptr);
+    CHECK (vbap3dFn != nullptr);
+    CHECK (heightFn != nullptr);
+    CHECK (buildFn != nullptr);
 }

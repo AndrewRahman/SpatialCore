@@ -39,15 +39,14 @@ void MDAPAlgorithm::computeGains (const SourcePosition& source, const LayoutCont
 
     float tempGains[MAX_SPEAKERS] = {};
 
+    // Height layouts always carry triplets because RenderEngine::activateLayout
+    // aborts otherwise (D-02a); a hand-built LayoutContext with empty triplets on
+    // a height layout is a caller error this reports in Debug (D-01).
+    jassert (ctx.triplets.empty() == ! layoutHasHeight (ctx.layout));
+
     // Main source VBAP contribution
     if (! ctx.triplets.empty())
         computeVBAPGains3D (ctx.layout, ctx.triplets, source.azimuthRad, source.elevationRad, tempGains);
-    else if (layoutHasHeight (ctx.layout))
-    {
-        jassertfalse;
-        nearestSpeaker3DFallback (ctx.layout, source.azimuthRad, source.elevationRad,
-                                  tempGains, numSpeakers);
-    }
     else
         computeVBAPGains2D (ctx.layout, source.azimuthRad, tempGains);
 
@@ -95,11 +94,6 @@ void MDAPAlgorithm::computeGains (const SourcePosition& source, const LayoutCont
 
         if (! ctx.triplets.empty())
             computeVBAPGains3D (ctx.layout, ctx.triplets, auxAz, auxEl, tempGains);
-        else if (layoutHasHeight (ctx.layout))
-        {
-            jassertfalse;
-            nearestSpeaker3DFallback (ctx.layout, auxAz, auxEl, tempGains, numSpeakers);
-        }
         else
             computeVBAPGains2D (ctx.layout, auxAz, tempGains);
 

@@ -10,16 +10,14 @@ namespace spatialcore
 void VBIPAlgorithm::computeGains (const SourcePosition& source, const LayoutContext& ctx,
                                    float* outputGains, int numSpeakers) const
 {
+    // Height layouts always carry triplets because RenderEngine::activateLayout
+    // aborts otherwise (D-02a); a hand-built LayoutContext with empty triplets on
+    // a height layout is a caller error this reports in Debug (D-01).
+    jassert (ctx.triplets.empty() == ! layoutHasHeight (ctx.layout));
+
     // Start with VBAP gains
     if (! ctx.triplets.empty())
         computeVBAPGains3D (ctx.layout, ctx.triplets, source.azimuthRad, source.elevationRad, outputGains);
-    else if (layoutHasHeight (ctx.layout))
-    {
-        // v1.0: Guard -- never use 2D fallback on 3D layouts
-        jassertfalse;
-        nearestSpeaker3DFallback (ctx.layout, source.azimuthRad, source.elevationRad,
-                                  outputGains, numSpeakers);
-    }
     else
         computeVBAPGains2D (ctx.layout, source.azimuthRad, outputGains);
 
