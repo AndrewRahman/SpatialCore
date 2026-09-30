@@ -21,10 +21,15 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
 {
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (maxBlockSize), 1 };
 
-    // v0.2: Configure LFE low-pass filter (120 Hz, 2nd order Butterworth)
+    // v0.2: Configure LFE low-pass filter (120 Hz, 2nd order Butterworth).
+    // Double precision state/coefficients: at 120 Hz / 48 kHz the poles sit
+    // very close to z=1 and a float32 biquad amplifies rounding noise to ~1e-6,
+    // which under block-periodic input falls into a rounding limit cycle whose
+    // shape is compiler/platform dependent (macOS vs MSVC differ). Double keeps
+    // the LFE deterministic across platforms; output is still rounded to float.
     lfeFilter.prepare (spec);
     lfeFilter.reset();
-    *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<float>::makeLowPass (sampleRate, 120.0f);
+    *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<double>::makeLowPass (sampleRate, 120.0);
 
     // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
     for (int obj = 0; obj < MAX_SOURCES; ++obj)
@@ -542,7 +547,7 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 
         // LFE generation — low-pass filtered mono sum at -10 dB (raw, no dw/outGain)
         if (lfeIdx >= 0 && lfeIdx < numOutCh && outChannels[lfeIdx] != nullptr)
-            outChannels[lfeIdx][s] = lfeFilter.processSample (wetMono) * 0.316f;
+            outChannels[lfeIdx][s] = static_cast<float> (lfeFilter.processSample (static_cast<double> (wetMono))) * 0.316f;
     }
 
     // Store current channel gains as previous for next block (distGain

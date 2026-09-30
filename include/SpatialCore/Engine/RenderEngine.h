@@ -370,8 +370,10 @@ private:
     float cachedMaxrE[kMaxAmbiOrder + 1] = {};
 
     // --- Discrete-surround LFE generation filter (stateful IIR — persists
-    //     across blocks, must live with the render path that uses it) ---
-    juce::dsp::IIR::Filter<float> lfeFilter;
+    //     across blocks, must live with the render path that uses it).
+    //     Double precision: a float32 120 Hz biquad enters a platform-dependent
+    //     rounding limit cycle (see prepare()). ---
+    juce::dsp::IIR::Filter<double> lfeFilter;
 
     // --- Output-format double-buffered layout state (glitch-free swap,
     //     moved INTO the engine per the locked IO-ownership decision) ---
