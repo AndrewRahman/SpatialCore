@@ -4,7 +4,8 @@
 namespace spatialcore
 {
 
-/** Multiple-Direction Amplitude Panning (Pulkki 2000).
+/** Multiple-Direction Amplitude Panning (Pulkki, "Uniform spreading of amplitude
+    panned virtual sources", IEEE WASPAA 1999).
     Creates source spread by rendering multiple VBAP sub-sources on a ring
     around the main direction. Produces wider, more stable spatial images. */
 class MDAPAlgorithm : public SpatializationAlgorithm

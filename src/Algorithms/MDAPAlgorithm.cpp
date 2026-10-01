@@ -5,7 +5,8 @@ namespace spatialcore
 {
 
 //==============================================================================
-// MDAPAlgorithm -- Multiple-Direction Amplitude Panning (Pulkki 2000)
+// MDAPAlgorithm -- Multiple-Direction Amplitude Panning (Pulkki, "Uniform
+// spreading of amplitude panned virtual sources", IEEE WASPAA 1999)
 //==============================================================================
 void MDAPAlgorithm::computeGains (const SourcePosition& source, const LayoutContext& ctx,
                                    float* outputGains, int numSpeakers) const

@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include "../reference/PanningReference.h"
 #include <memory>
 #include <cmath>
 
@@ -200,9 +201,11 @@ TEST_CASE ("VBAP: golden gain vector at az=30 on Quad layout", "[algorithms][vba
     CHECK_THAT (gains[3], WithinAbs (0.0f, 1e-6f));
 }
 
-TEST_CASE ("VBIP: golden gain vector at az=30 on Quad layout (squared VBAP, renormalized)",
+TEST_CASE ("VBIP: textbook gain vector at az=30 on Quad layout (Pernaux, Boussard & Jot, DAFx-98)",
            "[algorithms][vbip][golden]")
 {
+    // Expected values come from tests/reference/PanningReference.h, generated from the
+    // published VBIP formula g_i = sqrt(G_i / sum G), G = L^-1 p (D-14) -- not from this code.
     VBIPAlgorithm algo;
     SpeakerLayout layout = makeQuadLayout();
     std::vector<VBAPTriplet> triplets;
@@ -212,10 +215,67 @@ TEST_CASE ("VBIP: golden gain vector at az=30 on Quad layout (squared VBAP, reno
     float gains[4] = {};
     algo.computeGains (makeSource (30.0f, 0.0f), ctx, gains, 4);
 
-    CHECK_THAT (gains[0], WithinAbs (0.9330127f, 1e-5f));
-    CHECK_THAT (gains[1], WithinAbs (0.0669873f, 1e-5f));
-    CHECK_THAT (gains[2], WithinAbs (0.0f, 1e-6f));
-    CHECK_THAT (gains[3], WithinAbs (0.0f, 1e-6f));
+    for (int s = 0; s < 4; ++s)
+        CHECK_THAT (gains[s], WithinAbs (spatialcore_ref::kVbip_Quad_az30[s], 1e-5f));
+}
+
+TEST_CASE ("VBIP: unit power and energy vector aimed at the source across 2D sweeps (D-14)", "[algorithms][vbip]")
+{
+    // Textbook VBIP (DAFx-98 sec. 2.2.2) aims the energy vector rE = sum g^2 l at the source
+    // and keeps sum g^2 = 1 everywhere, on every flat layout.
+    const LayoutID ids[] = { Quad, S5_0, S7_0, S9_1, Octaphonic };
+    VBIPAlgorithm algo;
+    std::vector<VBAPTriplet> triplets;   // flat layouts: 2D pair path
+    float ambiMatrix[1][MAX_SPEAKERS] = {};
+
+    for (LayoutID id : ids)
+    {
+        const SpeakerLayout& layout = getLayoutDef (id);
+        LayoutContext ctx = makeCtx (layout, triplets, ambiMatrix, 0);
+        const int n = layout.numSpeakers;
+
+        for (int k = 0; k < 720; ++k)
+        {
+            const float azDeg = -179.63f + 0.5f * static_cast<float> (k);
+            float gains[MAX_SPEAKERS] = {};
+            algo.computeGains (makeSource (azDeg, 0.0f), ctx, gains, n);
+
+            double power = 0.0, ex = 0.0, ey = 0.0;
+            for (int s = 0; s < n; ++s)
+            {
+                const double g2 = static_cast<double> (gains[s]) * gains[s];
+                power += g2;
+                ex += g2 * std::sin (static_cast<double> (layout.speakers[s].azimuthRad));
+                ey += g2 * std::cos (static_cast<double> (layout.speakers[s].azimuthRad));
+            }
+
+            INFO ("layout " << static_cast<int> (id) << " az " << azDeg);
+            CHECK_THAT (power, WithinAbs (1.0, 1e-5));
+
+            const double rEdeg = std::atan2 (ex, ey) * 180.0 / juce::MathConstants<double>::pi;
+            const double diff  = std::remainder (rEdeg - static_cast<double> (azDeg), 360.0);
+            CHECK_THAT (diff, WithinAbs (0.0, 1e-3));
+        }
+    }
+}
+
+TEST_CASE ("VBIP: wider than VBAP between two speakers (D-14)", "[algorithms][vbip]")
+{
+    VBIPAlgorithm vbip;
+    VBAPAlgorithm vbap;
+    SpeakerLayout layout = makeQuadLayout();
+    std::vector<VBAPTriplet> triplets;
+    float ambiMatrix[1][MAX_SPEAKERS] = {};
+    LayoutContext ctx = makeCtx (layout, triplets, ambiMatrix, 0);
+
+    float vbipGains[4] = {};
+    float vbapGains[4] = {};
+    vbip.computeGains (makeSource (30.0f, 0.0f), ctx, vbipGains, 4);
+    vbap.computeGains (makeSource (30.0f, 0.0f), ctx, vbapGains, 4);
+
+    // Speaker 1 (-45) is the far member of the active pair at az 30.
+    CHECK (vbipGains[1] > vbapGains[1]);
+    CHECK (vbipGains[0] < vbapGains[0]);
 }
 
 TEST_CASE ("KNN: golden gain vector at az=30 on Quad layout (k=3, inverse-distance-squared)",
@@ -253,6 +313,13 @@ TEST_CASE ("DBAP: golden gain vector at az=30, dist=0.5 on Quad layout (Euclidea
     CHECK_THAT (gains[2], WithinAbs (0.1768006f, 1e-4f));
     CHECK_THAT (gains[3], WithinAbs (0.1203831f, 1e-4f));
 
+    // These values equal Lossius et al., ICMC 2009 eq. 2-5 evaluated at SpatialCore's
+    // effective rolloff R = 12.04 dB (a = 2, 1/d^2 used as amplitude, no blur), cross-checked
+    // by tests/reference/gen_panning_reference.py (RESEARCH F2) -- a textbook check, not
+    // merely a regression pin.
+    for (int s = 0; s < 4; ++s)
+        CHECK_THAT (gains[s], WithinAbs (spatialcore_ref::kDbap_Quad_az30_dist05[s], 1e-5f));
+
     // DBAP always activates every speaker (weighted by inverse Euclidean
     // distance) -- unlike VBAP, there is no hard zero-gain speaker here.
     for (float g : gains)
@@ -268,7 +335,7 @@ TEST_CASE ("DBAP: golden gain vector at az=30, dist=0.5 on Quad layout (Euclidea
 // bodies preserve the documented mathematical invariants.
 // ============================================================================
 
-TEST_CASE ("MDAP: produces wider spread than point VBAP for the same source (Pulkki 2000 spread ring)",
+TEST_CASE ("MDAP: produces wider spread than point VBAP for the same source (Pulkki, WASPAA 1999 spread ring)",
            "[algorithms][mdap]")
 {
     MDAPAlgorithm mdap;

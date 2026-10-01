@@ -582,17 +582,9 @@ TEST_CASE ("Robustness: every algorithm returns finite gains or silence and neve
             CHECK (allFiniteGains (r.g, n));
             const float p = powerOf (r.g, n);
 
-            // Pre-D-14 VBIP squares unit-power VBAP gains and its "normalise to
-            // constant power" step is a no-op (RESEARCH F1), so today its gains
-            // sum to 1 instead of their squares. Plan 02-05 (D-14) makes VBIP
-            // unit-power; once it lands this carve-out is dead and should go.
-            float amplitudeSum = 0.0f;
-            for (int s = 0; s < n; ++s)
-                amplitudeSum += r.g[s];
-            const bool vbipPreD14 = dynamic_cast<const VBIPAlgorithm*> (&algo) != nullptr
-                                 && std::abs (amplitudeSum - 1.0f) <= 1e-4f;
-
-            CHECK ((p == 0.0f || std::abs (p - 1.0f) <= 1e-4f || vbipPreD14));
+            // Every algorithm, VBIP included since D-14 made it unit-power, is
+            // either silent or at unit power.
+            CHECK ((p == 0.0f || std::abs (p - 1.0f) <= 1e-4f));
 
             if (isVBAPFamilyOrKNN (algo))
             {
