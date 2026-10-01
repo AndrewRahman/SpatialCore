@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 02
 current_phase_name: Algorithm & Format Verification
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-10-01T06:59:48.046Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-10-01T07:13:03.317Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 02 execution started
-state_head: 18f5ab53f7b715d7bef0abf75076585f34f57e15
+state_head: a487b703439a001d25f1221791993b671e346feb
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 10
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ## Current Position
 
 Phase: 02 (Algorithm & Format Verification) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 02 execution started
 
@@ -84,6 +84,7 @@ Progress: [██████████] 100%
 | Phase 02 P03 | 2min | 2 tasks | 1 files |
 | Phase 02 P02 | 4min | 3 tasks | 9 files |
 | Phase 02 P04 | 13min | 3 tasks | 8 files |
+| Phase 02 P05 | 10min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,9 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 02]: Plan 02-04: D-19(i) bounded std::remainder wrap applied to computeVBAPGains2D only; computeVBAPGains3D silences non-finite az/el but leaves finite angles unwrapped so finite output stays bit-identical to d43cb15 (D-06b)
 - [Phase 02]: Plan 02-04: RenderEngine sanitiser holds azimuth, elevation and distance per field (ADM-OSC sends NaN for unset axes) and never wraps or clamps a finite value, per the plan rather than RESEARCH Pattern 4's pair-hold with wrap/clamp
 - [Phase 02]: Plan 02-04: [robust] power check temporarily accepts VBIP's pre-D-14 law (gains sum to 1, F1); Plan 02-05 should remove the commented carve-out once VBIP is unit-power
+- [Phase 02]: Plan 02-05: VBIP is textbook VBIP (sqrt of VBAP gains, renormalised to unit power, DAFx-98 sec. 2.2.2); single band, dual-band tracked in AndrewRahman/SpatialCore#20 (D-14, D-15)
+- [Phase 02]: Plan 02-05: the coplanar-tie mirror filter counts only rivals of the minimum-sum enclosing triplet; the any-two reading skipped every point on 7.1.6/9.1.6/SML13.1 because coplanar triangles always tie
+- [Phase 02]: Plan 02-05: 02-04's temporary VBIP carve-out in the [robust] power check is removed; VBIP is held to power 0 or 1
 
 ### Pending Todos
 
@@ -133,8 +137,8 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-01T06:59:48.006Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-10-01T07:13:03.277Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None
 Next command: `/gsd-execute-phase 1`
 
