@@ -322,7 +322,7 @@ New category. These are real bugs in code SpatialCore now owns.
 
 Open issues that close with evidence rather than a code change.
 
-- [ ] **VERIFY-01**: Ambisonics channel-order and normalisation convention is stated
+- [x] **VERIFY-01**: Ambisonics channel-order and normalisation convention is stated
   - **SpatialCore#11.** Inspect `AmbisonicsCodec` encode/decode against ACN ordering and SN3D
     normalisation; record the answer in code and docs, or correct it if mixed.
 
@@ -439,7 +439,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | BUG-01 | SpatialCore#15 | 3 | Pending |
 | BUG-02 | OpenSpatialDelay#234 | 3 | Pending |
 | BUG-03 | CONCERNS.md | 1 | Complete |
-| VERIFY-01 | SpatialCore#11 | 2 | Pending |
+| VERIFY-01 | SpatialCore#11 | 2 | Complete |
 | VERIFY-02 | SpatialCore#12 | 5 | Pending |
 | CI-01 | SpatialCore#9 | 6 | Pending |
 | INTG-01 | Build gate + v1 metric | 6 | Pending |

@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 02
 current_phase_name: Algorithm & Format Verification
-status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-10-01T07:22:41.797Z"
+status: verifying
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-10-01T07:34:22.144Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 02 execution started
-state_head: df9555adde3683420ea87959253ce7f23891aa53
+state_head: d00212702b1f6233c86fa528688da74356e9c676
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 milestone_name: milestone
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 Phase: 02 (Algorithm & Format Verification) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-01 — Phase 02 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -86,6 +86,7 @@ Progress: [██████████] 100%
 | Phase 02 P04 | 13min | 3 tasks | 8 files |
 | Phase 02 P05 | 10min | 3 tasks | 9 files |
 | Phase 02 P06 | 7min | 3 tasks | 8 files |
+| Phase 02 P07 | 8min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 02]: Plan 02-06: D-08 is constants only -- 22 SN3D substitutions in evalSH; post-fix max literal error 2.4e-7, addition-theorem deviation 2.8e-6 (was 19.54); AmbisonicsCodec::evaluateSH is a forwarder, so evalSH is the single SH implementation
 - [Phase 02]: Plan 02-06: D-09 proven pure refactor -- activateLayout uses AmbisonicsCodec::getDecodeMatrix (3, ...); max |diff| vs the verbatim d43cb15 decoder is 0 on all 15 layouts; rows past the speaker count are now cleared (old code left them stale)
 - [Phase 02]: Plan 02-06: SpatialCore#11 referenced as closed in commit 2c4e38d message only (no gh action); the docs half of the ACN/SN3D/no-Condon-Shortley statement lands in Plan 02-07
+- [Phase 02]: Plan 02-07: docs (README, integration guide, spatial-audio-dsp skill) restate the Phase 2 code -- AmbiX convention, textbook single-band VBIP (#20), EAR below horizon, min-sum tie-break (#22), DBAP 12.04 dB, MDAP WASPAA 1999; the guide names only VBAP/VBIP/MDAP/KNN/DirectBinaural as silent for non-finite input and only the 2D VBAP path as wrapping
+- [Phase 02]: Plan 02-07: DR-3 passed -- OpenSpatialDelay 30391cd compiles and links against the branch (OpenSpatialDelay + OpenSpatialDelayTests, git archive + symlinked SpatialCore + JUCE_DIR); only SpatialCore-header warnings are 5 pre-existing -Wunused-parameter in ADMOSCReceiver.h; RESEARCH A4 retired
+- [Phase 02]: Plan 02-07: nearestSpeaker3DFallback is comment-deprecated (no attribute, F9), removal at next major; OSD follow-ups (glossary 127-128, release notes for 4 audible changes, delete OSD's local SH/VBAP copies) recorded in 02-07-SUMMARY, not performed
 
 ### Pending Todos
 
@@ -141,8 +145,8 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-01T07:22:26.232Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-10-01T07:34:13.595Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None
 Next command: `/gsd-execute-phase 1`
 
