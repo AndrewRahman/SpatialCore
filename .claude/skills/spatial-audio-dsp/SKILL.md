@@ -42,10 +42,10 @@ Pre-compute Delaunay triangulation of speakers into triplets. For each triplet {
 1. Convert source to Cartesian: `p = [cos(el)sin(az), cos(el)cos(az), sin(el)]`
 2. For each triplet: `gains = inv_matrix × p`
 3. Select triplet where all 3 gains are positive (source inside triangle)
-4. If multiple valid: pick highest gain sum
+4. If several enclose the source: pick the minimum gain sum (tightest enclosing triangle); exact coplanar ties are decided by float rounding — AndrewRahman/SpatialCore#22
 5. Constant-power normalize: `scale = 1 / sqrt(g0² + g1² + g2²)`
 
-Fallback: If no valid triplet (degenerate geometry or below-horizon), use nearest speaker by dot product.
+Below the horizon on layouts with no lower speakers: the ITU-R BS.2127 (EAR) lower-hemisphere construction — a virtual speaker at -30° under each ear-level speaker (downmixed onto the speaker above it) plus a virtual nadir (downmixed `1/sqrt(n)` onto the n ear-level speakers), power-normalised. These are precomputed as flagged lower-hemisphere triplets at layout build and tried only after every regular triplet. If no triplet contains a finite direction: the triplet with the largest minimum gain, negatives clamped to 0, renormalised. A non-finite direction returns silence.
 
 Determinant threshold: skip triplets with `|det| < 0.01` (near-collinear speakers).
 
@@ -55,12 +55,16 @@ Determinant threshold: skip triplets with `|det| < 0.01` (near-collinear speaker
 
 ### 1.3 VBIP — Vector Base Intensity Panning
 
-Intensity-weighted variant of VBAP. Steps:
+Textbook VBIP. Steps:
 1. Compute standard VBAP gains (2D or 3D)
-2. Square all gains: `g_i = g_i²`
-3. Re-normalize to constant power: `scale = 1 / sqrt(Σ g_i²)`
+2. Square root: `g_i = sqrt(max(0, g_i))`
+3. Re-normalize so the sum of squares is 1: `scale = 1 / sqrt(Σ g_i²)`
 
-**Effect:** Tighter spatial focus by de-emphasizing distant speakers. Intensity proportional to squared amplitude. Perceptually sharper than VBAP — useful for discrete spatial events (delay taps).
+Equivalently `g_i = sqrt(G_i / Σ G_j)` with `G = L⁻¹ p`.
+
+**Effect:** Aims the energy vector rE at the source (VBAP aims the velocity vector rV), so VBIP is wider than VBAP between speakers, with unit power everywhere. Source: Pernaux, Boussard & Jot, DAFx-98 sec. 2.2.2.
+
+**Single band:** the paper pairs VBAP below 700 Hz with VBIP above 700 Hz. SpatialCore applies the VBIP half at all frequencies, because a per-object crossover cannot be expressed through the frozen `computeGains` interface; dual-band is tracked in AndrewRahman/SpatialCore#20. Below the horizon on height layouts the transform acts on the EAR-downmixed VBAP vector.
 
 ### 1.4 KNN — K-Nearest Neighbor Panning (K=3)
 
@@ -75,6 +79,8 @@ Intensity-weighted variant of VBAP. Steps:
 **Best for:** Irregular/non-standard speaker layouts where VBAP triangulation is ill-conditioned. Graceful zenith handling (no degenerate triplets). Produces more diffuse images than VBAP (activates 3 speakers always).
 
 ### 1.5 Ambisonics — 3rd-Order HOA (ACN/SN3D)
+
+**Convention:** real spherical harmonics, ACN channel order, SN3D normalisation, no Condon-Shortley phase, angles in radians, azimuth 0 = front, positive azimuth toward +Y (left), elevation 0 = horizon, positive up — the AmbiX convention. `spatialcore::evalSH` (`Core/SpatialMath.h`) is the single SH evaluator; `AmbisonicsCodec::evaluateSH` forwards to it.
 
 **Encoding:** For source at (az, el), compute 16 SH coefficients:
 ```
@@ -100,21 +106,23 @@ Gauss-Jordan elimination with partial pivoting for matrix inversion.
 
 1. Convert source and speakers to 3D Cartesian
 2. Compute Euclidean distance from source to each speaker
-3. Weight = 1 / distance² (inverse-square law, 6 dB per doubling)
+3. Weight = `1 / d²`, with `d²` the squared distance clamped at 0.001, used directly as amplitude: rolloff exponent a = 2, i.e. an effective rolloff R = 12.04 dB per doubling of distance (the paper's default is 6 dB)
 4. Normalize to constant power
+
+Not implemented: no spatial blur, no user rolloff parameter, no convex-hull projection for sources outside the speaker hull. Because of the clamp, a source exactly on a speaker gets unity only to about 1e-3.
 
 **Best for:** Arbitrary non-standard layouts with no sweet spot assumption. Concert installations, art installations, experimental speaker deployments. Works with any speaker placement — no triangulation, no regularity assumption.
 
-### 1.7 MDAP — Multiple-Direction Amplitude Panning (Pulkki 2000)
+### 1.7 MDAP — Multiple-Direction Amplitude Panning (Pulkki, WASPAA 1999)
 
 VBAP with source spread for wider spatial images:
-1. For desired direction D, place 8 auxiliary sources on a ring around D on the unit sphere
-2. Compute VBAP gains for each auxiliary source independently
-3. Sum all gain vectors and normalize to constant power
+1. For desired direction D, place 8 auxiliary directions on a ring at angle `alpha = clamp(0.9 × 180 / N, 5°, 30°)` around D (N = speaker count)
+2. Compute VBAP gains for D and for each auxiliary direction independently
+3. Amplitude-sum all gain vectors and normalize to constant power
 
 **Effect:** Activates more speakers → wider, more stable spatial image than point-source VBAP. Mitigates (but doesn't eliminate) zenith centering problem through spread ring.
 
-**Spread radius:** Currently fixed. Future: user-controllable parameter.
+**Spread radius:** fixed by the speaker count through `alpha` above; there is no spread parameter yet (AndrewRahman/SpatialCore#10).
 
 ### 1.8 Direct Binaural — Woodworth ITD+ILD (Internal Only)
 
@@ -276,7 +284,7 @@ Zenith (1 speaker, +90° elevation):
 
 **VBAP triplets:** 30 pre-computed triangulations covering upper hemisphere. Each triplet stores speaker indices {i,j,k} and pre-computed 3x3 inverse matrix. Determinant threshold 0.01 for degenerate geometry.
 
-**Below-horizon handling:** No virtual speakers below 0° elevation. Below-horizon sources projected to nearest ear-level speaker via dot product fallback. Perceptually acceptable — below-horizon localization is inherently poor (Blauert 1997, "cone of confusion").
+**Below-horizon handling:** On height speaker layouts with no lower speakers, VBAP, VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at -30° under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level speakers (the nadir at `1/sqrt(n)` to each) and power-normalised, precomputed as flagged lower-hemisphere triplets at layout build and tried only after every regular triplet. VBAP and VBIP put no gain on an elevated speaker for a source at or below -1°. Binaural (per-source HRTF) and Ambisonics output keep the true negative elevation.
 
 **Physical surround layouts:**
 - Quad: 4 speakers at ±30°, ±110° (all ear level)
@@ -426,7 +434,7 @@ Configurable: `--port` (default 4002), `--host` (default 127.0.0.1), `--rate` (d
 
 ### 7.1 ACN Ordering (Ambisonic Channel Number)
 
-Channel index = n² + n + m, where n = order, m = degree (-n ≤ m ≤ n).
+Channel index = n² + n + m, where n = order, m = degree (-n ≤ m ≤ n). m > 0 uses cos(m az), m < 0 uses sin(|m| az).
 
 ```
 Order 0 (1 ch):  [0] W    — omnidirectional
@@ -439,7 +447,7 @@ Total: (N+1)² channels. 3rd order → 16 channels.
 
 ### 7.2 SN3D Normalization
 
-Semi-Normalized 3D. Orthogonality relation:
+Semi-Normalized 3D: the sum over m of Y_lm² is 1 at every order. Orthogonality relation:
 ```
 ∫ |Y_c^SN3D(θ,φ)|² dΩ = 4π / (2l + 1)
 ```
@@ -467,7 +475,7 @@ Applied multiplicatively to SH coefficients during encoding.
 
 ### 7.4 evalSH() Basis Functions
 
-Real spherical harmonics evaluated per ACN channel. Standard formulas:
+Real spherical harmonics evaluated per ACN channel; no Condon-Shortley phase; positive azimuth toward +Y (left); this is the AmbiX convention. Standard formulas:
 - ACN 0: `Y₀⁰ = 1` (omnidirectional)
 - ACN 1: `Y₁⁻¹ = sin(az)cos(el)` (Y, left-right)
 - ACN 2: `Y₁⁰ = sin(el)` (Z, up-down)
@@ -551,7 +559,7 @@ Download: `bash scripts/download_windows_build.sh` → `build/windows/`
 | Missing constant-power normalization | Always `scale = 1/sqrt(Σ g²)` after gain computation |
 | Using `4π/M` weight for SN3D SH projection | Correct: `(2l+1)/M` |
 | Nearest-neighbor HRTF without interpolation | Produces zipper artifacts on moving sources |
-| Squaring VBIP gains without renormalization | Must renormalize after squaring |
+| Squaring VBAP gains and calling it VBIP | Textbook VBIP takes the square root of the VBAP gains, then renormalises (Pernaux et al., DAFx-98) |
 | ILD-only binaural (no ITD) | Produces lateralization, not true spatialization |
 | `atan2(x, y)` for ADM Cartesian→Polar | Must use `atan2(-x, y)` for left-positive convention |
 | OSC handling on audio thread | Use message thread callback for APVTS safety |
