@@ -23,7 +23,7 @@ using Catch::Matchers::WithinAbs;
 // LayoutContext a consumer builds from RenderEngine::getActiveLayout(), so
 // Ambisonics sees the real order-3 decode and height layouts see the regular
 // plus lower-hemisphere triplets. Textbook values come from
-// tests/reference/PanningReference.h (published formulas), never from the code
+// the generated PanningReference.h header (published formulas), never from the code
 // under test.
 // ============================================================================
 
@@ -765,5 +765,209 @@ TEST_CASE ("DirectBinaural: property checks at the horizon (Discretion)", "[pann
             CHECK_THAT (g.leftGain,  WithinAbs (expected, 1e-6f));
             CHECK_THAT (g.rightGain, WithinAbs (expected, 1e-6f));
         }
+    }
+}
+
+// ============================================================================
+// Textbook values (D-13, D-16): the generated PanningReference.h holds values
+// generated from the published formulas, independent of the code under test.
+// ============================================================================
+
+namespace
+{
+template <size_t N>
+void checkGains (const float* got, const float (&expected)[N], float tol)
+{
+    for (size_t s = 0; s < N; ++s)
+    {
+        INFO ("speaker " << s);
+        CHECK_THAT (got[s], WithinAbs (expected[s], tol));
+    }
+}
+
+/** A flat layoutDefs layout with an empty triplet vector (the 2D pair path). */
+struct FlatDefContext
+{
+    const SpeakerLayout&     layout;
+    std::vector<VBAPTriplet> triplets;
+    float                    ambi[1][MAX_SPEAKERS] = {};
+
+    explicit FlatDefContext (LayoutID id) : layout (getLayoutDef (id)) {}
+    LayoutContext context() const { return LayoutContext { layout, triplets, ambi, 0 }; }
+    int numSpeakers() const       { return layout.numSpeakers; }
+};
+} // namespace
+
+TEST_CASE ("Panning laws: textbook values from the published formulas (D-13, D-16)", "[panning-law][textbook]")
+{
+    using namespace spatialcore_ref;
+    VBAPAlgorithm vbap;
+    VBIPAlgorithm vbip;
+    DBAPAlgorithm dbap;
+
+    const FlatDefContext quad (Quad);
+    const FlatDefContext s50 (S5_0);
+    float g[MAX_SPEAKERS] = {};
+
+    // VBAP (Pulkki 1997) and VBIP (Pernaux, Boussard & Jot, DAFx-98 sec. 2.2.2).
+    gainsAt (vbap, quad.context(), quad.numSpeakers(), 30.0f, 0.0f, 0.5f, g);
+    checkGains (g, kVbap_Quad_az30, 1e-5f);
+    gainsAt (vbip, quad.context(), quad.numSpeakers(), 30.0f, 0.0f, 0.5f, g);
+    checkGains (g, kVbip_Quad_az30, 1e-5f);
+
+    gainsAt (vbap, s50.context(), s50.numSpeakers(), 10.0f, 0.0f, 0.5f, g);
+    checkGains (g, kVbap_S5_0_az10, 1e-5f);
+    gainsAt (vbip, s50.context(), s50.numSpeakers(), 10.0f, 0.0f, 0.5f, g);
+    checkGains (g, kVbip_S5_0_az10, 1e-5f);
+
+    gainsAt (vbap, s50.context(), s50.numSpeakers(), 50.0f, 0.0f, 0.5f, g);
+    checkGains (g, kVbap_S5_0_az50, 1e-5f);
+    gainsAt (vbip, s50.context(), s50.numSpeakers(), 50.0f, 0.0f, 0.5f, g);
+    checkGains (g, kVbip_S5_0_az50, 1e-5f);
+
+    // DBAP: Lossius et al., ICMC 2009 eq. 2-5 at SpatialCore's effective
+    // R = 12.04 dB (a = 2), in code speaker order 45, -45, 135, -135 (F2).
+    gainsAt (dbap, quad.context(), quad.numSpeakers(), 30.0f, 0.0f, 1.0f, g);
+    checkGains (g, kDbap_Quad_az30_dist1, 1e-5f);
+    gainsAt (dbap, quad.context(), quad.numSpeakers(), 30.0f, 0.0f, 0.5f, g);
+    checkGains (g, kDbap_Quad_az30_dist05, 1e-5f);
+
+    // 3D VBAP on the engine-built 7.1.4 context. The generator proved each pin
+    // lies in a unique minimum-sum triplet, so no coplanar tie (F5, #22) applies.
+    const Rig s714 ({ OutputFormat::Surround7_1_4, "7.1.4" }, true);
+    REQUIRE (s714.numSpeakers() == 11);
+    for (const auto& pin : kVbap3D_S7_1_4)
+    {
+        INFO ("7.1.4 az " << pin.azimuthDeg << " el " << pin.elevationDeg);
+        gainsAt (vbap, s714.context(), s714.numSpeakers(), pin.azimuthDeg, pin.elevationDeg, 0.5f, g);
+        checkGains (g, pin.gains, 1e-5f);
+    }
+}
+
+TEST_CASE ("Panning laws: MDAP matches a port of its ring construction (cross-check, not an oracle)",
+           "[panning-law][textbook]")
+{
+    // There is no spread parameter -- the ring angle is clamp(0.9 * 180 / N, 5, 30)
+    // degrees and never 0 -- so "MDAP at spread 0 equals VBAP" cannot be tested
+    // (RESEARCH F3). kMdapPort_* come from a numpy port of the same ring
+    // construction (main direction + 8 aux points, summed 2D VBAP, L2-normalised):
+    // this checks the ring geometry, not an independent panning law.
+    using namespace spatialcore_ref;
+    MDAPAlgorithm mdap;
+    const FlatDefContext quad (Quad);
+    const FlatDefContext s50 (S5_0);
+    float g[MAX_SPEAKERS] = {};
+
+    gainsAt (mdap, quad.context(), quad.numSpeakers(), 30.0f, 0.0f, 0.5f, g);
+    checkGains (g, kMdapPort_Quad_az30, 5e-4f);
+    gainsAt (mdap, s50.context(), s50.numSpeakers(), 10.0f, 0.0f, 0.5f, g);
+    checkGains (g, kMdapPort_S5_0_az10, 5e-4f);
+}
+
+// ============================================================================
+// Height layouts, including below the horizon (D-13, D-04)
+// ============================================================================
+
+TEST_CASE ("Panning laws: VBAP, VBIP and MDAP cover every height layout including below the horizon (D-13, D-04)",
+           "[panning-law][height]")
+{
+    // Every gain finite and at unit power over the whole sphere, and below the
+    // horizon no elevated speaker (el > 10 degrees) receives gain: at or below
+    // -1 degree for VBAP and VBIP (the EAR lower hemisphere uses ear-level
+    // speakers, their -30 copies and a nadir only), at or below -45 for MDAP,
+    // whose ring reaches up to about 23 degrees above the source on these layouts.
+    const VBAPAlgorithm vbap;
+    const VBIPAlgorithm vbip;
+    const MDAPAlgorithm mdap;
+    struct Case { const SpatializationAlgorithm* algo; float powerTol; float silentAtOrBelowDeg; };
+    const Case cases[] = { { &vbap, 1e-5f, -1.0f }, { &vbip, 1e-5f, -1.0f }, { &mdap, 1e-4f, -45.0f } };
+
+    std::vector<float> elevations;
+    elevations.push_back (-90.0f);
+    for (int e = -89; e <= 89; e += 2)
+        elevations.push_back (static_cast<float> (e));
+    elevations.push_back (90.0f);
+
+    const auto rigs = makeRigs (false, true);
+    for (const auto& rig : rigs)
+    {
+        const LayoutContext ctx = rig->context();
+        const SpeakerLayout& layout = rig->layout();
+        const int n = rig->numSpeakers();
+        const float elevatedRad = juce::degreesToRadians (10.0f);
+
+        for (const auto& c : cases)
+        {
+            int nonFinite = 0, offPower = 0, leaks = 0;
+            float worstPowerErr = 0.0f;
+
+            for (float el : elevations)
+                for (int k = 0; k < 180; ++k)
+                {
+                    const float az = 0.5f + 2.0f * static_cast<float> (k);
+                    float g[MAX_SPEAKERS] = {};
+                    gainsAt (*c.algo, ctx, n, az, el, 0.5f, g);
+
+                    if (! allFinite (g, n))
+                    {
+                        ++nonFinite;
+                        continue;
+                    }
+                    const float err = std::abs (powerOf (g, n) - 1.0f);
+                    worstPowerErr = std::max (worstPowerErr, err);
+                    if (err > c.powerTol)
+                        ++offPower;
+
+                    if (el <= c.silentAtOrBelowDeg)
+                        for (int s = 0; s < n; ++s)
+                            if (layout.speakers[s].elevationRad > elevatedRad && g[s] != 0.0f)
+                                ++leaks;
+                }
+
+            INFO (rig->name << " " << c.algo->getName().toStdString() << " worst |power - 1| " << worstPowerErr);
+            CHECK (nonFinite == 0);
+            CHECK (offPower == 0);
+            CHECK (leaks == 0);
+        }
+    }
+}
+
+TEST_CASE ("Panning laws: VBAP lower-hemisphere continuity, scoped (D-04, D-18)", "[panning-law][continuity]")
+{
+    // Nadir cap: below the -30 ring the EAR construction is a fan of triangles
+    // around the virtual nadir, and VBAP is continuous there (at most 0.01 per
+    // 0.1 degree). 5.1.2 and 5.1.4 are checked only from -65 down: their sparse
+    // rear ring (110 / -110, a 140-degree gap) puts trapezoid facets as low as
+    // about -59 degrees.
+    //
+    // The -30..0 band: the facets between the ear-level ring and its -30 copies
+    // are coplanar quads, split into two triangles with the same min-sum tie as
+    // the upper hemisphere (RESEARCH F5, AndrewRahman/SpatialCore#22), so only a
+    // looser bound of 0.12 per 0.1 degree is asserted there.
+    const VBAPAlgorithm vbap;
+
+    struct Scope { const char* label; std::vector<float> elevations; float bound; };
+    const auto rigs = makeRigs (false, true);
+
+    for (const auto& rig : rigs)
+    {
+        const LayoutContext ctx = rig->context();
+        const int n = rig->numSpeakers();
+        const bool sparseRear = std::strcmp (rig->name, "5.1.2") == 0 || std::strcmp (rig->name, "5.1.4") == 0;
+
+        const Scope scopes[] = {
+            { "nadir cap", sparseRear ? std::vector<float> { -65.0f, -75.0f }
+                                      : std::vector<float> { -50.0f, -60.0f, -75.0f }, 0.01f },
+            { "-30..0 band", { -5.0f, -15.0f, -25.0f }, 0.12f },
+        };
+
+        for (const auto& scope : scopes)
+            for (float el : scope.elevations)
+            {
+                const StepResult r = maxStepOverSweep (vbap, ctx, n, el, 0.1f, 0.5f);
+                INFO (rig->name << " " << scope.label << " el " << el << " max step " << r.maxStep
+                      << " at az " << r.atAzDeg << " speaker " << r.speaker);
+                CHECK (r.maxStep <= scope.bound);
+            }
     }
 }
