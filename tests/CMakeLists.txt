@@ -26,6 +26,7 @@ add_executable(SpatialCoreTests
     Binaural/MitKemarLargePinnaTests.cpp
     Binaural/WoodworthFallbackTests.cpp
     Engine/RenderEngineTests.cpp
+    Engine/TripleBufferIndexTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
