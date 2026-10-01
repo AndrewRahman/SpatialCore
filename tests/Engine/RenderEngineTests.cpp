@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Engine/RenderEngine.h>
+#include <SpatialCore/Core/SpatialMath.h>
 #include "../Binaural/BinauralTestUtilities.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -555,4 +557,247 @@ TEST_CASE ("RenderEngine: the direct-binaural HRTF branch stays finite for an in
         CHECK (a->outputFinite());
     }
     CHECK (anyOutputNonzero (*a));
+}
+
+// ----------------------------------------------------------------------------
+// D-09: RenderEngine has no private SH decoder. activateLayout fills
+// ambiDecodeMatrix through AmbisonicsCodec::getDecodeMatrix at order 3. The
+// pin below compares it with the pre-change private decoder, copied from the
+// git blob d43cb15:src/Engine/RenderEngine.cpp lines 650-734 so it is the
+// pre-change code regardless of when this test runs. Only the name and the
+// static-member qualification differ; the body is byte-identical (left
+// unindented so it diffs cleanly against the blob). It uses ACN 0-15, which the
+// D-08 constant fix does not touch, so the pin stays exact after that fix.
+// ----------------------------------------------------------------------------
+namespace
+{
+void referenceAmbiDecode (const SpeakerLayout& layout,
+                          float (*outMatrix)[MAX_SPEAKERS],
+                          int& outNumSpeakers)
+{
+    const int N = layout.numSpeakers;
+    const int M = 16; // HOA_CHANNELS (surround decode cap, 3rd order)
+    outNumSpeakers = N;
+
+    // Build encoding matrix E[c][s] = evalSH(c, speaker_s_position)
+    float E[16][16] = {};
+    for (int s = 0; s < N; ++s)
+        for (int c = 0; c < M; ++c)
+            E[c][s] = evalSH (c, layout.speakers[s].azimuthRad,
+                                 layout.speakers[s].elevationRad);
+
+    // Compute EET = E * E^T  (M x M)
+    float EET[16][16] = {};
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < M; ++j)
+        {
+            float sum = 0.0f;
+            for (int s = 0; s < N; ++s)
+                sum += E[i][s] * E[j][s];
+            EET[i][j] = sum;
+        }
+
+    // Tikhonov regularization: EET += epsilon * I
+    float epsilon = 0.01f;
+    for (int i = 0; i < M; ++i)
+        EET[i][i] += epsilon;
+
+    // Invert EET via Gauss-Jordan (M x M, small matrix)
+    float inv[16][16] = {};
+    for (int i = 0; i < M; ++i)
+        inv[i][i] = 1.0f;
+
+    float aug[16][16];
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < M; ++j)
+            aug[i][j] = EET[i][j];
+
+    for (int col = 0; col < M; ++col)
+    {
+        int pivot = col;
+        for (int row = col + 1; row < M; ++row)
+            if (std::abs (aug[row][col]) > std::abs (aug[pivot][col]))
+                pivot = row;
+
+        if (pivot != col)
+        {
+            std::swap_ranges (aug[col], aug[col] + M, aug[pivot]);
+            std::swap_ranges (inv[col], inv[col] + M, inv[pivot]);
+        }
+
+        float diagVal = aug[col][col];
+        if (std::abs (diagVal) < 1e-10f) continue;
+
+        for (int j = 0; j < M; ++j)
+        {
+            aug[col][j] /= diagVal;
+            inv[col][j] /= diagVal;
+        }
+
+        for (int row = 0; row < M; ++row)
+        {
+            if (row == col) continue;
+            float factor = aug[row][col];
+            for (int j = 0; j < M; ++j)
+            {
+                aug[row][j] -= factor * aug[col][j];
+                inv[row][j] -= factor * inv[col][j];
+            }
+        }
+    }
+
+    // D[s][c] = sum_k E^T[s][k] * inv[k][c] = sum_k E[k][s] * inv[k][c]
+    for (int s = 0; s < N; ++s)
+        for (int c = 0; c < M; ++c)
+        {
+            float sum = 0.0f;
+            for (int k = 0; k < M; ++k)
+                sum += E[k][s] * inv[k][c];
+            outMatrix[s][c] = sum;
+        }
+}
+
+    // The 15 OutputFormats that resolve to a speaker layout.
+    constexpr OutputFormat kSpeakerFormats[] = {
+        OutputFormat::Quad,          OutputFormat::Surround5_0,   OutputFormat::Surround5_1,
+        OutputFormat::Surround7_0,   OutputFormat::Surround7_1,   OutputFormat::Surround9_1,
+        OutputFormat::Octaphonic,    OutputFormat::Surround5_1_2, OutputFormat::Surround5_1_4,
+        OutputFormat::Surround7_1_2, OutputFormat::Surround7_1_4, OutputFormat::Surround7_1_6,
+        OutputFormat::Surround9_1_4, OutputFormat::Surround9_1_6, OutputFormat::SurroundSML13_1
+    };
+    static_assert (sizeof (kSpeakerFormats) / sizeof (kSpeakerFormats[0]) == NUM_LAYOUT_DEFS,
+                   "one speaker OutputFormat per LayoutID");
+}
+
+TEST_CASE ("RenderEngine: the order-3 speaker decode equals the pre-change private decoder on all 15 layouts (D-09)",
+           "[engine][ambi-pin]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    float worst = 0.0f;
+    int layoutsChecked = 0;
+    for (const auto format : kSpeakerFormats)
+    {
+        engine.setOutputFormat (format);
+        const auto& active = engine.getActiveLayout();
+        REQUIRE (active.format == format);
+
+        float reference[MAX_SPEAKERS][MAX_SPEAKERS] = {};
+        int refNumSpeakers = -1;
+        referenceAmbiDecode (active.layout, reference, refNumSpeakers);
+
+        INFO ("format " << static_cast<int> (format) << " (" << OutputFormatRegistry::getDisplayName (format) << ")");
+        CHECK (active.layout.numSpeakers > 0);
+        CHECK (refNumSpeakers == active.layout.numSpeakers);
+        CHECK (active.ambiNumSpeakers == active.layout.numSpeakers);
+
+        float worstHere = 0.0f;
+        for (int s = 0; s < active.layout.numSpeakers; ++s)
+            for (int c = 0; c < 16; ++c)
+                worstHere = std::max (worstHere, std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]));
+        INFO ("worst |new - old| = " << worstHere);
+        CHECK (worstHere <= 1e-6f);
+        worst = std::max (worst, worstHere);
+        ++layoutsChecked;
+    }
+    CHECK (layoutsChecked == 15);
+    INFO ("worst |new - old| over all 15 layouts = " << worst);
+    CHECK (worst <= 1e-6f);
+}
+
+TEST_CASE ("RenderEngine: decode rows beyond the speaker count are cleared on a layout switch (D-09)",
+           "[engine][ambi-pin]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    // Double-buffered: 9.1.6 fills one buffer, Binaural takes the other, and
+    // Quad lands back in 9.1.6's buffer. Rows 4-15 must not keep 9.1.6 data.
+    engine.setOutputFormat (OutputFormat::Surround9_1_6);
+    REQUIRE (engine.getActiveLayout().layout.numSpeakers == 15);
+    engine.setOutputFormat (OutputFormat::Binaural);
+    engine.setOutputFormat (OutputFormat::Quad);
+
+    const auto& active = engine.getActiveLayout();
+    REQUIRE (active.layout.numSpeakers == 4);
+    int staleEntries = 0;
+    for (int s = active.layout.numSpeakers; s < MAX_SPEAKERS; ++s)
+        for (int c = 0; c < MAX_SPEAKERS; ++c)
+            if (active.ambiDecodeMatrix[s][c] != 0.0f)
+                ++staleEntries;
+    CHECK (staleEntries == 0);
+}
+
+// ----------------------------------------------------------------------------
+// Criterion 3: every OutputFormat resolves through RenderEngine::setOutputFormat
+// to a layout that agrees with OutputFormatRegistry (RESEARCH Reference Data D).
+// ----------------------------------------------------------------------------
+TEST_CASE ("RenderEngine: all 23 output formats resolve to layouts that agree with the registry (criterion 3)",
+           "[engine][format-resolve]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    int formatsChecked = 0, speakerFormats = 0;
+    for (int i = 0; i < NUM_OUTPUT_FORMATS; ++i)
+    {
+        const auto format = static_cast<OutputFormat> (i);
+        const auto& info = OutputFormatRegistry::getInfo (format);
+        REQUIRE (info.format == format);
+
+        engine.setOutputFormat (format);
+        const auto& active = engine.getActiveLayout();
+        const auto& layout = active.layout;
+
+        INFO ("format " << i << " (" << info.name << ")");
+        CHECK (active.format == format);
+        CHECK (layout.totalChannels == info.requiredChannels);
+        CHECK ((layout.lfeChannelIndex >= 0) == info.hasLFE);
+
+        const bool isSpeakerFormat = ! info.isAmbisonicsOutput && ! info.isStereoVariant
+                                     && format != OutputFormat::Binaural;
+        if (isSpeakerFormat)
+        {
+            ++speakerFormats;
+            CHECK (layoutHasHeight (layout) == info.hasHeight);
+            CHECK (layout.numSpeakers > 0);
+
+            bool seen[MAX_SPEAKERS] = {};
+            for (int s = 0; s < layout.numSpeakers; ++s)
+            {
+                const int ch = layout.speakers[s].channelIndex;
+                INFO ("speaker " << s << " -> channel " << ch);
+                CHECK (ch >= 0);
+                CHECK (ch < layout.totalChannels);
+                CHECK (ch != layout.lfeChannelIndex);
+                if (ch >= 0 && ch < MAX_SPEAKERS)
+                {
+                    CHECK_FALSE (seen[ch]);   // no two speakers share a channel
+                    seen[ch] = true;
+                }
+            }
+
+            if (info.hasHeight)
+            {
+                int regular = 0;
+                for (const auto& t : active.vbapTriplets)
+                    if (! t.lowerHemisphere)
+                        ++regular;
+                CHECK (regular > 0);
+            }
+            else
+            {
+                CHECK (active.vbapTriplets.empty());
+            }
+        }
+        else
+        {
+            CHECK (layout.numSpeakers == 0);
+            CHECK (active.vbapTriplets.empty());
+        }
+        ++formatsChecked;
+    }
+    CHECK (formatsChecked == 23);
+    CHECK (speakerFormats == 15);
 }
