@@ -141,15 +141,25 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // computeGains directly (RESEARCH F7); this does not replace them.
     const RenderSources& src = sanitizeSources (sources);
 
-    // SC-13: when the consumer opts in, compute objChannelGains/objGains
-    // internally into a scratch copy and dispatch on that instead — the
-    // dispatch chain itself is unchanged (selected once via pointer so it is
-    // never duplicated or reordered, per D-09).
+    // SC-16: one layout snapshot per block. It feeds the dispatch derivation,
+    // the SC-13 gain computation and the discrete-surround speaker routing
+    // below, so a message-thread format switch landing mid-block cannot pair
+    // one format's dispatch with another format's layout.
+    const LayoutState& layout = acquireBlockLayout();
+
+    // SC-13 / SC-16: when the consumer opts in to either, work on a scratch
+    // copy of the context (an assignment into an existing member, no
+    // allocation) and dispatch on that instead. The dispatch chain itself is
+    // unchanged (selected once via pointer so it is never duplicated or
+    // reordered, per D-09).
     const RenderBlockContext* dispatchCtx = &blockCtx;
-    if (blockCtx.engineComputesGains)
+    if (blockCtx.engineComputesGains || blockCtx.engineDerivesDispatch)
     {
         gainScratch_ = blockCtx;
-        computeObjectGains (src, gainScratch_);
+        if (blockCtx.engineDerivesDispatch)
+            deriveDispatchFromLayout (layout, gainScratch_);
+        if (blockCtx.engineComputesGains)
+            computeObjectGains (src, layout, gainScratch_);
         dispatchCtx = &gainScratch_;
     }
     const RenderBlockContext& ctx = *dispatchCtx;
@@ -175,7 +185,7 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     }
     else
     {
-        renderDiscreteSurround (src, ctx, outChannels, numOutCh);
+        renderDiscreteSurround (src, ctx, layout, outChannels, numOutCh);
     }
 }
 
@@ -186,9 +196,9 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 // sets RenderBlockContext::engineComputesGains. Does not read or write
 // objGainL/objGainR/stereoMode — those stay consumer-side (D-06).
 //==============================================================================
-void RenderEngine::computeObjectGains (const RenderSources& sources, RenderBlockContext& ctx)
+void RenderEngine::computeObjectGains (const RenderSources& sources, const LayoutState& ls,
+                                        RenderBlockContext& ctx)
 {
-    const auto& ls = getActiveLayout();
     LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
 
     for (int t = 0; t < MAX_SOURCES; ++t)
@@ -577,10 +587,11 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
 //==============================================================================
 void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
                                              const RenderBlockContext& blockCtx,
+                                             const LayoutState& layout,
                                              float* const* outChannels, int numOutCh)
 {
     const int numSamples = sources.numSamples;
-    const auto& surLayout = getActiveLayout().layout;
+    const auto& surLayout = layout.layout;
     const int numSpeakers = surLayout.numSpeakers;
     const int lfeIdx = surLayout.lfeChannelIndex;
 
@@ -648,6 +659,26 @@ OutputFormat RenderEngine::getActiveOutputFormat() const
 const RenderEngine::LayoutState& RenderEngine::getActiveLayout() const
 {
     return layoutBuffers[static_cast<size_t> (activeLayoutIndex.load (std::memory_order_acquire))];
+}
+
+const RenderEngine::LayoutState& RenderEngine::acquireBlockLayout()
+{
+    // The single acquire-load of the published layout index for this block.
+    return layoutBuffers[static_cast<size_t> (activeLayoutIndex.load (std::memory_order_acquire))];
+}
+
+void RenderEngine::deriveDispatchFromLayout (const LayoutState& layout, RenderBlockContext& ctx)
+{
+    // T-02-23 / ASVS V5: bound the format before it indexes the registry.
+    const int clamped = juce::jlimit (0, NUM_OUTPUT_FORMATS - 1, static_cast<int> (layout.format));
+    const auto fmt = static_cast<OutputFormat> (clamped);
+    const auto& info = OutputFormatRegistry::getInfo (fmt);
+
+    ctx.activeFormat = fmt;
+    ctx.ambiOrder = info.ambiOrder;
+    ctx.isStereoVariant = info.isStereoVariant;
+    ctx.isBinaural = (fmt == OutputFormat::Binaural);
+    ctx.isAmbiOutput = info.isAmbisonicsOutput;
 }
 
 void RenderEngine::activateLayout (OutputFormat format)
