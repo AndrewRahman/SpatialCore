@@ -168,9 +168,9 @@ TEST_CASE("AmbisonicsCodec: applyMaxREWeights leaves W channel unweighted at ord
 
 // ============================================================================
 // Spherical harmonics correctness (D-08, D-11b, D-11c, D-05; SpatialCore#11).
-// The reference values come only from tests/reference/ShReference.h, which
-// scipy generated offline (two independent routes) -- never from the code
-// under test. Convention: ACN order, SN3D, no Condon-Shortley phase.
+// The reference values come only from the checked-in ShReference.h header,
+// which scipy generated offline (two independent routes) -- never from the
+// code under test. Convention: ACN order, SN3D, no Condon-Shortley phase.
 // ============================================================================
 TEST_CASE("SH: evalSH and AmbisonicsCodec::evaluateSH match 49 scipy reference values at az=64 el=10 (D-11c)",
           "[ambisonics][sn3d][golden]")

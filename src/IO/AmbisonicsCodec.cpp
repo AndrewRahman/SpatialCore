@@ -1,4 +1,5 @@
 #include <SpatialCore/IO/AmbisonicsCodec.h>
+#include <SpatialCore/Core/SpatialMath.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -7,111 +8,15 @@ namespace spatialcore
 {
 
 //==============================================================================
-// Real spherical harmonics, ACN ordering, SN3D normalization
-// 6th-Order Ambisonics (49 channels)
+// evaluateSH -- forwards to spatialcore::evalSH, the single SH implementation
+// in SpatialCore (D-08). Both public names are kept because consumers compile
+// against both (DR-3). Convention (ACN, SN3D, no Condon-Shortley phase) is
+// documented on evalSH in SpatialMath.h. encode() and getDecodeMatrix() call
+// this, so they reach the same corrected evaluator.
 //==============================================================================
 float AmbisonicsCodec::evaluateSH(int acn, float az, float el)
 {
-    float cosAz  = std::cos(az);
-    float sinAz  = std::sin(az);
-    float cos2Az = std::cos(2.0f * az);
-    float sin2Az = std::sin(2.0f * az);
-    float cos3Az = std::cos(3.0f * az);
-    float sin3Az = std::sin(3.0f * az);
-    float sinEl  = std::sin(el);
-    float cosEl  = std::cos(el);
-    float sinEl2 = sinEl * sinEl;
-    float cosEl2 = cosEl * cosEl;
-
-    // Higher-order trig (computed only when needed)
-    float cos4Az = 0.0f, sin4Az = 0.0f, cos5Az = 0.0f, sin5Az = 0.0f, cos6Az = 0.0f, sin6Az = 0.0f;
-    float cosEl3 = 0.0f, cosEl4 = 0.0f, cosEl5 = 0.0f, cosEl6 = 0.0f;
-    float sinEl4 = 0.0f;
-
-    if (acn >= 16)
-    {
-        cos4Az = std::cos(4.0f * az);  sin4Az = std::sin(4.0f * az);
-        cosEl3 = cosEl2 * cosEl;       cosEl4 = cosEl2 * cosEl2;
-        sinEl4 = sinEl2 * sinEl2;
-        if (acn >= 25)
-        {
-            cos5Az = std::cos(5.0f * az);  sin5Az = std::sin(5.0f * az);
-            cosEl5 = cosEl4 * cosEl;
-        }
-        if (acn >= 36)
-        {
-            cos6Az = std::cos(6.0f * az);  sin6Az = std::sin(6.0f * az);
-            cosEl6 = cosEl4 * cosEl2;
-        }
-    }
-
-    switch (acn)
-    {
-        // Order 0
-        case 0: return 1.0f;
-
-        // Order 1
-        case 1: return sinAz * cosEl;
-        case 2: return sinEl;
-        case 3: return cosAz * cosEl;
-
-        // Order 2
-        case 4: return std::sqrt(3.0f) * 0.5f * sin2Az * cosEl2;
-        case 5: return std::sqrt(3.0f) * sinAz * sinEl * cosEl;
-        case 6: return 0.5f * (3.0f * sinEl2 - 1.0f);
-        case 7: return std::sqrt(3.0f) * cosAz * sinEl * cosEl;
-        case 8: return std::sqrt(3.0f) * 0.5f * cos2Az * cosEl2;
-
-        // Order 3
-        case  9: return std::sqrt(5.0f / 8.0f) * sin3Az * cosEl * cosEl2;
-        case 10: return std::sqrt(15.0f) * 0.5f * sin2Az * sinEl * cosEl2;
-        case 11: return std::sqrt(3.0f / 8.0f) * sinAz * cosEl * (5.0f * sinEl2 - 1.0f);
-        case 12: return 0.5f * sinEl * (5.0f * sinEl2 - 3.0f);
-        case 13: return std::sqrt(3.0f / 8.0f) * cosAz * cosEl * (5.0f * sinEl2 - 1.0f);
-        case 14: return std::sqrt(15.0f) * 0.5f * cos2Az * sinEl * cosEl2;
-        case 15: return std::sqrt(5.0f / 8.0f) * cos3Az * cosEl * cosEl2;
-
-        // Order 4
-        case 16: return std::sqrt(35.0f) * 0.375f * sin4Az * cosEl4;
-        case 17: return std::sqrt(35.0f / 8.0f) * sin3Az * sinEl * cosEl3;
-        case 18: return std::sqrt(5.0f) * 0.25f * sin2Az * cosEl2 * (7.0f * sinEl2 - 1.0f);
-        case 19: return std::sqrt(5.0f / 8.0f) * sinAz * sinEl * cosEl * (7.0f * sinEl2 - 3.0f);
-        case 20: return 0.125f * (35.0f * sinEl4 - 30.0f * sinEl2 + 3.0f);
-        case 21: return std::sqrt(5.0f / 8.0f) * cosAz * sinEl * cosEl * (7.0f * sinEl2 - 3.0f);
-        case 22: return std::sqrt(5.0f) * 0.25f * cos2Az * cosEl2 * (7.0f * sinEl2 - 1.0f);
-        case 23: return std::sqrt(35.0f / 8.0f) * cos3Az * sinEl * cosEl3;
-        case 24: return std::sqrt(35.0f) * 0.375f * cos4Az * cosEl4;
-
-        // Order 5
-        case 25: return std::sqrt(63.0f / 8.0f) * sin5Az * cosEl5;
-        case 26: return std::sqrt(315.0f) * 0.375f * sin4Az * sinEl * cosEl4;
-        case 27: return std::sqrt(35.0f / 16.0f) * sin3Az * cosEl3 * (9.0f * sinEl2 - 1.0f);
-        case 28: return std::sqrt(105.0f / 8.0f) * sin2Az * sinEl * cosEl2 * (3.0f * sinEl2 - 1.0f);
-        case 29: return std::sqrt(15.0f) * 0.125f * sinAz * cosEl * (21.0f * sinEl4 - 14.0f * sinEl2 + 1.0f);
-        case 30: return 0.125f * sinEl * (63.0f * sinEl4 - 70.0f * sinEl2 + 15.0f);
-        case 31: return std::sqrt(15.0f) * 0.125f * cosAz * cosEl * (21.0f * sinEl4 - 14.0f * sinEl2 + 1.0f);
-        case 32: return std::sqrt(105.0f / 8.0f) * cos2Az * sinEl * cosEl2 * (3.0f * sinEl2 - 1.0f);
-        case 33: return std::sqrt(35.0f / 16.0f) * cos3Az * cosEl3 * (9.0f * sinEl2 - 1.0f);
-        case 34: return std::sqrt(315.0f) * 0.375f * cos4Az * sinEl * cosEl4;
-        case 35: return std::sqrt(63.0f / 8.0f) * cos5Az * cosEl5;
-
-        // Order 6
-        case 36: return std::sqrt(231.0f / 16.0f) * sin6Az * cosEl6;
-        case 37: return std::sqrt(693.0f / 8.0f) * sin5Az * sinEl * cosEl5;
-        case 38: return std::sqrt(63.0f / 16.0f) * sin4Az * cosEl4 * (11.0f * sinEl2 - 1.0f);
-        case 39: return std::sqrt(315.0f / 16.0f) * sin3Az * sinEl * cosEl3 * (11.0f * sinEl2 - 3.0f);
-        case 40: return std::sqrt(105.0f / 16.0f) * sin2Az * cosEl2 * (33.0f * sinEl4 - 18.0f * sinEl2 + 1.0f) * 0.25f;
-        case 41: return std::sqrt(21.0f / 16.0f) * sinAz * sinEl * cosEl * (33.0f * sinEl4 - 30.0f * sinEl2 + 5.0f);
-        case 42: return (231.0f * sinEl4 * sinEl2 - 315.0f * sinEl4 + 105.0f * sinEl2 - 5.0f) / 16.0f;
-        case 43: return std::sqrt(21.0f / 16.0f) * cosAz * sinEl * cosEl * (33.0f * sinEl4 - 30.0f * sinEl2 + 5.0f);
-        case 44: return std::sqrt(105.0f / 16.0f) * cos2Az * cosEl2 * (33.0f * sinEl4 - 18.0f * sinEl2 + 1.0f) * 0.25f;
-        case 45: return std::sqrt(315.0f / 16.0f) * cos3Az * sinEl * cosEl3 * (11.0f * sinEl2 - 3.0f);
-        case 46: return std::sqrt(63.0f / 16.0f) * cos4Az * cosEl4 * (11.0f * sinEl2 - 1.0f);
-        case 47: return std::sqrt(693.0f / 8.0f) * cos5Az * sinEl * cosEl5;
-        case 48: return std::sqrt(231.0f / 16.0f) * cos6Az * cosEl6;
-
-        default: return 0.0f;
-    }
+    return spatialcore::evalSH (acn, az, el);
 }
 
 //==============================================================================
