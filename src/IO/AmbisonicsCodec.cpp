@@ -46,6 +46,11 @@ void AmbisonicsCodec::getDecodeMatrix(int order, int numSpeakers,
                                       const float* speakerElevations,
                                       float* decodeMatrix)
 {
+    // D-20: E below is sized MAX_SPEAKERS columns, so a larger count would
+    // write out of bounds. Write nothing instead. Message-thread code, so the
+    // check is free (RESEARCH F6).
+    if (numSpeakers > MAX_SPEAKERS) return;
+
     const int M = (order + 1) * (order + 1);
     if (M > MAX_AMBI_CHANNELS) return;
 

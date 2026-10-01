@@ -249,3 +249,199 @@ TEST_CASE("SH: AmbisonicsCodec::evaluateSH forwards to evalSH bit-for-bit (D-08)
                 ++mismatches;
     CHECK(mismatches == 0);
 }
+
+// ============================================================================
+// getDecodeMatrix bounds (D-20, RESEARCH F6). E is sized MAX_SPEAKERS columns,
+// so more than 16 speakers used to write past a stack array. The guard makes
+// it write nothing; 0 speakers also writes nothing; exactly 16 decodes.
+// ============================================================================
+TEST_CASE("AmbisonicsCodec: getDecodeMatrix writes nothing for more than 16 or for 0 speakers (D-20)",
+          "[ambisonics][decode-guard]")
+{
+    constexpr int order = 3;
+    constexpr int M = (order + 1) * (order + 1);
+    constexpr float kSentinel = 12345.0f;
+    constexpr int kTooMany = MAX_SPEAKERS + 1;   // 17
+
+    float az[kTooMany] = {};
+    float el[kTooMany] = {};
+    for (int s = 0; s < kTooMany; ++s)
+    {
+        // Distinct directions spread over the upper and lower hemisphere.
+        az[s] = -kPi + (2.0f * kPi) * static_cast<float> (s) / static_cast<float> (kTooMany);
+        el[s] = std::asin (1.0f - (2.0f * static_cast<float> (s) + 1.0f) / static_cast<float> (kTooMany));
+    }
+
+    std::vector<float> out (static_cast<size_t> (kTooMany) * static_cast<size_t> (M), kSentinel);
+
+    SECTION("17 speakers: the whole 17 x 16 buffer is untouched")
+    {
+        AmbisonicsCodec::getDecodeMatrix (order, kTooMany, az, el, out.data());
+        int changed = 0;
+        for (float v : out)
+            if (v != kSentinel)
+                ++changed;
+        CHECK(changed == 0);
+    }
+
+    SECTION("0 speakers: the buffer is untouched")
+    {
+        AmbisonicsCodec::getDecodeMatrix (order, 0, az, el, out.data());
+        int changed = 0;
+        for (float v : out)
+            if (v != kSentinel)
+                ++changed;
+        CHECK(changed == 0);
+    }
+
+    SECTION("16 speakers (the boundary): every one of the 16 x 16 entries is written and finite")
+    {
+        AmbisonicsCodec::getDecodeMatrix (order, MAX_SPEAKERS, az, el, out.data());
+        int written = 0, finite = 0;
+        for (int i = 0; i < MAX_SPEAKERS * M; ++i)
+        {
+            if (out[static_cast<size_t> (i)] != kSentinel) ++written;
+            if (std::isfinite (out[static_cast<size_t> (i)])) ++finite;
+        }
+        CHECK(written == MAX_SPEAKERS * M);
+        CHECK(finite == MAX_SPEAKERS * M);
+        // Row 17 (index 16) lies beyond numSpeakers and must stay untouched.
+        for (int c = 0; c < M; ++c)
+            CHECK(out[static_cast<size_t> (MAX_SPEAKERS * M + c)] == kSentinel);
+    }
+}
+
+// ============================================================================
+// Encode -> dense decode -> re-encode round trip (D-11a) -- a DECODER-
+// CONDITIONING SMOKE TEST ONLY, not evidence of SH correctness.
+//
+// D-12: a mode-matching round trip is blind to per-channel scale errors.
+// If the evaluator is off by a per-channel scale S (Y' = S Y), the decoder
+// built from it is pinv(S Y) = pinv(Y) S^-1, and the re-encode multiplies S
+// back in, so S cancels exactly. This test passed identically on the pre-fix
+// constants at every order (RESEARCH F6: 1.5e-8 .. 6.2e-8, buggy == fixed).
+// SH correctness is proven by the [sn3d] literal and addition-theorem tests.
+//
+// The decoder is test-local (200-point Fibonacci lattice, double precision,
+// Tikhonov epsilon 1e-6), because the shipped getDecodeMatrix caps at 16
+// speakers and is rank-limited above order 1 (F6); it says nothing about the
+// shipped decoder, which [ambi-pin] covers.
+// ============================================================================
+namespace
+{
+    // D = E^T (E E^T + eps I)^-1, the same shape as getDecodeMatrix, in double.
+    // E is M x S (row c = channel, column s = speaker); returns D as S x M.
+    std::vector<double> denseDecode (const std::vector<double>& E, int M, int S, double eps)
+    {
+        std::vector<double> aug (static_cast<size_t> (M * M), 0.0);
+        std::vector<double> inv (static_cast<size_t> (M * M), 0.0);
+        auto at = [M] (std::vector<double>& m, int r, int c) -> double& { return m[static_cast<size_t> (r * M + c)]; };
+
+        for (int i = 0; i < M; ++i)
+        {
+            for (int j = 0; j < M; ++j)
+            {
+                double sum = 0.0;
+                for (int s = 0; s < S; ++s)
+                    sum += E[static_cast<size_t> (i * S + s)] * E[static_cast<size_t> (j * S + s)];
+                at (aug, i, j) = sum;
+            }
+            at (aug, i, i) += eps;
+            at (inv, i, i) = 1.0;
+        }
+
+        // Gauss-Jordan with partial pivoting.
+        for (int col = 0; col < M; ++col)
+        {
+            int pivot = col;
+            for (int row = col + 1; row < M; ++row)
+                if (std::abs (at (aug, row, col)) > std::abs (at (aug, pivot, col)))
+                    pivot = row;
+            if (pivot != col)
+                for (int j = 0; j < M; ++j)
+                {
+                    std::swap (at (aug, col, j), at (aug, pivot, j));
+                    std::swap (at (inv, col, j), at (inv, pivot, j));
+                }
+
+            const double diag = at (aug, col, col);
+            for (int j = 0; j < M; ++j)
+            {
+                at (aug, col, j) /= diag;
+                at (inv, col, j) /= diag;
+            }
+            for (int row = 0; row < M; ++row)
+            {
+                if (row == col) continue;
+                const double f = at (aug, row, col);
+                for (int j = 0; j < M; ++j)
+                {
+                    at (aug, row, j) -= f * at (aug, col, j);
+                    at (inv, row, j) -= f * at (inv, col, j);
+                }
+            }
+        }
+
+        std::vector<double> D (static_cast<size_t> (S * M), 0.0);
+        for (int s = 0; s < S; ++s)
+            for (int c = 0; c < M; ++c)
+            {
+                double sum = 0.0;
+                for (int k = 0; k < M; ++k)
+                    sum += E[static_cast<size_t> (k * S + s)] * at (inv, k, c);
+                D[static_cast<size_t> (s * M + c)] = sum;
+            }
+        return D;
+    }
+}
+
+TEST_CASE("SH: encode, dense decode, re-encode round trip at orders 1-6 (D-11a, smoke test only)",
+          "[ambisonics][roundtrip]")
+{
+    // 200-point Fibonacci lattice: near-uniform sphere sampling, no table needed.
+    constexpr int S = 200;
+    const double goldenAngle = 3.14159265358979323846 * (3.0 - std::sqrt (5.0));
+    std::vector<float> latAz (S), latEl (S);
+    for (int i = 0; i < S; ++i)
+    {
+        const double z = 1.0 - (2.0 * i + 1.0) / S;
+        latEl[static_cast<size_t> (i)] = static_cast<float> (std::asin (z));
+        latAz[static_cast<size_t> (i)] = static_cast<float> (std::remainder (goldenAngle * i, 2.0 * 3.14159265358979323846));
+    }
+
+    const auto sources = seededDirections (50, 99);
+
+    for (int order = 1; order <= AmbisonicsCodec::MAX_AMBI_ORDER; ++order)
+    {
+        const int M = (order + 1) * (order + 1);
+
+        std::vector<double> E (static_cast<size_t> (M * S));
+        for (int c = 0; c < M; ++c)
+            for (int s = 0; s < S; ++s)
+                E[static_cast<size_t> (c * S + s)] = AmbisonicsCodec::evaluateSH (c, latAz[static_cast<size_t> (s)],
+                                                                                  latEl[static_cast<size_t> (s)]);
+        const auto D = denseDecode (E, M, S, 1e-6);
+
+        double worst = 0.0;
+        for (const auto& src : sources)
+        {
+            float coeffs[AmbisonicsCodec::MAX_AMBI_CHANNELS] = {};
+            AmbisonicsCodec::encode (SourcePosition { src.first, src.second, 1.0f }, order, coeffs, M);
+
+            std::vector<double> g (static_cast<size_t> (S), 0.0);       // speaker gains = D y
+            for (int s = 0; s < S; ++s)
+                for (int c = 0; c < M; ++c)
+                    g[static_cast<size_t> (s)] += D[static_cast<size_t> (s * M + c)] * coeffs[c];
+
+            for (int c = 0; c < M; ++c)                                // re-encode = E g
+            {
+                double y = 0.0;
+                for (int s = 0; s < S; ++s)
+                    y += E[static_cast<size_t> (c * S + s)] * g[static_cast<size_t> (s)];
+                worst = std::max (worst, std::abs (y - static_cast<double> (coeffs[c])));
+            }
+        }
+        INFO("order " << order << ": worst re-encode coefficient error " << worst);
+        CHECK(worst <= 1e-5);
+    }
+}

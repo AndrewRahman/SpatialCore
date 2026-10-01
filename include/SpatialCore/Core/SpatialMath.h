@@ -68,6 +68,19 @@ inline void nearestSpeaker3DFallback (const SpeakerLayout& layout,
 //==============================================================================
 // Forward declarations for functions defined in SpatialMath.cpp
 //==============================================================================
+/** Evaluates one real spherical harmonic, ACN channel `acnIndex` (0..48, orders 0-6).
+
+    Convention (D-10; AndrewRahman/SpatialCore#11): real spherical harmonics, ACN channel
+    order (acn = l*l + l + m; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
+    normalisation (the sum over m of Y_lm^2 is 1 at every order l), no Condon-Shortley
+    phase, angles in radians, azimuth 0 = front, positive azimuth toward +Y (left),
+    elevation 0 = horizon, positive up. This is the AmbiX convention.
+
+    This is the single SH implementation in SpatialCore (D-08):
+    AmbisonicsCodec::evaluateSH forwards to it. Its values are pinned against 49
+    independent scipy reference values and the SN3D addition theorem in
+    tests/IO/AmbisonicsCodecTests.cpp ([sn3d]). Returns 0 for acnIndex outside 0..48.
+*/
 float evalSH (int acnIndex, float azimuthRad, float elevationRad);
 void computeVBAPGains2D (const SpeakerLayout& layout, float azimuthRad, float* outGains);
 void computeVBAPGains3D (const SpeakerLayout& layout, const std::vector<VBAPTriplet>& triplets,
