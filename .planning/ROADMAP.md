@@ -77,11 +77,11 @@ named gaps, it does not rebuild the modules.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 
-**Plans**: 7 plans
+**Plans**: 1/7 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 02-01-PLAN.md — Tracer: EAR lower-hemisphere panning end to end on 7.1.4, one height threshold, the Release layout-build abort, and deletion of the empty-triplet nearest-speaker branches *(wave 1)*
+- [x] 02-01-PLAN.md — Tracer: EAR lower-hemisphere panning end to end on 7.1.4, one height threshold, the Release layout-build abort, and deletion of the empty-triplet nearest-speaker branches *(wave 1)*
 - [ ] 02-02-PLAN.md — Independent reference oracles (scipy SH, PyPI ear 2.1.0, textbook panning) checked in under `tests/reference/`, behind a blocking package-legitimacy gate *(wave 1)*
 - [ ] 02-03-PLAN.md — File the coplanar-quad tie-break issue with the measured jumps, after human approval of the text *(wave 1)*
 
@@ -221,7 +221,7 @@ External Dependencies.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
-| 2. Algorithm & Format Verification | 0/7 | Planned | - |
+| 2. Algorithm & Format Verification | 1/7 | In Progress|  |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
