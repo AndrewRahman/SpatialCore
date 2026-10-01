@@ -5,11 +5,16 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <type_traits>
 
 namespace spatialcore
 {
 
-RenderEngine::RenderEngine() = default;
+RenderEngine::RenderEngine()
+{
+    resetLastGoodPositions();
+}
+
 RenderEngine::~RenderEngine() = default;
 
 //==============================================================================
@@ -55,6 +60,57 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
         sourceAccumBufPtrs[src] = sourceAccumStorage_.data() + src * maxBlockSize;
     wetBufL_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
     wetBufR_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
+
+    // D-06(a): a fresh prepare forgets every held position.
+    resetLastGoodPositions();
+}
+
+//==============================================================================
+// D-06(a) / D-19(ii) hold-last-good sanitiser. See the header declaration.
+//==============================================================================
+static_assert (std::is_trivially_copyable_v<RenderSources>,
+               "sanitizeSources copies RenderSources into the preallocated "
+               "sanitizedSources_ member once per block; that must stay a plain "
+               "memberwise copy -- no allocation, lock or log on the audio "
+               "thread (DR-1)");
+
+void RenderEngine::resetLastGoodPositions()
+{
+    // The ObjectState defaults, so a first-ever non-finite value renders at
+    // the default position.
+    const ObjectState defaults {};
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        lastGoodAzimuthDeg_[t]   = defaults.azimuthDeg;
+        lastGoodElevationDeg_[t] = defaults.elevationDeg;
+        lastGoodDistance_[t]     = defaults.distance;
+    }
+}
+
+const RenderSources& RenderEngine::sanitizeSources (const RenderSources& sources)
+{
+    sanitizedSources_ = sources;
+
+    // Each field is held independently: a finite value becomes the slot's
+    // last good value and passes through untouched (never wrapped or clamped,
+    // so finite input stays bit-identical); a non-finite one is replaced.
+    auto hold = [] (float& value, float& lastGood)
+    {
+        if (std::isfinite (value))
+            lastGood = value;
+        else
+            value = lastGood;
+    };
+
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        auto& obj = sanitizedSources_.objects[t];
+        hold (obj.azimuthDeg,   lastGoodAzimuthDeg_[t]);
+        hold (obj.elevationDeg, lastGoodElevationDeg_[t]);
+        hold (obj.distance,     lastGoodDistance_[t]);
+    }
+
+    return sanitizedSources_;
 }
 
 //==============================================================================
@@ -66,6 +122,12 @@ void RenderEngine::renderBlock (const RenderSources& sources,
                                  float* const* outChannels,
                                  int numOutCh)
 {
+    // D-06(a) / D-19(ii): every render path and the engine's own gain
+    // computation read this sanitised copy, never the raw parameter. The
+    // algorithm-layer guards remain the protection for consumers that call
+    // computeGains directly (RESEARCH F7); this does not replace them.
+    const RenderSources& src = sanitizeSources (sources);
+
     // SC-13: when the consumer opts in, compute objChannelGains/objGains
     // internally into a scratch copy and dispatch on that instead — the
     // dispatch chain itself is unchanged (selected once via pointer so it is
@@ -74,7 +136,7 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     if (blockCtx.engineComputesGains)
     {
         gainScratch_ = blockCtx;
-        computeObjectGains (sources, gainScratch_);
+        computeObjectGains (src, gainScratch_);
         dispatchCtx = &gainScratch_;
     }
     const RenderBlockContext& ctx = *dispatchCtx;
@@ -84,23 +146,23 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 
     if (ctx.isStereoVariant)
     {
-        renderStereoVariant (sources, ctx, outL, outR, numOutCh);
+        renderStereoVariant (src, ctx, outL, outR, numOutCh);
     }
     else if (ctx.isBinaural && ctx.useHRTF)
     {
-        renderDirectBinauralHRTF (sources, outL, outR, numOutCh);
+        renderDirectBinauralHRTF (src, outL, outR, numOutCh);
     }
     else if (ctx.isBinaural)
     {
-        renderSimpleBinauralWoodworth (sources, ctx, outL, outR, numOutCh);
+        renderSimpleBinauralWoodworth (src, ctx, outL, outR, numOutCh);
     }
     else if (ctx.isAmbiOutput)
     {
-        renderAmbisonicsOutput (sources, ctx, outChannels, numOutCh);
+        renderAmbisonicsOutput (src, ctx, outChannels, numOutCh);
     }
     else
     {
-        renderDiscreteSurround (sources, ctx, outChannels, numOutCh);
+        renderDiscreteSurround (src, ctx, outChannels, numOutCh);
     }
 }
 

@@ -1,7 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Engine/RenderEngine.h>
+#include "../Binaural/BinauralTestUtilities.h"
 #include <cmath>
+#include <limits>
+#include <memory>
 #include <vector>
 
 using namespace spatialcore;
@@ -353,4 +356,203 @@ TEST_CASE ("RenderEngine: escape hatches expose the underlying BinauralRenderer 
 
     engine.swapActiveRenderer();
     CHECK (engine.getActiveRendererIndexAtomic().load() == prepareIdx);
+}
+
+// ----------------------------------------------------------------------------
+// D-06(a) extended by D-19(ii): RenderEngine holds the last finite azimuth,
+// elevation and distance per object, field by field, and substitutes it for
+// any non-finite value before every render path and before engine-side gain
+// computation. Each test builds two engines identically and varies ONLY the
+// position fields, then compares full output buffers with exact ==.
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+    constexpr float kInf = std::numeric_limits<float>::infinity();
+
+    enum class SanitizePath { SurroundEngineGains, AmbisonicsHOA, BinauralHRTF };
+
+    /** One engine + fixture + context + output storage for one render path. */
+    struct SanitizeRig
+    {
+        RenderEngine engine;
+        SourceFixture fixture;
+        RenderBlockContext ctx;
+        int numCh = 0;
+        std::vector<std::vector<float>> out;
+        std::vector<float*> ptrs;
+
+        SanitizeRig (SanitizePath path, OutputFormat format)
+        {
+            engine.prepare (kSampleRate, kBlockSize);
+            engine.setOutputFormat (format);
+            ctx.sampleRate = kSampleRate;
+            ctx.activeFormat = format;
+
+            switch (path)
+            {
+                case SanitizePath::SurroundEngineGains:
+                    ctx.engineComputesGains = true;
+                    numCh = engine.getActiveLayout().layout.totalChannels;
+                    break;
+                case SanitizePath::AmbisonicsHOA:
+                    ctx.isAmbiOutput = true;
+                    ctx.ambiOrder = 3;
+                    numCh = 16;
+                    break;
+                case SanitizePath::BinauralHRTF:
+                    ctx.isBinaural = true;
+                    ctx.useHRTF = true;
+                    numCh = 2;
+                    break;
+            }
+
+            out.assign (static_cast<size_t> (numCh), std::vector<float> (kBlockSize, 0.0f));
+            for (auto& ch : out)
+                ptrs.push_back (ch.data());
+        }
+
+        void render (float azDeg, float elDeg, float dist)
+        {
+            for (auto& ch : out)
+                std::fill (ch.begin(), ch.end(), 0.0f);
+
+            RenderSources s = fixture.makeSources();
+            s.objects[0].azimuthDeg   = azDeg;
+            s.objects[0].elevationDeg = elDeg;
+            s.objects[0].distance     = dist;
+            engine.renderBlock (s, ctx, ptrs.data(), numCh);
+        }
+
+        bool outputFinite() const
+        {
+            for (const auto& ch : out)
+                if (! allFinite (ch.data(), kBlockSize))
+                    return false;
+            return true;
+        }
+    };
+
+    /** Exact == on every sample of every channel; reports the first mismatch. */
+    void requireIdenticalOutput (const SanitizeRig& a, const SanitizeRig& b)
+    {
+        REQUIRE (a.numCh == b.numCh);
+        for (int c = 0; c < a.numCh; ++c)
+            for (int i = 0; i < kBlockSize; ++i)
+            {
+                const float va = a.out[static_cast<size_t> (c)][static_cast<size_t> (i)];
+                const float vb = b.out[static_cast<size_t> (c)][static_cast<size_t> (i)];
+                if (! (va == vb))
+                {
+                    INFO ("channel " << c << " sample " << i << " got " << va << " expected " << vb);
+                    REQUIRE (va == vb);
+                }
+            }
+    }
+
+    bool anyOutputNonzero (const SanitizeRig& r)
+    {
+        for (const auto& ch : r.out)
+            if (anyNonzero (ch.data(), kBlockSize))
+                return true;
+        return false;
+    }
+}
+
+TEST_CASE ("RenderEngine: a NaN azimuth block renders exactly like repeating the last finite azimuth (D-06a)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    REQUIRE (a->numCh >= 4);
+
+    a->render (30.0f, 0.0f, 0.5f);
+    b->render (30.0f, 0.0f, 0.5f);
+    requireIdenticalOutput (*a, *b);
+
+    a->render (kNaN, 0.0f, 0.5f);
+    b->render (30.0f, 0.0f, 0.5f);
+    CHECK (a->outputFinite());
+    CHECK (anyOutputNonzero (*a));
+    requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: a first-ever non-finite position renders exactly like the ObjectState defaults 0, 0, 0.5 (D-06a, D-19ii)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+
+    for (int block = 0; block < 2; ++block)
+    {
+        INFO ("block " << block);
+        a->render (kInf, kNaN, kNaN);
+        b->render (0.0f, 0.0f, 0.5f);
+        CHECK (a->outputFinite());
+        requireIdenticalOutput (*a, *b);
+    }
+}
+
+TEST_CASE ("RenderEngine: a NaN distance never reaches the NFC-HOA filter state; output matches the last good distance (D-19ii, F7)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+
+    a->render (30.0f, 10.0f, 0.4f);
+    b->render (30.0f, 10.0f, 0.4f);
+    CHECK (a->outputFinite());
+
+    for (int block = 2; block <= 4; ++block)
+    {
+        INFO ("block " << block);
+        a->render (30.0f, 10.0f, kNaN);
+        b->render (30.0f, 10.0f, 0.4f);
+        CHECK (a->outputFinite());
+    }
+
+    // Block 4 equals an engine fed 0.4 throughout.
+    requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: positions are held per field, so a new finite azimuth with a NaN elevation keeps the new azimuth (D-06a, F7)",
+           "[engine][sanitize]")
+{
+    // 7.1.4 + engine-computed gains: the 3D VBAP path, where elevation matters.
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Surround7_1_4);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Surround7_1_4);
+
+    a->render (30.0f, 20.0f, 0.5f);
+    b->render (30.0f, 20.0f, 0.5f);
+
+    // ADM-OSC forwards NaN for "field not set" on a single-axis /azim update.
+    a->render (60.0f, kNaN, 0.5f);
+    b->render (60.0f, 20.0f, 0.5f);
+    CHECK (a->outputFinite());
+    CHECK (anyOutputNonzero (*a));
+    requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: the direct-binaural HRTF branch stays finite for an infinite elevation (D-06a)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::BinauralHRTF, OutputFormat::Binaural);
+
+    // Load a real SOFA profile into the active renderer so the elevation
+    // actually reaches the HRIR lookup (in Simple mode updateSourceHRIR
+    // returns before reading the direction).
+    const int active = a->engine.getActiveRendererIndexAtomic().load();
+    auto& renderer = a->engine.getBinauralRenderer (active);
+    REQUIRE (renderer.hrtfDatabase.loadFromFile (test::getSofaFile ("sadie_d2_ku100.sofa"),
+                                                  static_cast<float> (kSampleRate)));
+    renderer.setProfile (1);
+    REQUIRE_FALSE (renderer.isSimpleMode());
+
+    for (int block = 0; block < 3; ++block)
+    {
+        INFO ("block " << block);
+        a->render (30.0f, kInf, 0.5f);
+        CHECK (a->outputFinite());
+    }
+    CHECK (anyOutputNonzero (*a));
 }
