@@ -290,9 +290,6 @@ private:
                                   float* const* outChannels, int numOutCh);
 
     void activateLayout (OutputFormat format);
-    static void computeAmbiDecodeForLayout (const SpeakerLayout& layout,
-                                             float (*outMatrix)[MAX_SPEAKERS],
-                                             int& outNumSpeakers);
 
     //--------------------------------------------------------------------------
     // SC-13: engine-owned gain computation, used only when the consumer sets

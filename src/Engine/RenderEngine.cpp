@@ -618,7 +618,9 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 //==============================================================================
 // Output-format double-buffered switching (glitch-free swap, moved INTO the
 // engine per the locked IO-ownership decision). Verbatim-transplanted from
-// OpenSpatialDelayProcessor::activateLayout / computeAmbiDecodeForLayout.
+// OpenSpatialDelayProcessor::activateLayout; the order-3 speaker decode now
+// comes from AmbisonicsCodec::getDecodeMatrix, the library's one decoder
+// (D-09), pinned to the transplanted original by the [ambi-pin] test.
 //==============================================================================
 void RenderEngine::setOutputFormat (OutputFormat format)
 {
@@ -692,8 +694,25 @@ void RenderEngine::activateLayout (OutputFormat format)
             return;
     }
 
-    // Compute Ambisonics decode matrix using shared helper
-    computeAmbiDecodeForLayout (buf.layout, buf.ambiDecodeMatrix, buf.ambiNumSpeakers);
+    // Order-3 Ambisonics speaker decode through the one shared decoder (D-09).
+    // getDecodeMatrix writes decodeMatrix[s * 16 + c], which is exactly
+    // ambiDecodeMatrix[s][c] because the row width equals the order-3 channel
+    // count. Message/prepare thread: DR-1 does not apply.
+    static_assert (MAX_SPEAKERS == (3 + 1) * (3 + 1),
+                   "ambiDecodeMatrix rows must equal the order-3 channel count");
+    float speakerAz[MAX_SPEAKERS] = {};
+    float speakerEl[MAX_SPEAKERS] = {};
+    for (int s = 0; s < buf.layout.numSpeakers; ++s)
+    {
+        speakerAz[s] = buf.layout.speakers[s].azimuthRad;
+        speakerEl[s] = buf.layout.speakers[s].elevationRad;
+    }
+    // Rows at or beyond the speaker count are cleared, not left stale from the
+    // layout this buffer held two switches ago.
+    std::memset (buf.ambiDecodeMatrix, 0, sizeof (buf.ambiDecodeMatrix));
+    AmbisonicsCodec::getDecodeMatrix (3, buf.layout.numSpeakers, speakerAz, speakerEl,
+                                      &buf.ambiDecodeMatrix[0][0]);
+    buf.ambiNumSpeakers = buf.layout.numSpeakers;
 
     // Build 3D VBAP triplets using the SpatialCore IO helper
     buildVBAPTripletsForLayout (buf.layout, buf.vbapTriplets);
@@ -718,97 +737,6 @@ void RenderEngine::activateLayout (OutputFormat format)
     // Atomic swap: audio thread now reads the fully-populated buffer
     activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
     prepareLayoutIndex = 1 - prepareLayoutIndex;
-}
-
-//==============================================================================
-// computeAmbiDecodeForLayout — verbatim-transplanted from
-// OpenSpatialDelayProcessor::computeAmbiDecodeForLayout.
-// D = E^T (E E^T + epsilon I)^{-1}  (Tikhonov-regularized pseudo-inverse)
-//==============================================================================
-void RenderEngine::computeAmbiDecodeForLayout (const SpeakerLayout& layout,
-                                                float (*outMatrix)[MAX_SPEAKERS],
-                                                int& outNumSpeakers)
-{
-    const int N = layout.numSpeakers;
-    const int M = 16; // HOA_CHANNELS (surround decode cap, 3rd order)
-    outNumSpeakers = N;
-
-    // Build encoding matrix E[c][s] = evalSH(c, speaker_s_position)
-    float E[16][16] = {};
-    for (int s = 0; s < N; ++s)
-        for (int c = 0; c < M; ++c)
-            E[c][s] = evalSH (c, layout.speakers[s].azimuthRad,
-                                 layout.speakers[s].elevationRad);
-
-    // Compute EET = E * E^T  (M x M)
-    float EET[16][16] = {};
-    for (int i = 0; i < M; ++i)
-        for (int j = 0; j < M; ++j)
-        {
-            float sum = 0.0f;
-            for (int s = 0; s < N; ++s)
-                sum += E[i][s] * E[j][s];
-            EET[i][j] = sum;
-        }
-
-    // Tikhonov regularization: EET += epsilon * I
-    float epsilon = 0.01f;
-    for (int i = 0; i < M; ++i)
-        EET[i][i] += epsilon;
-
-    // Invert EET via Gauss-Jordan (M x M, small matrix)
-    float inv[16][16] = {};
-    for (int i = 0; i < M; ++i)
-        inv[i][i] = 1.0f;
-
-    float aug[16][16];
-    for (int i = 0; i < M; ++i)
-        for (int j = 0; j < M; ++j)
-            aug[i][j] = EET[i][j];
-
-    for (int col = 0; col < M; ++col)
-    {
-        int pivot = col;
-        for (int row = col + 1; row < M; ++row)
-            if (std::abs (aug[row][col]) > std::abs (aug[pivot][col]))
-                pivot = row;
-
-        if (pivot != col)
-        {
-            std::swap_ranges (aug[col], aug[col] + M, aug[pivot]);
-            std::swap_ranges (inv[col], inv[col] + M, inv[pivot]);
-        }
-
-        float diagVal = aug[col][col];
-        if (std::abs (diagVal) < 1e-10f) continue;
-
-        for (int j = 0; j < M; ++j)
-        {
-            aug[col][j] /= diagVal;
-            inv[col][j] /= diagVal;
-        }
-
-        for (int row = 0; row < M; ++row)
-        {
-            if (row == col) continue;
-            float factor = aug[row][col];
-            for (int j = 0; j < M; ++j)
-            {
-                aug[row][j] -= factor * aug[col][j];
-                inv[row][j] -= factor * inv[col][j];
-            }
-        }
-    }
-
-    // D[s][c] = sum_k E^T[s][k] * inv[k][c] = sum_k E[k][s] * inv[k][c]
-    for (int s = 0; s < N; ++s)
-        for (int c = 0; c < M; ++c)
-        {
-            float sum = 0.0f;
-            for (int k = 0; k < M; ++k)
-                sum += E[k][s] * inv[k][c];
-            outMatrix[s][c] = sum;
-        }
 }
 
 } // namespace spatialcore
