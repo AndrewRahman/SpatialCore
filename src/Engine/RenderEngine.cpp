@@ -640,8 +640,8 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 }
 
 //==============================================================================
-// Output-format double-buffered switching (glitch-free swap, moved INTO the
-// engine per the locked IO-ownership decision). Verbatim-transplanted from
+// Output-format three-slot switching (glitch-free handoff via TripleBufferIndex,
+// moved INTO the engine per the locked IO-ownership decision). Verbatim-transplanted from
 // OpenSpatialDelayProcessor::activateLayout; the order-3 speaker decode now
 // comes from AmbisonicsCodec::getDecodeMatrix, the library's one decoder
 // (D-09), pinned to the transplanted original by the [ambi-pin] test.
@@ -658,13 +658,16 @@ OutputFormat RenderEngine::getActiveOutputFormat() const
 
 const RenderEngine::LayoutState& RenderEngine::getActiveLayout() const
 {
-    return layoutBuffers[static_cast<size_t> (activeLayoutIndex.load (std::memory_order_acquire))];
+    // Writer-thread view: the slot most recently published. Never reached from
+    // the audio thread.
+    return layoutBuffers[static_cast<size_t> (layoutSlots_.lastPublishedSlot())];
 }
 
 const RenderEngine::LayoutState& RenderEngine::acquireBlockLayout()
 {
-    // The single acquire-load of the published layout index for this block.
-    return layoutBuffers[static_cast<size_t> (activeLayoutIndex.load (std::memory_order_acquire))];
+    // The one audio-thread entry into the handoff: wait-free, at most one
+    // atomic exchange per block.
+    return layoutBuffers[static_cast<size_t> (layoutSlots_.acquireLatest())];
 }
 
 void RenderEngine::deriveDispatchFromLayout (const LayoutState& layout, RenderBlockContext& ctx)
@@ -683,7 +686,7 @@ void RenderEngine::deriveDispatchFromLayout (const LayoutState& layout, RenderBl
 
 void RenderEngine::activateLayout (OutputFormat format)
 {
-    auto& buf = layoutBuffers[static_cast<size_t> (prepareLayoutIndex)];
+    auto& buf = layoutBuffers[static_cast<size_t> (layoutSlots_.writeSlot())];
     buf.format = format;
 
     switch (format)
@@ -719,8 +722,7 @@ void RenderEngine::activateLayout (OutputFormat format)
             buf.layout.totalChannels = OutputFormatRegistry::table[static_cast<size_t> (fmtIdx)].requiredChannels;
             buf.ambiNumSpeakers = 0;
             buf.vbapTriplets.clear();
-            activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
-            prepareLayoutIndex = 1 - prepareLayoutIndex;
+            layoutSlots_.publish();
             return;
         }
 
@@ -733,8 +735,7 @@ void RenderEngine::activateLayout (OutputFormat format)
             buf.layout.totalChannels = 2;
             buf.ambiNumSpeakers = 0;
             buf.vbapTriplets.clear();
-            activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
-            prepareLayoutIndex = 1 - prepareLayoutIndex;
+            layoutSlots_.publish();
             return;
     }
 
@@ -780,9 +781,9 @@ void RenderEngine::activateLayout (OutputFormat format)
     // Message/prepare thread: allocation is fine here.
     appendLowerHemisphereTriplets (buf.layout, buf.vbapTriplets);
 
-    // Atomic swap: audio thread now reads the fully-populated buffer
-    activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
-    prepareLayoutIndex = 1 - prepareLayoutIndex;
+    // Publish: the audio thread picks up the fully-populated slot at its next
+    // block; a publish superseded before then is skipped whole.
+    layoutSlots_.publish();
 }
 
 } // namespace spatialcore
