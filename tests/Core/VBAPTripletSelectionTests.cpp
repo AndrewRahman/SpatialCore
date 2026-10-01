@@ -3,6 +3,7 @@
 #include <SpatialCore/Core/SpatialMath.h>
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
+#include "../reference/EarReference.h"
 
 #include <algorithm>
 #include <atomic>
@@ -10,6 +11,8 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <random>
+#include <string>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -779,4 +782,253 @@ TEST_CASE ("DirectBinaural: non-finite direction gives silent binaural gains (D-
     const BinauralGains ok = algo.computeBinauralGains ({ 0.3f, 0.1f, 0.5f }, ctx);
     CHECK (ok.leftGain > 0.0f);
     CHECK (std::isfinite (ok.rightDelaySamples));
+}
+
+// ----------------------------------------------------------------------------
+// D-04 verification against PyPI ear 2.1.0 (the generated EAR oracle header)
+// and full-sphere coverage: the lower hemisphere matches ear where ear is
+// exact (the nadir cap), is unity under every ear-level speaker, is continuous
+// across the horizon, and every sampled finite direction finds a triplet, so
+// the D-06b fallback is a safety net and never a code path for finite input.
+// ----------------------------------------------------------------------------
+
+namespace
+{
+/** build + append, exactly what RenderEngine::activateLayout stores. */
+std::vector<VBAPTriplet> combinedTriplets (const SpeakerLayout& layout)
+{
+    std::vector<VBAPTriplet> t;
+    buildVBAPTripletsForLayout (layout, t);
+    appendLowerHemisphereTriplets (layout, t);
+    return t;
+}
+
+/** Test-local finder, same arithmetic as computeVBAPGains3D: does ANY triplet
+    in the combined list have all three gains at or above -1e-6f? */
+bool anyTripletContains (const std::vector<VBAPTriplet>& triplets, float azRad, float elRad)
+{
+    const float px = std::cos (elRad) * std::sin (azRad);
+    const float py = std::cos (elRad) * std::cos (azRad);
+    const float pz = std::sin (elRad);
+
+    for (const auto& tri : triplets)
+    {
+        const float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;
+        const float g1 = tri.inv[1][0] * px + tri.inv[1][1] * py + tri.inv[1][2] * pz;
+        const float g2 = tri.inv[2][0] * px + tri.inv[2][1] * py + tri.inv[2][2] * pz;
+        if (g0 >= -1e-6f && g1 >= -1e-6f && g2 >= -1e-6f)
+            return true;
+    }
+    return false;
+}
+
+struct EarOracleSet
+{
+    LayoutID id;
+    OutputFormat format;
+    int numSpeakers;
+    const spatialcore_ref::EarCase* cases;
+    size_t numCases;
+};
+} // namespace
+
+TEST_CASE ("EAR oracle: VBAP matches PyPI ear 2.1.0 in the nadir-cap region on 5.1.2, 7.1.4 and 9.1.6 (D-04)",
+           "[ear][golden]")
+{
+    using namespace spatialcore_ref;
+    const EarOracleSet sets[] = {
+        { LayoutID::S5_1_2, OutputFormat::Surround5_1_2, kEarNumSpeakers_S5_1_2,
+          kEarCases_S5_1_2, std::size (kEarCases_S5_1_2) },
+        { LayoutID::S7_1_4, OutputFormat::Surround7_1_4, kEarNumSpeakers_S7_1_4,
+          kEarCases_S7_1_4, std::size (kEarCases_S7_1_4) },
+        { LayoutID::S9_1_6, OutputFormat::Surround9_1_6, kEarNumSpeakers_S9_1_6,
+          kEarCases_S9_1_6, std::size (kEarCases_S9_1_6) },
+    };
+
+    size_t casesChecked = 0;
+    for (const auto& set : sets)
+    {
+        EngineRig rig (set.format);
+        const SpeakerLayout& layout = getLayoutDef (set.id);
+        const auto triplets = combinedTriplets (layout);
+        INFO ("layout " << layoutName (set.id));
+        REQUIRE (rig.numSpeakers() == set.numSpeakers);
+        REQUIRE (layout.numSpeakers == set.numSpeakers);
+
+        for (size_t c = 0; c < set.numCases; ++c)
+        {
+            const auto& ec = set.cases[c];
+            INFO ("az " << ec.azimuthDeg << " el " << ec.elevationDeg);
+
+            float viaEngine[MAX_SPEAKERS] = {};
+            rig.gainsAt (ec.azimuthDeg, ec.elevationDeg, viaEngine);
+
+            float direct[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, juce::degreesToRadians (ec.azimuthDeg),
+                                juce::degreesToRadians (ec.elevationDeg), direct);
+
+            for (int s = 0; s < set.numSpeakers; ++s)
+            {
+                INFO ("speaker " << s);
+                CHECK_THAT (viaEngine[s], WithinAbs (ec.gains[s], 1e-5f));
+                CHECK_THAT (direct[s],    WithinAbs (ec.gains[s], 1e-5f));
+            }
+            ++casesChecked;
+        }
+    }
+    CHECK (casesChecked == 13);
+}
+
+TEST_CASE ("EAR: a source directly under any ear-level speaker of any height layout gets unity on it (D-04)",
+           "[ear]")
+{
+    const float earLevelLimit = juce::degreesToRadians (10.0f);
+
+    for (LayoutID id : kHeightLayouts)
+    {
+        const SpeakerLayout& layout = getLayoutDef (id);
+        const auto triplets = combinedTriplets (layout);
+        int earLevelSpeakers = 0;
+
+        for (int spk = 0; spk < layout.numSpeakers; ++spk)
+        {
+            if (std::abs (layout.speakers[spk].elevationRad) > earLevelLimit)
+                continue;
+            ++earLevelSpeakers;
+
+            float g[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, layout.speakers[spk].azimuthRad,
+                                juce::degreesToRadians (-15.0f), g);
+
+            INFO ("layout " << layoutName (id) << " speaker " << spk << " az "
+                  << juce::radiansToDegrees (layout.speakers[spk].azimuthRad));
+            for (int s = 0; s < layout.numSpeakers; ++s)
+            {
+                INFO ("gain on speaker " << s);
+                CHECK_THAT (g[s], WithinAbs (s == spk ? 1.0f : 0.0f, 1e-5f));
+            }
+        }
+        INFO ("layout " << layoutName (id));
+        CHECK (earLevelSpeakers >= 5);
+    }
+}
+
+TEST_CASE ("EAR: horizon continuity at every 0.1-degree azimuth on every height layout (D-04, F4)",
+           "[ear][continuity]")
+{
+    const float above = juce::degreesToRadians (0.05f);
+    const float below = juce::degreesToRadians (-0.05f);
+
+    for (LayoutID id : kHeightLayouts)
+    {
+        const SpeakerLayout& layout = getLayoutDef (id);
+        const auto triplets = combinedTriplets (layout);
+
+        float maxStep = 0.0f;
+        float worstAzDeg = 0.0f;
+        for (int k = 0; k < 3600; ++k)
+        {
+            const float azDeg = -180.0f + 0.1f * static_cast<float> (k);
+            const float az = juce::degreesToRadians (azDeg);
+
+            float gUp[MAX_SPEAKERS] = {};
+            float gDown[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, az, above, gUp);
+            computeVBAPGains3D (layout, triplets, az, below, gDown);
+
+            for (int s = 0; s < layout.numSpeakers; ++s)
+            {
+                const float step = std::abs (gUp[s] - gDown[s]);
+                if (step > maxStep)
+                {
+                    maxStep = step;
+                    worstAzDeg = azDeg;
+                }
+            }
+        }
+
+        // Run with -s to read the measured maximum per layout.
+        INFO ("layout " << layoutName (id) << " max horizon step " << maxStep << " at az " << worstAzDeg);
+        CHECK (maxStep <= 0.01f);
+    }
+}
+
+TEST_CASE ("EAR: every finite direction resolves to a triplet with unit power on every height layout (D-04, D-06)",
+           "[ear][coverage]")
+{
+    // The assumption-delta invariant recorded in Plan 02-01: for finite input
+    // the combined regular + lower-hemisphere list always has an enclosing
+    // triplet, so the D-06b fallback in computeVBAPGains3D is never reached.
+    const float elevatedLimit = juce::degreesToRadians (10.0f);
+    const float belowLimit    = juce::degreesToRadians (-1.0f);
+    const float pi = juce::MathConstants<float>::pi;
+
+    for (LayoutID id : kHeightLayouts)
+    {
+        const SpeakerLayout& layout = getLayoutDef (id);
+        const auto triplets = combinedTriplets (layout);
+
+        std::vector<std::pair<float, float>> dirs;   // (azRad, elRad)
+        dirs.reserve (40000 + 180 * 91 + MAX_SPEAKERS + 2);
+
+        std::mt19937_64 rng (42);
+        std::uniform_real_distribution<double> zDist (-1.0, 1.0);
+        std::uniform_real_distribution<double> azDist (-static_cast<double> (pi), static_cast<double> (pi));
+        for (int i = 0; i < 40000; ++i)
+        {
+            const double z = zDist (rng);
+            dirs.emplace_back (static_cast<float> (azDist (rng)), static_cast<float> (std::asin (z)));
+        }
+        for (int a = -180; a < 180; a += 2)
+            for (int e = -90; e <= 90; e += 2)
+                dirs.emplace_back (juce::degreesToRadians (static_cast<float> (a)),
+                                   juce::degreesToRadians (static_cast<float> (e)));
+        for (int s = 0; s < layout.numSpeakers; ++s)
+            dirs.emplace_back (layout.speakers[s].azimuthRad, layout.speakers[s].elevationRad);
+        dirs.emplace_back (0.0f,  pi * 0.5f);
+        dirs.emplace_back (0.0f, -pi * 0.5f);
+
+        long uncovered = 0, offUnit = 0, elevatedLeak = 0;
+        std::string firstFailure;
+        auto noteFailure = [&] (const char* what, float az, float el, float value)
+        {
+            if (firstFailure.empty())
+                firstFailure = std::string (what) + " at az " + std::to_string (juce::radiansToDegrees (az))
+                             + " el " + std::to_string (juce::radiansToDegrees (el))
+                             + " value " + std::to_string (value);
+        };
+
+        for (const auto& [az, el] : dirs)
+        {
+            if (! anyTripletContains (triplets, az, el))
+            {
+                ++uncovered;
+                noteFailure ("no enclosing triplet", az, el, 0.0f);
+            }
+
+            float g[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, az, el, g);
+
+            const float p = powerOf (g, layout.numSpeakers);
+            if (! (std::abs (p - 1.0f) <= 2e-6f))
+            {
+                ++offUnit;
+                noteFailure ("power off unit", az, el, p);
+            }
+
+            if (el <= belowLimit)
+                for (int s = 0; s < layout.numSpeakers; ++s)
+                    if (layout.speakers[s].elevationRad > elevatedLimit && g[s] != 0.0f)
+                    {
+                        ++elevatedLeak;
+                        noteFailure ("elevated speaker gain below the horizon", az, el, g[s]);
+                    }
+        }
+
+        INFO ("layout " << layoutName (id) << " directions " << dirs.size() << " first failure: " << firstFailure);
+        CHECK (dirs.size() == 40000 + 180 * 91 + static_cast<size_t> (layout.numSpeakers) + 2);
+        CHECK (uncovered == 0);
+        CHECK (offUnit == 0);
+        CHECK (elevatedLeak == 0);
+    }
 }
