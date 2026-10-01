@@ -77,7 +77,7 @@ named gaps, it does not rebuild the modules.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 
-**Plans**: 3/7 plans executed
+**Plans**: 4/7 plans executed
 
 Plans:
 **Wave 1**
@@ -86,7 +86,7 @@ Plans:
 - [x] 02-03-PLAN.md — File the coplanar-quad tie-break issue with the measured jumps, after human approval of the text *(wave 1)*
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 02-04-PLAN.md — Playback safety in both layers (non-finite silence, bounded wrap, best-triplet fallback, engine hold-last-good) and the ear-oracle / coverage verification of the lower hemisphere *(wave 2)*
+- [x] 02-04-PLAN.md — Playback safety in both layers (non-finite silence, bounded wrap, best-triplet fallback, engine hold-last-good) and the ear-oracle / coverage verification of the lower hemisphere *(wave 2)*
 - [ ] 02-05-PLAN.md — Textbook single-band VBIP, MDAP/DBAP corrections, and the panning-law suite for all 8 algorithms with D-18-scoped continuity *(wave 2)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -221,7 +221,7 @@ External Dependencies.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
-| 2. Algorithm & Format Verification | 3/7 | In Progress|  |
+| 2. Algorithm & Format Verification | 4/7 | In Progress|  |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
