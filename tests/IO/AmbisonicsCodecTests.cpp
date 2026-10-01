@@ -2,13 +2,43 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/IO/AmbisonicsCodec.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include <SpatialCore/Core/SpatialMath.h>
+#include "../reference/ShReference.h"
+#include <algorithm>
 #include <cmath>
+#include <random>
+#include <utility>
+#include <vector>
 
 using namespace spatialcore;
 using Catch::Matchers::WithinAbs;
 
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kDegToRad = kPi / 180.0f;
+
+namespace
+{
+    constexpr int kNumShChannels = AmbisonicsCodec::MAX_AMBI_CHANNELS;   // 49, order 6
+
+    // ACN -> (l, m): l = floor(sqrt(acn)), m = acn - l*l - l.
+    int shOrderOf (int acn)  { return static_cast<int> (std::floor (std::sqrt (static_cast<double> (acn)))); }
+    int shDegreeOf (int acn) { const int l = shOrderOf (acn); return acn - l * l - l; }
+
+    // Directions uniform on the sphere, fixed seed: az in [-pi, pi), el = asin(u), u in [-1, 1].
+    std::vector<std::pair<float, float>> seededDirections (int count, unsigned long long seed)
+    {
+        std::mt19937_64 rng (seed);
+        std::uniform_real_distribution<double> azDist (-static_cast<double> (kPi), static_cast<double> (kPi));
+        std::uniform_real_distribution<double> zDist (-1.0, 1.0);
+
+        std::vector<std::pair<float, float>> dirs;
+        dirs.reserve (static_cast<size_t> (count));
+        for (int i = 0; i < count; ++i)
+            dirs.emplace_back (static_cast<float> (azDist (rng)),
+                               static_cast<float> (std::asin (zDist (rng))));
+        return dirs;
+    }
+}
 
 // ============================================================================
 // AmbisonicsCodec::evaluateSH -- spot-check a handful of known closed-form
@@ -134,4 +164,88 @@ TEST_CASE("AmbisonicsCodec: applyMaxREWeights leaves W channel unweighted at ord
     CHECK_THAT(coeffs[0], WithinAbs(1.0f, 1e-5f));
     // Higher-order channels get progressively attenuated (weight < 1)
     CHECK(coeffs[9] < 1.0f);
+}
+
+// ============================================================================
+// Spherical harmonics correctness (D-08, D-11b, D-11c, D-05; SpatialCore#11).
+// The reference values come only from tests/reference/ShReference.h, which
+// scipy generated offline (two independent routes) -- never from the code
+// under test. Convention: ACN order, SN3D, no Condon-Shortley phase.
+// ============================================================================
+TEST_CASE("SH: evalSH and AmbisonicsCodec::evaluateSH match 49 scipy reference values at az=64 el=10 (D-11c)",
+          "[ambisonics][sn3d][golden]")
+{
+    const float az = spatialcore_ref::kShRefAzimuthDeg * kDegToRad;
+    const float el = spatialcore_ref::kShRefElevationDeg * kDegToRad;
+
+    // Every value has a magnitude of at least 0.072, both signs occur at every
+    // order, and 64/10 degrees is asymmetric, so this table catches a wrong
+    // scale, an m/-m swap, a sign flip, azimuth or elevation reversal and a
+    // Condon-Shortley phase.
+    for (int c = 0; c < kNumShChannels; ++c)
+    {
+        INFO("ACN " << c << " (l=" << shOrderOf (c) << ", m=" << shDegreeOf (c) << ")");
+        CHECK_THAT(evalSH (c, az, el), WithinAbs(spatialcore_ref::kShRef_az64_el10[c], 1e-5f));
+        CHECK_THAT(AmbisonicsCodec::evaluateSH (c, az, el), WithinAbs(spatialcore_ref::kShRef_az64_el10[c], 1e-5f));
+    }
+}
+
+TEST_CASE("SH: SN3D addition theorem, sum over m of Y_lm^2 == 1 at orders 1-6 (D-11b)", "[ambisonics][sn3d]")
+{
+    auto dirs = seededDirections (2000, 42);
+    dirs.emplace_back (0.0f, kPi * 0.5f);           // zenith
+    dirs.emplace_back (0.0f, -kPi * 0.5f);          // nadir
+    dirs.emplace_back (1.234f, kPi * 0.5f);         // zenith, arbitrary azimuth
+    dirs.emplace_back (-2.5f, -kPi * 0.5f);         // nadir, arbitrary azimuth
+    for (int k = 0; k < 8; ++k)                      // the horizon
+        dirs.emplace_back (-kPi + static_cast<float> (k) * kPi * 0.25f, 0.0f);
+
+    for (int l = 1; l <= AmbisonicsCodec::MAX_AMBI_ORDER; ++l)
+    {
+        double worst = 0.0;
+        std::pair<float, float> worstDir { 0.0f, 0.0f };
+        for (const auto& d : dirs)
+        {
+            double sum = 0.0;
+            for (int acn = l * l; acn < (l + 1) * (l + 1); ++acn)
+            {
+                const double y = evalSH (acn, d.first, d.second);
+                sum += y * y;
+            }
+            const double dev = std::abs (sum - 1.0);
+            if (dev > worst) { worst = dev; worstDir = d; }
+        }
+        INFO("order " << l << ": worst |sum - 1| = " << worst
+             << " at az=" << worstDir.first << " el=" << worstDir.second << " rad");
+        CHECK(worst <= 2e-5);
+    }
+}
+
+TEST_CASE("SH: negative elevation keeps its true sign, Y(az,-el) = (-1)^(l+|m|) Y(az,el) (D-05)", "[ambisonics][sn3d]")
+{
+    const auto dirs = seededDirections (200, 7);
+    for (int c = 0; c < kNumShChannels; ++c)
+    {
+        const int l = shOrderOf (c);
+        const int m = shDegreeOf (c);
+        const float parity = ((l + std::abs (m)) % 2 == 0) ? 1.0f : -1.0f;
+
+        float worst = 0.0f;
+        for (const auto& d : dirs)
+            worst = std::max (worst, std::abs (evalSH (c, d.first, -d.second)
+                                               - parity * evalSH (c, d.first, d.second)));
+        INFO("ACN " << c << " (l=" << l << ", m=" << m << "), worst parity error " << worst);
+        CHECK(worst <= 1e-5f);
+    }
+}
+
+TEST_CASE("SH: AmbisonicsCodec::evaluateSH forwards to evalSH bit-for-bit (D-08)", "[ambisonics]")
+{
+    const auto dirs = seededDirections (500, 1234);
+    int mismatches = 0;
+    for (int c = 0; c < kNumShChannels; ++c)
+        for (const auto& d : dirs)
+            if (AmbisonicsCodec::evaluateSH (c, d.first, d.second) != evalSH (c, d.first, d.second))
+                ++mismatches;
+    CHECK(mismatches == 0);
 }
