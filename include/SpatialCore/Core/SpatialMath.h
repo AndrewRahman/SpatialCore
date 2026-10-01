@@ -34,8 +34,13 @@ inline void cartesianToPolar (float x, float y, float z,
 // Removed; SpeakerLayout.h is already #included above, so callers of this
 // header get the canonical declaration automatically.
 //==============================================================================
-// v1.0: 3D nearest-speaker fallback -- used when triplets are empty on a 3D layout.
-// Prevents 2D fallback from routing signal to height speakers for horizontal sources.
+// DEPRECATED (comment-only): 3D nearest-speaker snap, scheduled for removal at
+// the next major version. No SpatialCore code calls it since Phase 2 (D-01):
+// height layouts always carry VBAP triplets, and below-horizon directions use
+// the ITU-R BS.2127 (EAR) lower-hemisphere triplets (D-04). It is kept, body
+// and signature unchanged, because removing a public inline function is a
+// major-version change under the CLAUDE.md versioning rule. No deprecation
+// attribute: in a header it would add warnings to consumer builds (RESEARCH F9).
 //==============================================================================
 inline void nearestSpeaker3DFallback (const SpeakerLayout& layout,
                                       float azimuthRad, float elevationRad,

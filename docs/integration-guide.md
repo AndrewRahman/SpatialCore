@@ -176,6 +176,57 @@ Every SML plugin follows the same architecture:
 └─────────────────────────────────────────────┘
 ```
 
+## Ambisonics and panning conventions
+
+What a consumer can rely on when it reads SpatialCore's output. Each statement restates a code
+docblock; if the two ever disagree, the code is right and this section is the defect.
+
+### Ambisonics channel convention
+
+From the `evalSH` docblock in `include/SpatialCore/Core/SpatialMath.h`: real spherical harmonics,
+ACN channel order (`acn = l*l + l + m`; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
+normalisation (the sum over m of Y_lm^2 is 1 at every order l), no Condon-Shortley phase, angles in
+radians, azimuth 0 = front, positive azimuth toward +Y (left), elevation 0 = horizon, positive up.
+This is the AmbiX convention.
+
+`spatialcore::evalSH` is the single spherical-harmonic evaluator in SpatialCore;
+`AmbisonicsCodec::evaluateSH` forwards to it, and both names stay public. Orders 4-6 were corrected
+to true SN3D in Phase 2 (22 constants; AndrewRahman/SpatialCore#11), so a consumer decoding 4OA-6OA
+output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
+
+### Panning behaviour a consumer can observe
+
+- **VBIP is the textbook law** (Pernaux, Boussard & Jot, DAFx-98): the VBAP gains are raised to
+  exponent 1/2 and renormalised to unit power, which aims the energy vector at the source. It is
+  wider than VBAP between speakers. It is single-band: the paper's VBIP half (above 700 Hz) applies
+  at all frequencies, and dual-band VBAP/VBIP is tracked in AndrewRahman/SpatialCore#20.
+- **Below the horizon on height layouts** (no shipped layout has speakers below ear level), VBAP,
+  VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at
+  -30 degrees under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level
+  speakers (the nadir at 1/sqrt(n) to each of the n ear-level speakers) and power-normalised. From
+  0 to -30 degrees a source stays on the ear-level speakers its horizon pan uses; from -30 to -90 it
+  blends to equal gain on the whole ear-level ring. VBAP and VBIP put no gain on an elevated
+  speaker for a source at or below -1 degree; MDAP's spread ring can still reach one just below the
+  horizon. Binaural and Ambisonics output keep the true negative elevation.
+- **3D VBAP picks the minimum-gain-sum triplet** (the tightest enclosing triangle). Where two
+  triangulations of a coplanar speaker quad tie exactly, float rounding decides, so a small azimuth
+  move above the horizon can jump the gains; this is tracked in AndrewRahman/SpatialCore#22 and not
+  fixed. If no triplet encloses a finite direction (measured never to happen on a shipped layout),
+  the triplet with the largest minimum gain is used, negatives clamped to 0, renormalised.
+
+### Non-finite positions
+
+- `RenderEngine::renderBlock` holds the last finite azimuth, elevation and distance per object,
+  field by field, before every render path. A field that has never been finite renders as azimuth
+  0, elevation 0, distance 0.5.
+- A consumer that calls `SpatializationAlgorithm::computeGains` directly (as OpenSpatialDelay
+  does) bypasses that hold and is protected by the algorithm layer instead: every algorithm returns
+  finite gains or silence and never hangs. VBAP, VBIP, MDAP, KNN and DirectBinaural return silence
+  for a non-finite direction, and the 2D VBAP path wraps a huge finite azimuth with a bounded
+  `std::remainder` instead of looping.
+- These guards live in SpatialCore `.cpp` files, so compiling the consumer with `-ffast-math` does
+  not disable them. SpatialCore's own sources must not be compiled with fast-math.
+
 ## What to Keep vs Replace
 
 | Keep from SpatialCore | Replace with Your DSP |
