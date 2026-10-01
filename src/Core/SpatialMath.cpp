@@ -1,5 +1,9 @@
 #include <SpatialCore/Core/SpatialMath.h>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 namespace spatialcore
 {
 
@@ -125,9 +129,21 @@ void computeVBAPGains2D (const SpeakerLayout& layout,
 
     if (N < 2) return;
 
-    // Normalize azimuth to [-pi, pi]
-    while (azimuthRad > juce::MathConstants<float>::pi)  azimuthRad -= 2.0f * juce::MathConstants<float>::pi;
-    while (azimuthRad < -juce::MathConstants<float>::pi) azimuthRad += 2.0f * juce::MathConstants<float>::pi;
+    // Non-finite azimuth -> silence (D-06, D-19i). This guard must stay in a
+    // .cpp: OpenSpatialDelay compiles with -ffast-math, which folds a
+    // header-inline std::isfinite to true (RESEARCH F9).
+    if (! std::isfinite (azimuthRad)) return;
+
+    constexpr float kPi    = juce::MathConstants<float>::pi;
+    constexpr float kTwoPi = 2.0f * juce::MathConstants<float>::pi;
+
+    // Normalize azimuth to [-pi, pi] with one bounded std::remainder (D-19i).
+    // The old unbounded while loops never terminated for |az| >~ 1e9 rad
+    // (RESEARCH F7). Values already in [-pi, pi] are untouched, and up to 3*pi
+    // remainder equals the old single subtraction exactly (Sterbenz), so
+    // in-range and engine-produced results stay bit-identical.
+    if (std::abs (azimuthRad) > kPi)
+        azimuthRad = std::remainder (azimuthRad, kTwoPi);
 
     // Find the two speakers that span the source azimuth
     // Sort speaker azimuths for efficient pair finding
@@ -137,9 +153,9 @@ void computeVBAPGains2D (const SpeakerLayout& layout,
     {
         sorted[s].index = s;
         sorted[s].az = layout.speakers[s].azimuthRad;
-        // Normalize to [-pi, pi]
-        while (sorted[s].az > juce::MathConstants<float>::pi)  sorted[s].az -= 2.0f * juce::MathConstants<float>::pi;
-        while (sorted[s].az < -juce::MathConstants<float>::pi) sorted[s].az += 2.0f * juce::MathConstants<float>::pi;
+        // Normalize to [-pi, pi] (bounded, D-19i)
+        if (std::abs (sorted[s].az) > kPi)
+            sorted[s].az = std::remainder (sorted[s].az, kTwoPi);
     }
     std::sort (sorted, sorted + N, [](const SpkAz& a, const SpkAz& b) { return a.az < b.az; });
 
@@ -229,6 +245,14 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
     for (int s = 0; s < N; ++s)
         outGains[s] = 0.0f;
 
+    // Non-finite direction -> silence (D-06, D-19i); kept in this .cpp so a
+    // -ffast-math consumer cannot fold it away (RESEARCH F9). Finite angles are
+    // deliberately NOT wrapped here: there is no loop to bound, sin/cos are
+    // finite for any finite input, and leaving them alone keeps every finite
+    // input bit-identical to d43cb15 (D-06b).
+    if (! std::isfinite (azimuthRad) || ! std::isfinite (elevationRad))
+        return;
+
     // Source direction as unit Cartesian vector
     float px = std::cos (elevationRad) * std::sin (azimuthRad);
     float py = std::cos (elevationRad) * std::cos (azimuthRad);
@@ -237,6 +261,13 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
     float bestGainSum = 1e30f;   // Start high -- pick MINIMUM sum (tightest enclosing triangle)
     int bestTri = -1;
     float bestG[3] = {};
+
+    // D-06b safety net: the triplet with the largest min (g0, g1, g2) seen by
+    // the passes that ran. Pass 1 only runs when pass 0 found nothing, so when
+    // neither pass encloses the direction this candidate covers the whole list.
+    float fallbackMin = -std::numeric_limits<float>::infinity();
+    int fallbackTri = -1;
+    float fallbackG[3] = {};
 
     // Regular triplets are always tried before lower-hemisphere ones (pass 0
     // then pass 1), so above-horizon output is bit-identical to the pre-change
@@ -267,10 +298,41 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
                     bestG[2] = std::max (0.0f, g2);
                 }
             }
+
+            const float minGain = std::min (g0, std::min (g1, g2));
+            if (minGain > fallbackMin)
+            {
+                fallbackMin = minGain;
+                fallbackTri = t;
+                fallbackG[0] = g0;
+                fallbackG[1] = g1;
+                fallbackG[2] = g2;
+            }
         }
     }
 
-    if (bestTri >= 0 && ! triplets[static_cast<size_t> (bestTri)].lowerHemisphere)
+    if (bestTri < 0)
+    {
+        // No triplet encloses this finite direction. Measured never to happen
+        // for finite input on any shipped height layout (D-06; the [ear][coverage]
+        // test), so this is a safety net, not a code path: the one diagnostic
+        // permitted on the audio path is this Debug-only assert (D-06c).
+        jassertfalse;
+
+        if (fallbackTri < 0)
+            return;   // empty triplet list: silence
+
+        // Use the largest-minimum-gain triplet, negatives clamped to 0; the
+        // output mapping below (power scale or nadir downmix) then treats it
+        // exactly like a found triplet of its kind.
+        bestTri = fallbackTri;
+        bestG[0] = std::max (0.0f, fallbackG[0]);
+        bestG[1] = std::max (0.0f, fallbackG[1]);
+        bestG[2] = std::max (0.0f, fallbackG[2]);
+    }
+
+    // bestTri >= 0 from here on: a found triplet or the D-06b candidate.
+    if (! triplets[static_cast<size_t> (bestTri)].lowerHemisphere)
     {
         float power = bestG[0] * bestG[0] + bestG[1] * bestG[1] + bestG[2] * bestG[2];
         float scale = (power > 1e-12f) ? (1.0f / std::sqrt (power)) : 0.0f;
@@ -279,7 +341,7 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
         outGains[triplets[static_cast<size_t> (bestTri)].j] = bestG[1] * scale;
         outGains[triplets[static_cast<size_t> (bestTri)].k] = bestG[2] * scale;
     }
-    else if (bestTri >= 0)
+    else
     {
         // Lower-hemisphere triplet (D-04): each slot's gain accumulates onto
         // the real ear-level speaker it downmixes to (duplicates are legal);
@@ -313,25 +375,6 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
             for (int s = 0; s < N; ++s)
                 outGains[s] *= scale;
         }
-    }
-    else
-    {
-        // Fallback: nearest speaker
-        float bestDot = -2.0f;
-        int bestSpeaker = 0;
-        for (int s = 0; s < N; ++s)
-        {
-            float sx = std::cos (layout.speakers[s].elevationRad) * std::sin (layout.speakers[s].azimuthRad);
-            float sy = std::cos (layout.speakers[s].elevationRad) * std::cos (layout.speakers[s].azimuthRad);
-            float sz = std::sin (layout.speakers[s].elevationRad);
-            float dot = px * sx + py * sy + pz * sz;
-            if (dot > bestDot)
-            {
-                bestDot = dot;
-                bestSpeaker = s;
-            }
-        }
-        outGains[bestSpeaker] = 1.0f;
     }
 }
 

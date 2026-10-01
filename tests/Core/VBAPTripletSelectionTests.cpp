@@ -4,7 +4,13 @@
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <limits>
+#include <memory>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -180,6 +186,110 @@ float powerOf (const float* g, int n)
     for (int s = 0; s < n; ++s)
         p += g[s] * g[s];
     return p;
+}
+
+/** Instantiate one of every algorithm named in AllAlgorithmTypes (copied from
+    tests/Core/CountsTests.cpp). The pack is deduced from the header's own list,
+    so a 9th algorithm is swept automatically. Test scope only. */
+template <typename... Algorithms>
+std::vector<std::unique_ptr<SpatializationAlgorithm>>
+instantiateAll (AlgorithmTypeList<Algorithms...>)
+{
+    std::vector<std::unique_ptr<SpatializationAlgorithm>> out;
+    out.reserve (sizeof...(Algorithms));
+    (out.emplace_back (std::make_unique<Algorithms>()), ...);
+    return out;
+}
+
+/** Run fn on its own thread and wait up to limit for it to finish. Returns true
+    if it finished (the thread is joined) and false if it timed out (the thread
+    is detached and left running). std::async is deliberately not used: its
+    future blocks in the destructor on a hung task, which would turn a
+    regression into a hung test binary instead of a failure. fn must only touch
+    state it owns through a captured std::shared_ptr, so a detached, stuck thread
+    never reads or writes freed memory. */
+template <typename Fn>
+bool runWithWatchdog (Fn fn, std::chrono::milliseconds limit)
+{
+    auto done = std::make_shared<std::atomic<bool>> (false);
+    std::thread worker ([fn = std::move (fn), done]() mutable
+    {
+        fn();
+        done->store (true);
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    while (! done->load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for (std::chrono::milliseconds (1));
+
+    if (done->load())
+    {
+        worker.join();
+        return true;
+    }
+
+    worker.detach();
+    return false;
+}
+
+bool allFiniteGains (const float* g, int n)
+{
+    for (int s = 0; s < n; ++s)
+        if (! std::isfinite (g[s]))
+            return false;
+    return true;
+}
+
+bool allZeroGains (const float* g, int n)
+{
+    for (int s = 0; s < n; ++s)
+        if (g[s] != 0.0f)
+            return false;
+    return true;
+}
+
+/** The D-06b rule, written independently of computeVBAPGains3D for regular
+    triplets: the triplet with the largest min (g0, g1, g2) over the whole list
+    (first one wins a tie), negatives clamped to 0, power-normalised. */
+void largestMinGainReference (const std::vector<VBAPTriplet>& triplets,
+                              float azRad, float elRad, float* out, int numSpeakers)
+{
+    for (int s = 0; s < numSpeakers; ++s)
+        out[s] = 0.0f;
+
+    const float px = std::cos (elRad) * std::sin (azRad);
+    const float py = std::cos (elRad) * std::cos (azRad);
+    const float pz = std::sin (elRad);
+
+    int best = -1;
+    float bestMin = -std::numeric_limits<float>::infinity();
+    float g[3] = {};
+    for (size_t t = 0; t < triplets.size(); ++t)
+    {
+        const auto& tri = triplets[t];
+        const float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;
+        const float g1 = tri.inv[1][0] * px + tri.inv[1][1] * py + tri.inv[1][2] * pz;
+        const float g2 = tri.inv[2][0] * px + tri.inv[2][1] * py + tri.inv[2][2] * pz;
+        const float mn = std::min (g0, std::min (g1, g2));
+        if (mn > bestMin)
+        {
+            bestMin = mn;
+            best = static_cast<int> (t);
+            g[0] = std::max (0.0f, g0);
+            g[1] = std::max (0.0f, g1);
+            g[2] = std::max (0.0f, g2);
+        }
+    }
+
+    if (best < 0)
+        return;
+
+    const float power = g[0] * g[0] + g[1] * g[1] + g[2] * g[2];
+    const float scale = (power > 1e-12f) ? 1.0f / std::sqrt (power) : 0.0f;
+    const auto& tri = triplets[static_cast<size_t> (best)];
+    out[tri.i] = g[0] * scale;
+    out[tri.j] = g[1] * scale;
+    out[tri.k] = g[2] * scale;
 }
 } // namespace
 
@@ -359,4 +469,314 @@ TEST_CASE ("DR-3: the public surface OpenSpatialDelay compiles against is unchan
     CHECK (vbap3dFn != nullptr);
     CHECK (heightFn != nullptr);
     CHECK (buildFn != nullptr);
+}
+
+// ----------------------------------------------------------------------------
+// D-06 / D-19 robustness: no position value may hang an algorithm or make it
+// emit a non-finite gain. Every batch runs under a 2-second watchdog, because
+// before the D-19 fix computeVBAPGains2D looped forever on +inf and on any
+// azimuth of about 1e9 rad (RESEARCH F7).
+// ----------------------------------------------------------------------------
+
+namespace
+{
+constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+constexpr float kInf = std::numeric_limits<float>::infinity();
+
+// Static storage: a detached (stuck) worker can still read these safely.
+const float kRobustAzimuths[]   = { kNaN, kInf, -kInf, 1e30f, -1e30f, 1e9f, -1e9f, 1e6f, 0.3f };
+const float kRobustElevations[] = { 0.0f, kNaN, kInf, -kInf, 1e30f, -0.4f };
+const float kRobustDistances[]  = { 0.5f, kNaN };
+
+constexpr auto kWatchdogLimit = std::chrono::milliseconds (2000);
+
+struct RobustRecord
+{
+    int algo = 0;
+    float az = 0.0f, el = 0.0f, dist = 0.0f;
+    float g[MAX_SPEAKERS] = {};
+    bool hasBinaural = false;
+    BinauralGains bg;
+};
+
+/** Everything a robustness worker touches, owned through one shared_ptr. */
+struct RobustState
+{
+    EngineRig rig;
+    std::vector<std::unique_ptr<SpatializationAlgorithm>> algos;
+    std::vector<RobustRecord> records;
+
+    explicit RobustState (OutputFormat format)
+        : rig (format), algos (instantiateAll (AllAlgorithmTypes{}))
+    {
+        records.reserve (algos.size() * std::size (kRobustAzimuths)
+                         * std::size (kRobustElevations) * std::size (kRobustDistances));
+    }
+};
+
+bool isVBAPFamilyOrKNN (const SpatializationAlgorithm& a)
+{
+    return dynamic_cast<const VBAPAlgorithm*> (&a) != nullptr
+        || dynamic_cast<const VBIPAlgorithm*> (&a) != nullptr
+        || dynamic_cast<const MDAPAlgorithm*> (&a) != nullptr
+        || dynamic_cast<const KNNAlgorithm*> (&a) != nullptr;
+}
+
+bool binauralAllZero (const BinauralGains& b)
+{
+    return b.leftGain == 0.0f && b.rightGain == 0.0f
+        && b.leftDelaySamples == 0.0f && b.rightDelaySamples == 0.0f;
+}
+} // namespace
+
+TEST_CASE ("Robustness: every algorithm returns finite gains or silence and never hangs for non-finite or huge positions (D-06, D-19)",
+           "[robust]")
+{
+    for (OutputFormat format : { OutputFormat::Quad, OutputFormat::Surround7_1_4 })
+    {
+        auto state = std::make_shared<RobustState> (format);
+        const int n = state->rig.numSpeakers();
+        const bool is3D = ! state->rig.engine.getActiveLayout().vbapTriplets.empty();
+        REQUIRE (state->algos.size() == static_cast<size_t> (NUM_ALGORITHMS));
+        REQUIRE (is3D == (format == OutputFormat::Surround7_1_4));
+
+        const bool finished = runWithWatchdog ([state]
+        {
+            const LayoutContext ctx = state->rig.context();
+            const int numSpk = state->rig.numSpeakers();
+            const BinauralContext bctx { 1, kSampleRate, kDefaultBinauralProfiles };
+
+            for (size_t a = 0; a < state->algos.size(); ++a)
+                for (float az : kRobustAzimuths)
+                    for (float el : kRobustElevations)
+                        for (float dist : kRobustDistances)
+                        {
+                            RobustRecord r;
+                            r.algo = static_cast<int> (a);
+                            r.az = az; r.el = el; r.dist = dist;
+                            const SourcePosition src { az, el, dist };
+                            state->algos[a]->computeGains (src, ctx, r.g, numSpk);
+                            if (state->algos[a]->supportsBinauralDirect())
+                            {
+                                r.hasBinaural = true;
+                                r.bg = state->algos[a]->computeBinauralGains (src, bctx);
+                            }
+                            state->records.push_back (r);
+                        }
+        }, kWatchdogLimit);
+
+        INFO ("format " << (is3D ? "7.1.4" : "Quad"));
+        REQUIRE (finished);   // a hang here is the F7 infinite wrap loop
+        REQUIRE (state->records.size() == state->algos.size() * std::size (kRobustAzimuths)
+                                          * std::size (kRobustElevations) * std::size (kRobustDistances));
+
+        bool sawBinaural = false;
+        for (const auto& r : state->records)
+        {
+            const auto& algo = *state->algos[static_cast<size_t> (r.algo)];
+            INFO (algo.getName().toStdString() << " az " << r.az << " el " << r.el << " dist " << r.dist);
+
+            CHECK (allFiniteGains (r.g, n));
+            const float p = powerOf (r.g, n);
+
+            // Pre-D-14 VBIP squares unit-power VBAP gains and its "normalise to
+            // constant power" step is a no-op (RESEARCH F1), so today its gains
+            // sum to 1 instead of their squares. Plan 02-05 (D-14) makes VBIP
+            // unit-power; once it lands this carve-out is dead and should go.
+            float amplitudeSum = 0.0f;
+            for (int s = 0; s < n; ++s)
+                amplitudeSum += r.g[s];
+            const bool vbipPreD14 = dynamic_cast<const VBIPAlgorithm*> (&algo) != nullptr
+                                 && std::abs (amplitudeSum - 1.0f) <= 1e-4f;
+
+            CHECK ((p == 0.0f || std::abs (p - 1.0f) <= 1e-4f || vbipPreD14));
+
+            if (isVBAPFamilyOrKNN (algo))
+            {
+                const bool knn = dynamic_cast<const KNNAlgorithm*> (&algo) != nullptr;
+                if (! std::isfinite (r.az))
+                    CHECK (allZeroGains (r.g, n));
+                if (! std::isfinite (r.el) && (is3D || knn))
+                    CHECK (allZeroGains (r.g, n));
+            }
+
+            if (r.hasBinaural)
+            {
+                sawBinaural = true;
+                CHECK (std::isfinite (r.bg.leftGain));
+                CHECK (std::isfinite (r.bg.rightGain));
+                CHECK (std::isfinite (r.bg.leftDelaySamples));
+                CHECK (std::isfinite (r.bg.rightDelaySamples));
+                if (! std::isfinite (r.az) || ! std::isfinite (r.el))
+                    CHECK (binauralAllZero (r.bg));
+            }
+        }
+        CHECK (sawBinaural);
+    }
+}
+
+namespace
+{
+/** Everything the direct 2D/3D worker touches, owned through one shared_ptr. */
+struct DirectVBAPState
+{
+    EngineRig quad { OutputFormat::Quad };
+    EngineRig s714 { OutputFormat::Surround7_1_4 };
+
+    float nanAz[MAX_SPEAKERS] = {}, posInfAz[MAX_SPEAKERS] = {}, negInfAz[MAX_SPEAKERS] = {};
+    float huge1e9[MAX_SPEAKERS] = {}, huge1e30[MAX_SPEAKERS] = {};
+    float at3_5[MAX_SPEAKERS] = {}, at3_5Wrapped[MAX_SPEAKERS] = {};
+    float el3dNaN[MAX_SPEAKERS] = {}, el3dInf[MAX_SPEAKERS] = {};
+    float az3dNaN[MAX_SPEAKERS] = {}, az3dInf[MAX_SPEAKERS] = {};
+};
+
+void fillSentinel (float* g)
+{
+    for (int s = 0; s < MAX_SPEAKERS; ++s)
+        g[s] = 7.0f;
+}
+} // namespace
+
+TEST_CASE ("computeVBAPGains2D/3D: non-finite gives silence, huge finite azimuths are wrapped not looped (D-19)",
+           "[robust]")
+{
+    auto st = std::make_shared<DirectVBAPState>();
+    const int nQuad = st->quad.numSpeakers();
+    const int n714  = st->s714.numSpeakers();
+    REQUIRE (st->quad.engine.getActiveLayout().vbapTriplets.empty());
+    REQUIRE_FALSE (st->s714.engine.getActiveLayout().vbapTriplets.empty());
+
+    // The float 2*pi the pre-change loop subtracted.
+    const float twoPi = 2.0f * juce::MathConstants<float>::pi;
+
+    const bool finished = runWithWatchdog ([st, twoPi]
+    {
+        const auto& quad = st->quad.engine.getActiveLayout().layout;
+        float* outs[] = { st->nanAz, st->posInfAz, st->negInfAz, st->el3dNaN, st->el3dInf,
+                          st->az3dNaN, st->az3dInf };
+        for (float* g : outs)
+            fillSentinel (g);
+
+        computeVBAPGains2D (quad, kNaN,  st->nanAz);
+        computeVBAPGains2D (quad, kInf,  st->posInfAz);
+        computeVBAPGains2D (quad, -kInf, st->negInfAz);
+        computeVBAPGains2D (quad, 1e9f,  st->huge1e9);
+        computeVBAPGains2D (quad, 1e30f, st->huge1e30);
+        computeVBAPGains2D (quad, 3.5f,  st->at3_5);
+        computeVBAPGains2D (quad, 3.5f - twoPi, st->at3_5Wrapped);
+
+        const auto& ls = st->s714.engine.getActiveLayout();
+        computeVBAPGains3D (ls.layout, ls.vbapTriplets, 0.3f, kNaN, st->el3dNaN);
+        computeVBAPGains3D (ls.layout, ls.vbapTriplets, 0.3f, kInf, st->el3dInf);
+        computeVBAPGains3D (ls.layout, ls.vbapTriplets, kNaN, 0.2f, st->az3dNaN);
+        computeVBAPGains3D (ls.layout, ls.vbapTriplets, kInf, 0.2f, st->az3dInf);
+    }, kWatchdogLimit);
+
+    REQUIRE (finished);   // a hang here is the F7 infinite wrap loop
+
+    CHECK (allZeroGains (st->nanAz, nQuad));
+    CHECK (allZeroGains (st->posInfAz, nQuad));
+    CHECK (allZeroGains (st->negInfAz, nQuad));
+
+    CHECK (allFiniteGains (st->huge1e9, nQuad));
+    CHECK (allFiniteGains (st->huge1e30, nQuad));
+    CHECK_THAT (powerOf (st->huge1e9, nQuad),  WithinAbs (1.0f, 1e-5f));
+    CHECK_THAT (powerOf (st->huge1e30, nQuad), WithinAbs (1.0f, 1e-5f));
+
+    // 3.5 rad was wrapped by one exact subtraction before; it still must be.
+    for (int s = 0; s < nQuad; ++s)
+    {
+        INFO ("speaker " << s);
+        CHECK (st->at3_5[s] == st->at3_5Wrapped[s]);
+    }
+
+    CHECK (allZeroGains (st->el3dNaN, n714));
+    CHECK (allZeroGains (st->el3dInf, n714));
+    CHECK (allZeroGains (st->az3dNaN, n714));
+    CHECK (allZeroGains (st->az3dInf, n714));
+}
+
+TEST_CASE ("computeVBAPGains3D: no enclosing triplet uses the largest-minimum-gain triplet; an empty list is silent (D-06b)",
+           "[robust]")
+{
+    // NOTE: both calls below take the no-triplet path, which fires the D-06c
+    // Debug-only jassertfalse. The "JUCE Assertion failure in SpatialMath.cpp"
+    // lines this prints in a Debug run are expected.
+    const SpeakerLayout& layout = getLayoutDef (LayoutID::S7_1_4);
+    const int n = layout.numSpeakers;
+
+    std::vector<VBAPTriplet> regular;
+    buildVBAPTripletsForLayout (layout, regular);
+    REQUIRE_FALSE (regular.empty());
+    for (const auto& t : regular)
+        REQUIRE_FALSE (t.lowerHemisphere);
+
+    // (30, -60) is the plan's probe; there the rule's answer happens to be unity
+    // on one speaker, the same as the old nearest-speaker snap. (15, -10) and
+    // (60, -10) are added because there the rule gives two non-zero gains
+    // (measured 0.9717 / 0.2361 and 0.7532 / 0.6578), which no snap can produce.
+    const float probesDeg[][2] = { { 30.0f, -60.0f }, { 15.0f, -10.0f }, { 60.0f, -10.0f } };
+    int maxNonZero = 0;
+
+    for (const auto& probe : probesDeg)
+    {
+        const float az = juce::degreesToRadians (probe[0]);
+        const float el = juce::degreesToRadians (probe[1]);
+        INFO ("az " << probe[0] << " el " << probe[1]);
+
+        // Precondition: no regular triplet encloses this direction.
+        REQUIRE_FALSE (regularTripletContains (regular, az, el));
+
+        float expected[MAX_SPEAKERS] = {};
+        float actual[MAX_SPEAKERS] = {};
+        largestMinGainReference (regular, az, el, expected, n);
+        computeVBAPGains3D (layout, regular, az, el, actual);
+
+        CHECK (allFiniteGains (actual, n));
+        CHECK_THAT (powerOf (actual, n), WithinAbs (1.0f, 1e-5f));
+        int nonZero = 0;
+        for (int s = 0; s < n; ++s)
+        {
+            INFO ("speaker " << s);
+            CHECK (actual[s] >= 0.0f);
+            CHECK_THAT (actual[s], WithinAbs (expected[s], 1e-6f));
+            nonZero += (actual[s] != 0.0f) ? 1 : 0;
+        }
+        maxNonZero = std::max (maxNonZero, nonZero);
+    }
+    CHECK (maxNonZero >= 2);   // not a one-speaker snap
+
+    // An empty triplet list has no candidate at all: silence.
+    const std::vector<VBAPTriplet> none;
+    float silent[MAX_SPEAKERS];
+    fillSentinel (silent);
+    computeVBAPGains3D (layout, none, juce::degreesToRadians (30.0f), juce::degreesToRadians (-60.0f), silent);
+    CHECK (allZeroGains (silent, n));
+}
+
+TEST_CASE ("DirectBinaural: non-finite direction gives silent binaural gains (D-06)", "[robust]")
+{
+    const DirectBinauralAlgorithm algo;
+    const BinauralContext ctx { 1, kSampleRate, kDefaultBinauralProfiles };
+
+    const SourcePosition bad[] = {
+        { kNaN, 0.0f, 0.5f }, { kInf, 0.0f, 0.5f }, { -kInf, 0.0f, 0.5f },
+        { 0.3f, kNaN, 0.5f }, { 0.3f, kInf, 0.5f }, { 0.3f, -kInf, 0.5f },
+        { kNaN, kNaN, kNaN },
+    };
+
+    for (const auto& src : bad)
+    {
+        INFO ("az " << src.azimuthRad << " el " << src.elevationRad);
+        const BinauralGains g = algo.computeBinauralGains (src, ctx);
+        CHECK (g.leftGain == 0.0f);
+        CHECK (g.rightGain == 0.0f);
+        CHECK (g.leftDelaySamples == 0.0f);
+        CHECK (g.rightDelaySamples == 0.0f);
+    }
+
+    // Sanity: a finite direction is not silenced.
+    const BinauralGains ok = algo.computeBinauralGains ({ 0.3f, 0.1f, 0.5f }, ctx);
+    CHECK (ok.leftGain > 0.0f);
+    CHECK (std::isfinite (ok.rightDelaySamples));
 }
