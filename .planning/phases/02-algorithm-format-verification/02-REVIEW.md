@@ -34,11 +34,11 @@ What checks out:
 - **Test run:** I rebuilt `build-release` and ran `[ambi-pin]`. It passes (110 assertions in 2 test cases).
 - **`.gitignore`:** `build-release/` is correct. `git check-ignore` confirms the directory is ignored.
 
-One real hole was found: the max-reduction in the new and old checks silently drops NaN, so a NaN decode can pass. Details are in WR-01.
+One real hole was found: the max-reduction in the new and old checks silently drops NaN, so a NaN decode can pass. Details are in WR-06.
 
 ## Warnings
 
-### WR-01: NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously
+### WR-06: NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously
 
 **File:** `tests/Engine/RenderEngineTests.cpp:817-819` (also `:824-827`, `:832`)
 **Issue:** The per-layout maxima are accumulated with `std::max (acc, std::abs (x - y))`. `std::max (a, b)` is `(a < b) ? b : a`. With `b == NaN`, `a < b` is false, so `a` is returned and the NaN is dropped. I confirmed this with a compiled snippet: `std::max (0.0f, std::abs (NaN - 1.0f))` yields `0`.
@@ -63,21 +63,21 @@ Alternatively, add a separate CHECK that every `ambiDecodeMatrix[s][c]` for `s <
 
 ## Info
 
-### IN-01: The +0.1% epsilon "smallest change the pin must catch" is resolved on only 5 of 15 layouts
+### IN-07: The +0.1% epsilon "smallest change the pin must catch" is resolved on only 5 of 15 layouts
 
 **File:** `tests/Engine/RenderEngineTests.cpp:692-696`, `:708`
 **Issue:** The comment states the +0.1% Tikhonov change moves the decode by 5.8e-5 to 6.3e-5 on 7.0, 7.1, 7.1.2, 7.1.4 and 7.1.6. The bound is one absolute number, 2.5e-5, applied to every layout. On the other 10 layouts the same change moves the decode by less than that (less than 2.5e-5, by implication), so it is not caught there. The pin as a whole still fails (02-10-SUMMARY records this), so the claim is true. But the comment does not say that the guarantee rests on 5 layouts, or that a regression confined to the other layouts has a coarser floor. This matters if a future change is layout-specific, such as speaker order in Quad or 5.x only.
 **Fix:** Add one sentence to the comment saying that the +0.1% resolution holds on the 7.x layouts only and that other layouts rely on the O(0.1 to 1) class of regressions. A scale-aware per-layout bound would be the stronger option, as the debug doc's option (b) describes.
 
-### IN-02: `doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders
+### IN-08: `doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders
 
 **File:** `tests/Engine/RenderEngineTests.cpp:715-782`
 **Issue:**
-- (a) The double solve omits the library's `if (std::abs (diagVal) < 1e-10f) continue;` skip and has no `N <= M` guard. The library has the D-20 guard. `E[M][M]` indexed by `s < N` would overflow if `N > 16`. This cannot happen with the current layouts, since 15 is the maximum, but it is an unguarded stack write in a test helper. With Tikhonov the diag skip never triggers, and a zero diag would give NaN, which WR-01 would hide.
+- (a) The double solve omits the library's `if (std::abs (diagVal) < 1e-10f) continue;` skip and has no `N <= M` guard. The library has the D-20 guard. `E[M][M]` indexed by `s < N` would overflow if `N > 16`. This cannot happen with the current layouts, since 15 is the maximum, but it is an unguarded stack write in a test helper. With Tikhonov the diag skip never triggers, and a zero diag would give NaN, which WR-06 would hide.
 - (b) The anchor uses the float `evalSH` values promoted to double. It therefore verifies the linear solve and its conditioning only, not the SH evaluation. That is deliberate and documented ("only precision differs"), and the SH constants are out of this pin's scope per the D-08 note. If `evalSH` regresses, all three decoders move together and the pin stays green. Nothing in the changed code says where SH correctness is pinned.
 **Fix:** Add `REQUIRE (N <= M)` at the top of the helper. Optionally add a one-line comment naming the test that pins `evalSH` against known values.
 
-### IN-03: Comment hygiene
+### IN-09: Comment hygiene
 
 **File:** `tests/Engine/RenderEngineTests.cpp:673-707`
 **Issue:** There are three small problems in the derivation comment.
