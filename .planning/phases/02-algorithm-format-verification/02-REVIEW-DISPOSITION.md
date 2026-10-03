@@ -3,6 +3,14 @@ phase: 02
 review: 02-REVIEW.md
 titles: json
 findings:
+  - id: IN-10
+    severity: info
+    disposition: open
+    title: "The new `REQUIRE`s abort the whole test case on the first non-finite entry and report no location"
+  - id: IN-11
+    severity: info
+    disposition: open
+    title: "The guard adds about 6.3k assertions and has no negative test proving it fires"
   - id: WR-06
     severity: warning
     disposition: fixed
@@ -63,19 +71,21 @@ findings:
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 13
-total: 15
-recorded: 2026-10-03T22:19:04.940Z
+open: 15
+total: 17
+recorded: 2026-10-03T22:27:44.731Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-06 | warning | fixed | 02-REVIEW-FIX.md |
-| IN-07 | info | open | - |
-| IN-08 | info | open | - |
-| IN-09 | info | open | - |
+| IN-10 | info | open | - |
+| IN-11 | info | open | - |
+| WR-06 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-07 | info | open | - (not in the current review) |
+| IN-08 | info | open | - (not in the current review) |
+| IN-09 | info | open | - (not in the current review) |
 | WR-02 | warning | open | - (not in the current review) |
 | WR-03 | warning | open | - (not in the current review) |
 | WR-05 | warning | open | - (not in the current review) |
