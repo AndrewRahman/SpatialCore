@@ -137,6 +137,15 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
 // enclosed and audible. The count is then 2 (n + 2g) for g such gaps (g is 0 on
 // every shipped layout, so they get exactly 2n).
 //
+// Ear-level means within 10 degrees of the horizon, and the construction uses
+// each ear-level speaker's real elevation (the virtual copies sit at an
+// absolute -30 degrees). A wedge's result equals its pair's horizon pan, the
+// EAR QuadRegion result the docs describe, exactly when the pair's two
+// speakers have equal |elevation| (every shipped layout has them all at 0).
+// When they differ, each gain is divided by the cosine of its speaker's
+// elevation before renormalising: a small departure from that construction
+// (at most 0.006 in gain for a 0/10-degree pair 30 degrees apart) (IN-05).
+//
 // Appends and never clears. Message/prepare thread only (allocates via
 // push_back) -- never call from processBlock. Appends nothing for flat layouts,
 // for layouts with any speaker below -10 degrees, or with fewer than 3

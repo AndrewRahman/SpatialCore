@@ -193,8 +193,11 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
 // either side), and no triangulation reproduces EAR. EAR pans each trapezoid
 // as one QuadRegion; with the -30 copies downmixed 1:1 onto their ear-level
 // speakers that collapses to the pair's horizon pan, which is what the wedge
-// computes. The equivalence assumes the ear-level speakers sit at 0 degrees
-// elevation, as every shipped layout does.
+// computes. The equivalence is exact when the pair's two speakers have equal
+// |elevation| (every shipped layout has them at 0); kEarLevelLimitRad admits
+// up to 10 degrees, and for a pair at different elevations the wedge divides
+// each gain by cos (elevation) before renormalising. That limitation is part
+// of the header contract (IN-05).
 //
 // Gap bridge (WR-05): the construction above needs the ear-level ring to
 // surround the listener. When two neighbouring ear-level speakers A and B are
