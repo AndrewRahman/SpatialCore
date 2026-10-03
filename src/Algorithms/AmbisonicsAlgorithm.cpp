@@ -1,5 +1,8 @@
 #include <SpatialCore/Algorithms/AmbisonicsAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/Core/SpatialMath.h>
+#include <algorithm>
+#include <cmath>
 
 namespace spatialcore
 {
@@ -23,6 +26,15 @@ void AmbisonicsAlgorithm::computeGains (const SourcePosition& source, const Layo
         if (acn < 1) return 0; if (acn < 4) return 1;
         if (acn < 9) return 2; return 3;
     };
+
+    // Non-finite direction -> silence (D-06, IN-01). Explicit, so it no longer
+    // rests on std::max (0.0f, NaN) returning its first argument.
+    if (! std::isfinite (source.azimuthRad) || ! std::isfinite (source.elevationRad))
+    {
+        for (int s = 0; s < numSpeakers; ++s)
+            outputGains[s] = 0.0f;
+        return;
+    }
 
     // Step 1: SH encode with max-rE weighting
     float coeffs[HOA_CH];

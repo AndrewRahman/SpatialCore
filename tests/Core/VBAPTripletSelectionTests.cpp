@@ -697,6 +697,63 @@ void fillSentinel (float* g)
 }
 } // namespace
 
+TEST_CASE ("Non-finite direction: every algorithm but DBAP is silent; DBAP spreads equally; flat-layout VBAP/VBIP/MDAP ignore elevation (D-06, IN-01)",
+           "[robust]")
+{
+    // Pins the statement in docs/integration-guide.md "Non-finite positions"
+    // for each algorithm, on a flat (Quad) and a height (7.1.4) layout.
+    const auto algos = instantiateAll (AllAlgorithmTypes{});
+    const float bad[] = { kNaN, kInf, -kInf };
+
+    for (OutputFormat format : { OutputFormat::Quad, OutputFormat::Surround7_1_4 })
+    {
+        const EngineRig rig (format);
+        const LayoutContext ctx = rig.context();
+        const int n = rig.numSpeakers();
+        const bool flat = ctx.triplets.empty();
+
+        for (const auto& algo : algos)
+        {
+            const bool dbap = dynamic_cast<const DBAPAlgorithm*> (algo.get()) != nullptr;
+            const bool azimuthOnlyWhenFlat = dynamic_cast<const VBAPAlgorithm*> (algo.get()) != nullptr
+                                          || dynamic_cast<const VBIPAlgorithm*> (algo.get()) != nullptr
+                                          || dynamic_cast<const MDAPAlgorithm*> (algo.get()) != nullptr;
+
+            for (float v : bad)
+                for (int field = 0; field < 2; ++field)
+                {
+                    const SourcePosition src = field == 0 ? SourcePosition { v, 0.2f, 0.5f }
+                                                          : SourcePosition { 0.3f, v, 0.5f };
+                    float g[MAX_SPEAKERS];
+                    fillSentinel (g);
+                    algo->computeGains (src, ctx, g, n);
+
+                    INFO ((flat ? "Quad " : "7.1.4 ") << algo->getName().toStdString()
+                          << (field == 0 ? " azimuth " : " elevation ") << v);
+                    REQUIRE (allFiniteGains (g, n));
+
+                    if (dbap)
+                    {
+                        // std::max (epsilon, NaN) returns epsilon: equal weights.
+                        CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-5f));
+                        for (int s = 1; s < n; ++s)
+                            CHECK (g[s] == g[0]);
+                    }
+                    else if (flat && field == 1 && azimuthOnlyWhenFlat)
+                    {
+                        // 2D pair panning reads the azimuth only.
+                        CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-4f));
+                    }
+                    else
+                    {
+                        CHECK (allZeroGains (g, n));
+                    }
+                }
+        }
+    }
+}
+
+
 TEST_CASE ("computeVBAPGains2D/3D: non-finite gives silence, huge finite azimuths are wrapped not looped (D-19)",
            "[robust]")
 {

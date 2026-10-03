@@ -241,9 +241,12 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   0, elevation 0, distance 0.5.
 - A consumer that calls `SpatializationAlgorithm::computeGains` directly (as OpenSpatialDelay
   does) bypasses that hold and is protected by the algorithm layer instead: every algorithm returns
-  finite gains or silence and never hangs. VBAP, VBIP, MDAP, KNN and DirectBinaural return silence
-  for a non-finite direction, and the 2D VBAP path wraps a huge finite azimuth with a bounded
-  `std::remainder` instead of looping.
+  finite gains or silence and never hangs. Every algorithm except DBAP returns silence for a
+  non-finite azimuth or elevation (ConstantPower, VBAP, VBIP, MDAP, KNN, Ambisonics and
+  DirectBinaural), with one exception: on a flat layout VBAP, VBIP and MDAP pan by azimuth only, so
+  a non-finite elevation there is ignored and the source pans normally. DBAP never goes silent: a
+  non-finite direction or distance gives equal gains on every speaker. The 2D VBAP path wraps a
+  huge finite azimuth with a bounded `std::remainder` instead of looping.
 - These guards live in SpatialCore `.cpp` files, so compiling the consumer with `-ffast-math` does
   not disable them. SpatialCore's own sources must not be compiled with fast-math, and the build
   enforces it: every guarded source includes `src/Core/FloatSemanticsGuard.h`, which stops with
