@@ -760,6 +760,11 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
         constexpr int M = 16;
         const int N = layout.numSpeakers;
 
+        // IN-08: E is M x M, indexed E[c][s] for s < N, so more speakers than
+        // order-3 channels would write past it.
+        REQUIRE (N >= 0);
+        REQUIRE (N <= M);
+
         double E[M][M] = {};
         for (int s = 0; s < N; ++s)
             for (int c = 0; c < M; ++c)
@@ -795,7 +800,12 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
                     std::swap (inv[col][j], inv[pivot][j]);
                 }
 
+            // IN-08: the library skips a pivot below 1e-10; this exact
+            // reference must never meet one (the 0.01 Tikhonov term keeps
+            // every pivot near 0.01 or above), so it stops by name instead of
+            // dividing into NaN.
             const double diag = aug[col][col];
+            REQUIRE (std::abs (diag) >= 1e-10);
             for (int j = 0; j < M; ++j)
             {
                 aug[col][j] /= diag;
