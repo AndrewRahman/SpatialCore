@@ -711,8 +711,10 @@ void RenderEngine::activateLayout (OutputFormat format)
     // Rows at or beyond the speaker count are cleared, not left stale from the
     // layout this buffer held two switches ago.
     std::memset (buf.ambiDecodeMatrix, 0, sizeof (buf.ambiDecodeMatrix));
-    AmbisonicsCodec::getDecodeMatrix (3, buf.layout.numSpeakers, speakerAz, speakerEl,
-                                      &buf.ambiDecodeMatrix[0][0]);
+    if (! AmbisonicsCodec::getDecodeMatrix (3, buf.layout.numSpeakers, speakerAz, speakerEl,
+                                            &buf.ambiDecodeMatrix[0][0]))
+        jassertfalse;   // cannot happen for a shipped layout (<= 15 speakers, order 3);
+                        // the memset above leaves a silent decode if it ever did
     buf.ambiNumSpeakers = buf.layout.numSpeakers;
 
     // Build 3D VBAP triplets using the SpatialCore IO helper

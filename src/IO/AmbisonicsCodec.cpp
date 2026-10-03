@@ -41,18 +41,21 @@ void AmbisonicsCodec::encode(const SourcePosition& source, int order,
 // Decode matrix: D = E^T (E E^T + epsilon I)^{-1}
 // Tikhonov-regularized pseudo-inverse
 //==============================================================================
-void AmbisonicsCodec::getDecodeMatrix(int order, int numSpeakers,
+bool AmbisonicsCodec::getDecodeMatrix(int order, int numSpeakers,
                                       const float* speakerAzimuths,
                                       const float* speakerElevations,
                                       float* decodeMatrix)
 {
     // D-20: E below is sized MAX_SPEAKERS columns, so a larger count would
-    // write out of bounds. Write nothing instead. Message-thread code, so the
-    // check is free (RESEARCH F6).
-    if (numSpeakers > MAX_SPEAKERS) return;
+    // write out of bounds. Write nothing and report it instead. Message-thread
+    // code, so the check is free (RESEARCH F6).
+    if (numSpeakers < 0 || numSpeakers > MAX_SPEAKERS) return false;
+
+    // IN-03: a negative order used to give a positive (order + 1)^2 and decode
+    // anyway; reject it with the over-range orders.
+    if (order < 0 || order > MAX_AMBI_ORDER) return false;
 
     const int M = (order + 1) * (order + 1);
-    if (M > MAX_AMBI_CHANNELS) return;
 
     // Build encoding matrix E[c][s] = evaluateSH(c, speaker_s_position)
     float E[MAX_AMBI_CHANNELS][MAX_SPEAKERS] = {};
@@ -129,6 +132,7 @@ void AmbisonicsCodec::getDecodeMatrix(int order, int numSpeakers,
                 sum += E[k][s] * inv[k][c];
             decodeMatrix[s * M + c] = sum;
         }
+    return true;
 }
 
 //==============================================================================

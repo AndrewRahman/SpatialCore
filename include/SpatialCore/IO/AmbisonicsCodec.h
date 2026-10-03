@@ -27,9 +27,15 @@ public:
 
     /** Tikhonov-regularised mode-matching decode, D = E^T (E E^T + 0.01 I)^-1, written
         row-major as decodeMatrix[s * M + c], M = (order + 1)^2, rows in speaker index
-        order, columns in ACN order. Writes nothing when numSpeakers > MAX_SPEAKERS
-        (D-20) or numSpeakers == 0. Message thread only (about 32 KB of stack arrays). */
-    static void getDecodeMatrix(int order, int numSpeakers,
+        order, columns in ACN order. Message thread only (about 32 KB of stack arrays).
+
+        Returns false and writes nothing when the request is invalid: numSpeakers < 0
+        or > MAX_SPEAKERS (D-20), or order outside 0..MAX_AMBI_ORDER (IN-03). A
+        rejected call leaves the caller's buffer exactly as it was, so a reused buffer
+        still holds its previous contents: check the result. numSpeakers == 0 is a
+        valid empty decode: returns true and writes nothing. (Was void before IN-03;
+        call sites that ignore the result compile unchanged.) */
+    static bool getDecodeMatrix(int order, int numSpeakers,
                                 const float* speakerAzimuths,
                                 const float* speakerElevations,
                                 float* decodeMatrix);

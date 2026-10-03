@@ -295,9 +295,9 @@ TEST_CASE("AmbisonicsCodec: getDecodeMatrix writes nothing for more than 16 or f
 
     std::vector<float> out (static_cast<size_t> (kTooMany) * static_cast<size_t> (M), kSentinel);
 
-    SECTION("17 speakers: the whole 17 x 16 buffer is untouched")
+    SECTION("17 speakers: rejected, the whole 17 x 16 buffer is untouched")
     {
-        AmbisonicsCodec::getDecodeMatrix (order, kTooMany, az, el, out.data());
+        CHECK_FALSE(AmbisonicsCodec::getDecodeMatrix (order, kTooMany, az, el, out.data()));
         int changed = 0;
         for (float v : out)
             if (v != kSentinel)
@@ -305,9 +305,9 @@ TEST_CASE("AmbisonicsCodec: getDecodeMatrix writes nothing for more than 16 or f
         CHECK(changed == 0);
     }
 
-    SECTION("0 speakers: the buffer is untouched")
+    SECTION("0 speakers: a valid empty decode, the buffer is untouched")
     {
-        AmbisonicsCodec::getDecodeMatrix (order, 0, az, el, out.data());
+        CHECK(AmbisonicsCodec::getDecodeMatrix (order, 0, az, el, out.data()));
         int changed = 0;
         for (float v : out)
             if (v != kSentinel)
@@ -317,7 +317,7 @@ TEST_CASE("AmbisonicsCodec: getDecodeMatrix writes nothing for more than 16 or f
 
     SECTION("16 speakers (the boundary): every one of the 16 x 16 entries is written and finite")
     {
-        AmbisonicsCodec::getDecodeMatrix (order, MAX_SPEAKERS, az, el, out.data());
+        CHECK(AmbisonicsCodec::getDecodeMatrix (order, MAX_SPEAKERS, az, el, out.data()));
         int written = 0, finite = 0;
         for (int i = 0; i < MAX_SPEAKERS * M; ++i)
         {
@@ -329,6 +329,50 @@ TEST_CASE("AmbisonicsCodec: getDecodeMatrix writes nothing for more than 16 or f
         // Row 17 (index 16) lies beyond numSpeakers and must stay untouched.
         for (int c = 0; c < M; ++c)
             CHECK(out[static_cast<size_t> (MAX_SPEAKERS * M + c)] == kSentinel);
+    }
+}
+
+TEST_CASE("AmbisonicsCodec: getDecodeMatrix rejects an order outside 0..6 and reports every rejection (IN-03)",
+          "[ambisonics][decode-guard]")
+{
+    // 5 speakers, a valid geometry: only the order is wrong.
+    const float az[] = { 0.0f, 0.5f, -0.5f, 2.0f, -2.0f };
+    const float el[] = { 0.0f, 0.3f, 0.3f, -0.2f, -0.2f };
+    constexpr int n = 5;
+    constexpr float kSentinel = 12345.0f;
+
+    // Big enough for any order the call could have tried to write.
+    std::vector<float> out (static_cast<size_t> (n * 64), kSentinel);
+    auto untouched = [&]
+    {
+        for (float v : out)
+            if (v != kSentinel)
+                return false;
+        return true;
+    };
+
+    for (int order : { -1, -2, -3, -7, 7, 8 })
+    {
+        INFO("order " << order);
+        std::fill (out.begin(), out.end(), kSentinel);
+        CHECK_FALSE(AmbisonicsCodec::getDecodeMatrix (order, n, az, el, out.data()));
+        CHECK(untouched());   // order -3 used to decode with M = 4
+    }
+
+    std::fill (out.begin(), out.end(), kSentinel);
+    CHECK_FALSE(AmbisonicsCodec::getDecodeMatrix (1, -1, az, el, out.data()));
+    CHECK(untouched());
+
+    for (int order = 0; order <= AmbisonicsCodec::MAX_AMBI_ORDER; ++order)
+    {
+        INFO("order " << order);
+        const int M = (order + 1) * (order + 1);
+        std::fill (out.begin(), out.end(), kSentinel);
+        CHECK(AmbisonicsCodec::getDecodeMatrix (order, n, az, el, out.data()));
+        int written = 0;
+        for (int i = 0; i < n * M; ++i)
+            written += (out[static_cast<size_t> (i)] != kSentinel && std::isfinite (out[static_cast<size_t> (i)])) ? 1 : 0;
+        CHECK(written == n * M);
     }
 }
 
