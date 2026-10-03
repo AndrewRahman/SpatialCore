@@ -1,10 +1,10 @@
 ---
 phase: 02-algorithm-format-verification
-fixed_at: 2026-10-04T00:00:00Z
+fixed_at: 2026-10-04T01:10:00Z
 review_path: .planning/phases/02-algorithm-format-verification/02-REVIEW.md
 iteration: 1
-findings_in_scope: 1
-fixed: 1
+findings_in_scope: 2
+fixed: 2
 skipped: 0
 status: all_fixed
 ---
@@ -16,35 +16,42 @@ status: all_fixed
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 1 (fix_scope: critical_warning; IN-07, IN-08 and IN-09 are out of scope)
-- Fixed: 1
+- Findings in scope: 2 (fix_scope: all; IN-10 and IN-11, both in the `[ambi-pin]` order-3 decode pin)
+- Fixed: 2
 - Skipped: 0
+
+This report replaces the earlier iteration-1 report for the WR-06 fix (commit 8470cd8, still in git history). The review it answers is the incremental review of delta e075576.
 
 ## Fixed Issues
 
-### WR-06: NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously
+### IN-10: The new `REQUIRE`s abort the whole test case on the first non-finite entry and report no location
 
 **Files modified:** `tests/Engine/RenderEngineTests.cpp`
-**Commit:** e075576
-**Applied fix:** In the per-layout loop of the order-3 decode pin, the three per-entry distances (`dNew`, `dLib`, `dRef`) are now computed into locals. Each is checked with `REQUIRE (std::isfinite (...))` before it enters the `std::max` reduction. A NaN in `active.ambiDecodeMatrix`, `reference` or `exact` now fails the test instead of being dropped. The reviewer's suggested fix was applied as written. The code still matched the review context (lines 817-819). A comment at the site explains why `std::max` drops NaN. `<cmath>` was already included.
+**Commit:** 884252c
+**Applied fix:** Replaced the three per-entry `REQUIRE (std::isfinite (...))` with a per-layout `nonFinite` counter. A non-finite `dNew`, `dLib` or `dRef` is kept out of the max-reduction. Only the first bad entry per layout is reported, through `UNSCOPED_INFO` naming `s`, `c` and the library, reference and exact values. One `CHECK (nonFinite == 0)` per layout follows the loop. A bad entry no longer aborts the test case, so every layout is examined. The first-entry-only report stops a fully non-finite layout from printing up to 240 lines.
 
-Status note: this is a test-only change. It adds assertions and does not change any library behaviour or tolerance. It is not a logic-bug fix to library code, so no human logic verification is flagged.
+### IN-11: The guard adds about 6.3k assertions and has no negative test proving it fires
+
+**Files modified:** `tests/Engine/RenderEngineTests.cpp`
+**Commit:** 2894be6
+**Applied fix:** The assertion-count half was already resolved by the IN-10 commit. For the negative-test half, the finite-check and max-reduction moved into a templated helper, `accumulateWorstFinite (T& worst, T distance)`, in the existing anonymous namespace. It returns false and leaves the maximum untouched on a non-finite distance. The `[ambi-pin]` loop now calls it for all three distances. A new `[engine][ambi-pin]` TEST_CASE feeds it `quiet_NaN`, `+infinity` and `-infinity` (double), plus `quiet_NaN` and `infinity` (float). It checks that each is rejected, that the maximum is unchanged, and that later finite values still fold in.
+
+**Commit split:** Two commits. The split is clean. IN-10 is the inline aggregation and works on its own. IN-11 is a refactor of that code into a helper plus a new test case.
 
 ## Verification
 
-**Where verification ran:** the main checkout of this worktree (`/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna`) on branch `gsd-remap`. The existing `build/` (Debug) and `build-release/` (Release) trees were used, so the numbers are reproducible from this tree. No nested worktree was created, because the orchestrator ran this agent inside an already-isolated worktree and asked it to stay there. The fix was committed directly on `gsd-remap`.
+All gates ran in the main checkout at `/Users/andrewrahman/conductor/workspaces/SpatialCore/kelowna`, which is itself an isolated Conductor git worktree on branch `gsd-remap`. No nested `.claude/worktrees/rf-*` worktree was created. `build/` and `build-release/` live in this checkout, and the requested gates run against them. So they are reproducible from this tree.
 
-Both trees were rebuilt with `cmake --build <dir> -j`. Both built cleanly.
+- Debug, `cmake --build build --target SpatialCoreTests -j8`, then `[ambi-pin]`: **All tests passed (141 assertions in 3 test cases)**. The count was 6590 in 2 test cases. After the IN-10 commit alone it was 125 in 2 test cases. The new helper test adds 16.
+- Release, `cmake --build build-release --target SpatialCoreTests -j8`, then `[ambi-pin]`: **All tests passed (141 assertions in 3 test cases)**.
+- Mutation check, test only, never committed and reverted:
+  - On the IN-10 code, a NaN injected into `active.ambiDecodeMatrix[2][5]` made `[ambi-pin]` fail. Output: `CHECK( nonFinite == 0 )`, `1 == 0`, `first non-finite decode entry: s=2 c=5 lib=nan ref=... exact=...`. It failed on every layout (15 failures), which shows the other layouts are still examined.
+  - The same injection on the final helper-based code failed the same way (126 passed, 15 failed).
+  - Disabling the `isfinite` test inside `accumulateWorstFinite` made the new helper test fail (11 failed), so the helper test does guard the helper.
+  - Confirmed afterwards that `git diff` shows no mutation and the file matches the committed content.
+- Full Debug suite: 194 test cases, 193 passed, 1 failed. The one failure is `tests/Binaural/HutubsPP2Tests.cpp:47` (`checksum == kGoldenChecksum`), the expected pre-existing and unrelated failure. The "Leaked objects detected: 1 instance(s) of class FFT" message after the summary appears with that failing test.
 
-| Run | Result |
-|-----|--------|
-| `build/tests/SpatialCoreTests "[ambi-pin]"` (Debug) | All tests passed: 6590 assertions in 2 test cases |
-| `build-release/tests/SpatialCoreTests "[ambi-pin]"` (Release) | All tests passed: 6590 assertions in 2 test cases |
-| `build/tests/SpatialCoreTests` (full suite, Debug) | 193 test cases: 192 passed, 1 failed. 311348 assertions: 311347 passed, 1 failed |
-
-The assertion count for `[ambi-pin]` rose from 110 (reviewer's pre-fix figure) to 6590. The new `REQUIRE (std::isfinite)` calls contribute 3 per speaker/coefficient entry across the 15 layouts, so the NaN guards are actually being evaluated.
-
-**Pre-existing failure (known, unrelated, not touched):** `tests/Binaural/HutubsPP2Tests.cpp:47`, `CHECK (checksum == kGoldenChecksum)`. The actual checksum was 8806157918509638672 and the golden value was 11402032843575911607. It is the only failing assertion in the full suite. The run also printed a JUCE leaked-object (FFT) assertion at process exit, which comes from the same HRTF test run and is not related to this change.
+WR-06 does not regress. A non-finite decode entry in the library, reference or exact matrix still fails `[ambi-pin]`.
 
 ---
 
