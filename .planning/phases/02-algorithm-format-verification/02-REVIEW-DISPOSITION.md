@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: IN-10
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The new `REQUIRE`s abort the whole test case on the first non-finite entry and report no location"
   - id: IN-11
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The guard adds about 6.3k assertions and has no negative test proving it fires"
   - id: WR-06
     severity: warning
@@ -71,17 +71,17 @@ findings:
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 15
+open: 13
 total: 17
-recorded: 2026-10-03T22:27:44.731Z
+recorded: 2026-10-03T22:35:56.293Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| IN-10 | info | open | - |
-| IN-11 | info | open | - |
+| IN-10 | info | fixed | 02-REVIEW-FIX.md |
+| IN-11 | info | fixed | 02-REVIEW-FIX.md |
 | WR-06 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-07 | info | open | - (not in the current review) |
 | IN-08 | info | open | - (not in the current review) |
