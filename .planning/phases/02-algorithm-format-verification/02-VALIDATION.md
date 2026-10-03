@@ -24,10 +24,13 @@ created: "2026-09-30"
 | **Config file** | `tests/CMakeLists.txt` (explicit file list — new `.cpp` files are added by hand) |
 | **Quick run command** | `cmake --build build --target SpatialCoreTests && ./build/tests/SpatialCoreTests "[<tag of the area touched>]"` |
 | **Full suite command** | `cmake --build build --target SpatialCoreTests && ./build/tests/SpatialCoreTests` |
+| **Release suite command** | `cmake --build build-release --target SpatialCoreTests -j8 && ctest --test-dir build-release/tests --output-on-failure` (runs 193 tests; the `/tests` directory matters, see note below) |
+| **Release tree (configure once)** | `cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_SOURCE_DIR_JUCE="$PWD/build/_deps/juce-src" -DFETCHCONTENT_SOURCE_DIR_CATCH2="$PWD/build/_deps/catch2-src" -DFETCHCONTENT_SOURCE_DIR_MYSOFA="$PWD/build/_deps/mysofa-src"` (offline, from the sources `build/` already fetched; `build-release/` is gitignored) |
 | **Estimated runtime** | ~8 seconds (Debug), quick tags < 3 seconds |
 
+**ctest directory (G-02-10, found during 02-10):** `enable_testing()` is only reached through `include(CTest)` in `tests/CMakeLists.txt`, so `ctest --test-dir build-release` (the build root) prints "No tests were found" and exits 0, a vacuous pass. Always point ctest at `build-release/tests`, or run `./build-release/tests/SpatialCoreTests` directly. `.github/workflows/ci.yml` runs `ctest` from the build root, so CI's test step has the same blind spot (see `deferred-items.md`).
 **Binary path:** `build/tests/SpatialCoreTests` (not `build/SpatialCoreTests`).
-**Known baseline failure:** `HUTUBS PP2 — golden HRIR checksum at az=90deg (own control)` — deferred by Phase 1 (`deferred-items.md`), Phase 3 territory. The full suite is "green" when this is the only failure.
+**Known baseline failure:** `HUTUBS PP2 — golden HRIR checksum at az=90deg (own control)` — deferred by Phase 1 (`deferred-items.md`), Phase 3 territory. The Debug full suite is "green" when this is the only failure. It fails in Debug only and passes in Release, so the Release suite runs with no exclusion (G-02-10).
 
 ---
 
@@ -35,7 +38,7 @@ created: "2026-09-30"
 
 - **After every task commit:** Run the quick command with the tag of the area touched
 - **After every plan wave:** Run the full suite command
-- **Before `/gsd-verify-work`:** Full suite green except the known HUTUBS item, plus the DR-3 OSD build checkpoint (DR-4)
+- **Before `/gsd-verify-work`:** Full suite green in Debug except the known HUTUBS item, AND the Release suite command green with no exclusion (the build type `.github/workflows/ci.yml` uses), plus the DR-3 OSD build checkpoint (DR-4). Added by 02-10 because Phase 2's gates ran Debug only, which hid a Release-only failure (G-02-10)
 - **Max feedback latency:** 10 seconds
 - Property/coverage tests use fixed seeds (`std::mt19937_64 rng (42)`) and ≤ 200k points per layout.
 
@@ -75,6 +78,8 @@ checks. Full-suite command used by every plan:
 | 02-08-T2 | 02-08 | 1 | EXTR-01, D-04 band oracle and continuity | T-02-22 | N/A | unit + regenerate-diff | `./build/tests/SpatialCoreTests "[band]"` and the `EarReference.h` regenerate-diff | ✅ | ⬜ pending |
 | 02-09-T1 | 02-09 | 2 | EXTR-01 docs (guide, README, skill) | T-02-24 | N/A | grep gate | Task 1 `<verify>` in `02-09-PLAN.md` | ✅ | ⬜ pending |
 | 02-09-T2 | 02-09 | 2 | DR-4 phase gate, DR-3 OSD build | T-02-25, T-02-26 | OSD repo and plugin folders untouched | full suite + tag sweep + cross-repo build | full-suite command above, per-tag loop (incl. `[band]`, `[g02-2]`), `cmake --build /tmp/osd-dr3-check/build --target OpenSpatialDelay OpenSpatialDelayTests` | n/a | ⬜ pending |
+| 02-10-T1 | 02-10 | 1 | VERIFY-01 / EXTR-03 (D-09 pin with derived bound, G-02-10) | T-02-27 | Decode pin tolerates float rounding but still catches a real decoder change | unit, Debug and Release | `./build/tests/SpatialCoreTests "[ambi-pin]"` and `./build-release/tests/SpatialCoreTests "[ambi-pin]"` | ✅ | ⬜ pending |
+| 02-10-T2 | 02-10 | 1 | DR-4 gate in Debug and Release plus the mutation proof (G-02-10) | T-02-27, T-02-28, T-02-29 | A +0.1% epsilon change fails the pin in both build types; the phase gate runs Release | full suite both build types + tag sweep + disposable-worktree mutation | Release suite command above | n/a | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
