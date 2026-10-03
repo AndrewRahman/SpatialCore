@@ -5,23 +5,23 @@ titles: json
 findings:
   - id: WR-08
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The guide says DBAP \"never goes silent\" and gives equal gains for a non-finite distance, but a non-finite distance with a finite direction gives silence"
   - id: IN-13
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Three files were converted from CRLF to LF wholesale inside content commits, hiding the real edits from review and blame"
   - id: IN-14
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`VBAPAlgorithm`, `VBIPAlgorithm` and `MDAPAlgorithm::computeGains` still `jassert` on the audio thread (the fixer's open question)"
   - id: IN-15
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The WR-05 gap test pins one bridged gap only, so the multi-gap path and the 2(n+2g) formula for g = 2 are unpinned"
   - id: IN-16
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`FloatSemanticsGuard.h` lists \"ADM-OSC parse guards\" among isfinite tests, but `ADMOSCReceiver.cpp` contains none"
   - id: WR-02
     severity: warning
@@ -99,20 +99,20 @@ findings:
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-open: 5
+open: 0
 total: 24
-recorded: 2026-10-03T23:34:13.705Z
+recorded: 2026-10-03T23:45:53.997Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-08 | warning | open | - |
-| IN-13 | info | open | - |
-| IN-14 | info | open | - |
-| IN-15 | info | open | - |
-| IN-16 | info | open | - |
+| WR-08 | warning | fixed | 02-REVIEW-FIX.md |
+| IN-13 | info | fixed | 02-REVIEW-FIX.md |
+| IN-14 | info | fixed | 02-REVIEW-FIX.md |
+| IN-15 | info | fixed | 02-REVIEW-FIX.md |
+| IN-16 | info | fixed | 02-REVIEW-FIX.md |
 | WR-02 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-03 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-04 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
