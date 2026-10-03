@@ -1,1 +1,7 @@
 HRTF/*.sofa filter=lfs diff=lfs merge=lfs -text
+# IN-13: these three were converted CRLF -> LF inside content commits (8899bcf,
+# 191af3c). Pin them to LF so the committed copy stays LF whatever line endings
+# an editor writes, and a future edit cannot flip every line again.
+docs/integration-guide.md text eol=lf
+.claude/skills/spatial-audio-dsp/SKILL.md text eol=lf
+include/SpatialCore/IO/AmbisonicsCodec.h text eol=lf
