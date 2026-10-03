@@ -3,6 +3,22 @@ phase: 02
 review: 02-REVIEW.md
 titles: json
 findings:
+  - id: WR-01
+    severity: warning
+    disposition: open
+    title: "NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously"
+  - id: IN-01
+    severity: info
+    disposition: open
+    title: "The +0.1% epsilon \"smallest change the pin must catch\" is resolved on only 5 of 15 layouts"
+  - id: IN-02
+    severity: info
+    disposition: open
+    title: "`doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders"
+  - id: IN-03
+    severity: info
+    disposition: open
+    title: "Comment hygiene"
   - id: WR-02
     severity: warning
     disposition: open
@@ -23,49 +39,33 @@ findings:
     severity: info
     disposition: open
     title: "The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed"
-  - id: WR-01
-    severity: warning
-    disposition: fixed
-    title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
   - id: WR-04
     severity: warning
     disposition: open
     title: "The \"SpatialCore must not be compiled with fast-math\" invariant is enforced only by comments"
-  - id: IN-01
-    severity: info
-    disposition: open
-    title: "The guide's \"return silence\" list leaves out ConstantPower and Ambisonics, which are silent only because of argument order"
-  - id: IN-02
-    severity: info
-    disposition: open
-    title: "\"Positive azimuth toward +Y (left)\" uses AmbiX axis names, which contradict SpatialCore's own Cartesian frame"
-  - id: IN-03
-    severity: info
-    disposition: open
-    title: "`getDecodeMatrix` fails silently with no way for the caller to detect it"
   - id: IN-04
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 10
+open: 11
 total: 11
-recorded: 2026-10-03T10:36:42.828Z
+recorded: 2026-10-03T21:59:28.317Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-05 | warning | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
-| WR-01 | warning | fixed | 02-08 + 02-09: the band no longer ties; guide and skill scope #22 to above the horizon (not in the current review) |
+| WR-01 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-03 | info | open | - |
+| WR-02 | warning | open | - (not in the current review) |
+| WR-03 | warning | open | - (not in the current review) |
+| WR-05 | warning | open | - (not in the current review) |
+| IN-05 | info | open | - (not in the current review) |
+| IN-06 | info | open | - (not in the current review) |
 | WR-04 | warning | open | - (not in the current review) |
-| IN-01 | info | open | - (not in the current review) |
-| IN-02 | info | open | - (not in the current review) |
-| IN-03 | info | open | - (not in the current review) |
 | IN-04 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
