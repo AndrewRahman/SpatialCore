@@ -11,7 +11,8 @@
 //
 // Convention (D-10): real SH, ACN channel order (acn = l*l + l + m; m > 0 uses cos(m az),
 // m < 0 uses sin(|m| az)), SN3D normalisation, no Condon-Shortley phase, angles in radians,
-// az 0 = front, +az toward +Y (left), el 0 = horizon, +el up.
+// az 0 = front, +az toward the listener's left (AmbiX +Y; SpatialCore's internal +x),
+// el 0 = horizon, +el up.
 
 namespace spatialcore_ref
 {

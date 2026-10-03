@@ -186,8 +186,9 @@ docblock; if the two ever disagree, the code is right and this section is the de
 From the `evalSH` docblock in `include/SpatialCore/Core/SpatialMath.h`: real spherical harmonics,
 ACN channel order (`acn = l*l + l + m`; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
 normalisation (the sum over m of Y_lm^2 is 1 at every order l), no Condon-Shortley phase, angles in
-radians, azimuth 0 = front, positive azimuth toward +Y (left), elevation 0 = horizon, positive up.
-This is the AmbiX convention.
+radians, azimuth 0 = front, positive azimuth toward the listener's left (AmbiX +Y; +x in
+SpatialCore's internal Cartesian frame, where x = cos(el) sin(az) and y = cos(el) cos(az) is
+front), elevation 0 = horizon, positive up. This is the AmbiX convention.
 
 `spatialcore::evalSH` is the single spherical-harmonic evaluator in SpatialCore;
 `AmbisonicsCodec::evaluateSH` forwards to it, and both names stay public. Orders 4-6 were corrected

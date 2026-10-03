@@ -11,7 +11,8 @@ namespace spatialcore
 //==============================================================================
 // Modular 3D Audio Core -- 6th-Order Ambisonics (49 channels)
 // Real SH, ACN channel order, SN3D normalisation, no Condon-Shortley phase,
-// radians, az 0 = front, +az toward +Y (left), el 0 = horizon, +el up (AmbiX).
+// radians, az 0 = front, +az toward the listener's left (AmbiX +Y; SpatialCore's
+// internal +x), el 0 = horizon, +el up (AmbiX).
 // The single SH implementation (D-08); full convention statement on the
 // declaration -- see SpatialMath.h.
 //==============================================================================

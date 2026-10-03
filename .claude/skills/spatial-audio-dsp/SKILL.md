@@ -80,7 +80,7 @@ Equivalently `g_i = sqrt(G_i / Σ G_j)` with `G = L⁻¹ p`.
 
 ### 1.5 Ambisonics — 3rd-Order HOA (ACN/SN3D)
 
-**Convention:** real spherical harmonics, ACN channel order, SN3D normalisation, no Condon-Shortley phase, angles in radians, azimuth 0 = front, positive azimuth toward +Y (left), elevation 0 = horizon, positive up — the AmbiX convention. `spatialcore::evalSH` (`Core/SpatialMath.h`) is the single SH evaluator; `AmbisonicsCodec::evaluateSH` forwards to it.
+**Convention:** real spherical harmonics, ACN channel order, SN3D normalisation, no Condon-Shortley phase, angles in radians, azimuth 0 = front, positive azimuth toward the listener's left (AmbiX +Y; SpatialCore's internal +x), elevation 0 = horizon, positive up — the AmbiX convention. `spatialcore::evalSH` (`Core/SpatialMath.h`) is the single SH evaluator; `AmbisonicsCodec::evaluateSH` forwards to it.
 
 **Encoding:** For source at (az, el), compute 16 SH coefficients:
 ```
@@ -475,7 +475,7 @@ Applied multiplicatively to SH coefficients during encoding.
 
 ### 7.4 evalSH() Basis Functions
 
-Real spherical harmonics evaluated per ACN channel; no Condon-Shortley phase; positive azimuth toward +Y (left); this is the AmbiX convention. Standard formulas:
+Real spherical harmonics evaluated per ACN channel; no Condon-Shortley phase; positive azimuth toward the listener's left (AmbiX +Y; SpatialCore's internal +x); this is the AmbiX convention. Standard formulas:
 - ACN 0: `Y₀⁰ = 1` (omnidirectional)
 - ACN 1: `Y₁⁻¹ = sin(az)cos(el)` (Y, left-right)
 - ACN 2: `Y₁⁰ = sin(el)` (Z, up-down)

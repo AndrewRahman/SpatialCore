@@ -78,8 +78,10 @@ inline void nearestSpeaker3DFallback (const SpeakerLayout& layout,
     Convention (D-10; AndrewRahman/SpatialCore#11): real spherical harmonics, ACN channel
     order (acn = l*l + l + m; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
     normalisation (the sum over m of Y_lm^2 is 1 at every order l), no Condon-Shortley
-    phase, angles in radians, azimuth 0 = front, positive azimuth toward +Y (left),
-    elevation 0 = horizon, positive up. This is the AmbiX convention.
+    phase, angles in radians, azimuth 0 = front, positive azimuth toward the listener's
+    left (AmbiX +Y; +x in SpatialCore's internal Cartesian frame, where
+    x = cos(el) sin(az) and y = cos(el) cos(az) is front), elevation 0 = horizon,
+    positive up. This is the AmbiX convention.
 
     This is the single SH implementation in SpatialCore (D-08):
     AmbisonicsCodec::evaluateSH forwards to it. Its values are pinned against 49

@@ -7,7 +7,7 @@ stderr.  Exits non-zero, printing nothing on stdout, if either self-check fails:
   1. the two independent scipy routes (lpmv with the CS phase removed; sph_harm_y) agree below 1e-12;
   2. the SN3D addition theorem  sum_m Y_lm^2 == 1  holds below 1e-12 for l = 0..6 on 4000 seeded directions.
 
-Convention: az = 0 front, +az toward +Y (left), radians; el = 0 horizon, +el up.
+Convention: az = 0 front, +az toward the listener's left (AmbiX +Y; SpatialCore's internal +x), radians; el = 0 horizon, +el up.
   ACN = l*l + l + m ; m > 0 -> cos(m*az) ; m < 0 -> sin(|m|*az).
 """
 import math
@@ -75,7 +75,8 @@ def main():
         "//",
         "// Convention (D-10): real SH, ACN channel order (acn = l*l + l + m; m > 0 uses cos(m az),",
         "// m < 0 uses sin(|m| az)), SN3D normalisation, no Condon-Shortley phase, angles in radians,",
-        "// az 0 = front, +az toward +Y (left), el 0 = horizon, +el up.",
+        "// az 0 = front, +az toward the listener's left (AmbiX +Y; SpatialCore's internal +x),",
+        "// el 0 = horizon, +el up.",
         "",
         "namespace spatialcore_ref",
         "{",

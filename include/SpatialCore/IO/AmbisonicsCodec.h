@@ -11,8 +11,9 @@ namespace spatialcore
     Convention (D-10; AndrewRahman/SpatialCore#11): real spherical harmonics, ACN channel
     order (acn = l*l + l + m; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
     normalisation (the sum over m of Y_lm^2 is 1 at every order), no Condon-Shortley phase,
-    angles in radians, azimuth 0 = front, positive azimuth toward +Y (left), elevation 0 =
-    horizon, positive up. This is the AmbiX convention, the same layout the
+    angles in radians, azimuth 0 = front, positive azimuth toward the listener's left
+    (AmbiX +Y; SpatialCore's internal +x), elevation 0 = horizon, positive up. This is
+    the AmbiX convention, the same layout the
     OutputFormatRegistry advertises as "AmbiX ACN/SN3D".
 */
 class AmbisonicsCodec
