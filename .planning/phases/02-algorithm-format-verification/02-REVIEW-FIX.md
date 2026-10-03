@@ -48,7 +48,7 @@ Before the fixes there were 195 test cases, 194 passing. The 4 extra test cases 
 
 ## Fixed Issues
 
-### WR-05: `appendLowerHemisphereTriplets` leaves holes when the ear-level ring has an azimuth gap of 180 degrees or more
+### WR-05: `appendLowerHemisphereTriplets` leaves holes when the ear-level ring has an azimuth gap of 180 degrees or more, contradicting its documented 2n output
 
 **Files modified:** `src/IO/SpeakerLayout.cpp`, `include/SpatialCore/IO/SpeakerLayout.h`, `tests/Core/VBAPTripletSelectionTests.cpp`, `docs/integration-guide.md`, `.claude/skills/spatial-audio-dsp/SKILL.md`
 **Commits:** 3a2a1b2 (fix and test), 891a6b8 (docs), 8afcc75 (exact threshold in the docs)
@@ -69,7 +69,7 @@ Before the fixes there were 195 test cases, 194 passing. The 4 extra test cases 
 
 After the fix the test also finds 0 uncovered directions, unit power everywhere and no gain on elevated speakers. The largest gain step between neighbouring 0.1-degree samples is 0.0053.
 
-### WR-03: A regular-only triplet list has no coverage below the horizon, and the failure was an assert on the audio thread
+### WR-03: A regular-only triplet list still has no coverage below the horizon, and the failure is an assert on the audio thread
 
 **Files modified:** `src/Core/SpatialMath.cpp`, `include/SpatialCore/Core/SpatialMath.h`, `include/SpatialCore/IO/SpeakerLayout.h`, `tests/Core/VBAPTripletSelectionTests.cpp`, `docs/integration-guide.md`, `.claude/skills/spatial-audio-dsp/SKILL.md`
 **Commit:** 8899bcf
@@ -83,7 +83,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
 
 **New test.** With a regular-only list on every height layout, 64,800 below-horizon directions take the fallback. 27,885 of them were silent before. The test requires unit power at every one, D-06b gains where the old fallback was audible, and the exact nearest-speaker answer where it was not.
 
-### WR-02: `vbapTriplets` holds three kinds of entry, and the wedge was identified by an undocumented implicit sentinel
+### WR-02: `LayoutState::vbapTriplets` has three kinds of entry, and the wedge kind is identified by an undocumented implicit sentinel
 
 **Files modified:** `include/SpatialCore/IO/SpeakerLayout.h`, `include/SpatialCore/Engine/RenderEngine.h`, `src/Core/SpatialMath.cpp`, `tests/Core/VBAPTripletSelectionTests.cpp`, `tests/IO/SpeakerLayoutTests.cpp`
 **Commit:** 2ae900c
@@ -94,7 +94,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
 - **Option chosen.** I used an accessor derived from the existing fields rather than a stored `Kind` field. A stored field that defaults to `regular` would be a second source of truth. It could disagree with `lowerHemisphere` on any triplet built field by field (DR-3). `VBAPTriplet` stays an aggregate, and the selection logic is identical.
 - **Test.** The DR-3 test pins the encoding: a non-zero mask is a cap, a zero mask is a wedge, and the default is regular.
 
-### WR-04: The no-fast-math invariant was enforced only by comments
+### WR-04: The "SpatialCore must not be compiled with fast-math" invariant is enforced only by comments
 
 **Files modified:** `src/Core/FloatSemanticsGuard.h` (new), `src/Core/SpatialMath.cpp`, `src/Engine/RenderEngine.cpp`, `src/Algorithms/KNNAlgorithm.cpp`, `src/Algorithms/DirectBinauralAlgorithm.cpp`, `src/OSC/ADMOSCReceiver.cpp`, `CMakeLists.txt`, `docs/integration-guide.md`
 **Commit:** 61dd931
@@ -104,7 +104,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
 - **Consumers.** No public header can reach it, so OpenSpatialDelay keeps its per-target fast-math. I checked OSD's CMakeLists: it applies fast-math with `target_compile_options PRIVATE` on its own targets only.
 - **Why there is no separate CMake check.** The header sees the effective flags of each compile, however they arrive (target options, `CMAKE_CXX_FLAGS`, `add_compile_options`), and that includes MSVC `/fp:fast`.
 
-### WR-07: The NaN-dropping `std::max` reduction was still present in the Ambisonics codec tests
+### WR-07: The NaN-dropping `std::max` reduction fixed by WR-06 is still present in the Ambisonics codec tests
 
 **Files modified:** `tests/TestNumerics.h` (new), `tests/IO/AmbisonicsCodecTests.cpp`, `tests/Engine/RenderEngineTests.cpp`, `tests/Algorithms/PanningLawTests.cpp`, `tests/Core/VBAPTripletSelectionTests.cpp`
 **Commit:** 3f264d9
@@ -115,7 +115,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
   - `PanningLawTests`' `maxStepOverSweep` reports non-finite steps, and both callers check the count.
   - The EAR band test counts a non-finite gain as a violation.
 
-### IN-01: The guide's "return silence" list left out ConstantPower and Ambisonics
+### IN-01: The guide's "return silence" list leaves out ConstantPower and Ambisonics, which are silent only because of argument order
 
 **Files modified:** `src/Algorithms/ConstantPowerAlgorithm.cpp`, `src/Algorithms/AmbisonicsAlgorithm.cpp`, `tests/Core/VBAPTripletSelectionTests.cpp`, `docs/integration-guide.md`
 **Commit:** 5576768
@@ -127,7 +127,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
   - DBAP gives equal gains on every speaker.
 - **New test.** It pins that exact behaviour for all 8 algorithms, on Quad and on 7.1.4, for NaN, +Inf and -Inf in each field.
 
-### IN-02: "Positive azimuth toward +Y (left)" used AmbiX axis names
+### IN-02: "Positive azimuth toward +Y (left)" uses AmbiX axis names, which contradict SpatialCore's own Cartesian frame
 
 **Files modified:** `include/SpatialCore/Core/SpatialMath.h`, `include/SpatialCore/IO/AmbisonicsCodec.h`, `src/Core/SpatialMath.cpp`, `docs/integration-guide.md`, `.claude/skills/spatial-audio-dsp/SKILL.md`, `tests/reference/gen_sh_reference.py`, `tests/reference/ShReference.h`
 **Commit:** 191af3c
@@ -135,7 +135,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
 - **Wording.** Every place now says "toward the listener's left (AmbiX +Y; SpatialCore's internal +x)".
 - **Regenerated header.** `ShReference.h` was regenerated. Only its comment line changed, and it regenerates byte-identically.
 
-### IN-03: `getDecodeMatrix` failed silently
+### IN-03: `getDecodeMatrix` fails silently with no way for the caller to detect it
 
 **Files modified:** `include/SpatialCore/IO/AmbisonicsCodec.h`, `src/IO/AmbisonicsCodec.cpp`, `src/Engine/RenderEngine.cpp`, `tests/IO/AmbisonicsCodecTests.cpp`
 **Commit:** b87eac0
@@ -152,7 +152,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
 - **Engine.** `activateLayout` now checks the result. It runs on the message thread, and its memset already leaves a silent decode if the call is rejected.
 - **New test.** It pins every rejection.
 
-### IN-04: Hold-last-good is keyed by slot, which the guide's "per object" wording did not reflect
+### IN-04: Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's "per object" wording does not reflect
 
 **Files modified:** `docs/integration-guide.md`, `include/SpatialCore/Engine/RenderEngine.h`, `tests/Engine/RenderEngineTests.cpp`
 **Commit:** bfe0a3a
@@ -165,7 +165,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
   - a consumer should send a complete finite position when it assigns a slot.
 - **New test.** It pins this. A finite azimuth sent while the slot is not live becomes the held value. A later NaN renders bit-identically to it, and differently from the default.
 
-### IN-05: The wedge's "pair pan = EAR QuadRegion" equivalence assumes 0-degree ear-level speakers
+### IN-05: The wedge's "pair pan = EAR QuadRegion" equivalence assumes 0 degree ear-level speakers, but the code admits up to +/-10 degrees
 
 **Files modified:** `include/SpatialCore/IO/SpeakerLayout.h`, `src/IO/SpeakerLayout.cpp`
 **Commit:** 6138d4e
@@ -176,7 +176,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
   - When the elevations differ, each gain is divided by cos(elevation) before renormalising. For a 0/10-degree pair 30 degrees apart, the largest difference is 0.0059.
 - **Contract.** The header contract now states this.
 
-### IN-06: The test re-implemented the production tier classifier, and one comment was badly reflowed
+### IN-06: The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed
 
 **Files modified:** `tests/Algorithms/PanningLawTests.cpp` (plus the WR-02 commit's test files)
 **Commits:** 2ae900c (shared classifier, see WR-02), e235386 (reflow)
@@ -197,7 +197,7 @@ After the fix the test also finds 0 uncovered directions, unit power everywhere 
 
 The comment now says this. It also says that a regression confined to those ten layouts is caught only if it is of the 0.1-to-1 kind. This is a comment-only change.
 
-### IN-08: `doublePrecisionAmbiDecode` dropped the library's guards
+### IN-08: `doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders
 
 **Files modified:** `tests/Engine/RenderEngineTests.cpp`
 **Commit:** 0f37417
@@ -215,7 +215,7 @@ The comment now says this. It also says that a regression confined to those ten 
 - "2.5x below" is corrected to "2.3x below (5.8e-5)", and both ratios now name their numbers.
 - A note at the `namespace` line explains why `referenceAmbiDecode` is unindented: it is a byte-for-byte copy of the d43cb15 version.
 
-### IN-12: Ambisonics could be silent everywhere on height layouts and still pass every panning-law check
+### IN-12: Ambisonics may be silent everywhere on height layouts and still pass every panning-law check
 
 **Files modified:** `tests/Algorithms/PanningLawTests.cpp`
 **Commit:** 224ec32
