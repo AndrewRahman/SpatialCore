@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: WR-06
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously"
   - id: IN-07
     severity: info
@@ -63,16 +63,16 @@ findings:
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 14
+open: 13
 total: 15
-recorded: 2026-10-03T21:59:58.119Z
+recorded: 2026-10-03T22:19:04.940Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-06 | warning | open | - |
+| WR-06 | warning | fixed | 02-REVIEW-FIX.md |
 | IN-07 | info | open | - |
 | IN-08 | info | open | - |
 | IN-09 | info | open | - |
