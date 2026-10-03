@@ -1,5 +1,5 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
-#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
+#include "../Core/FloatSemanticsGuard.h"   // WR-04/IN-16: the NaN axis sentinel needs IEEE semantics
 #include <cmath>
 
 namespace spatialcore
