@@ -3,6 +3,26 @@ phase: 02
 review: 02-REVIEW.md
 titles: json
 findings:
+  - id: WR-08
+    severity: warning
+    disposition: open
+    title: "The guide says DBAP \"never goes silent\" and gives equal gains for a non-finite distance, but a non-finite distance with a finite direction gives silence"
+  - id: IN-13
+    severity: info
+    disposition: open
+    title: "Three files were converted from CRLF to LF wholesale inside content commits, hiding the real edits from review and blame"
+  - id: IN-14
+    severity: info
+    disposition: open
+    title: "`VBAPAlgorithm`, `VBIPAlgorithm` and `MDAPAlgorithm::computeGains` still `jassert` on the audio thread (the fixer's open question)"
+  - id: IN-15
+    severity: info
+    disposition: open
+    title: "The WR-05 gap test pins one bridged gap only, so the multi-gap path and the 2(n+2g) formula for g = 2 are unpinned"
+  - id: IN-16
+    severity: info
+    disposition: open
+    title: "`FloatSemanticsGuard.h` lists \"ADM-OSC parse guards\" among isfinite tests, but `ADMOSCReceiver.cpp` contains none"
   - id: WR-02
     severity: warning
     disposition: fixed
@@ -79,30 +99,35 @@ findings:
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-open: 0
-total: 19
-recorded: 2026-10-03T23:22:55.903Z
+open: 5
+total: 24
+recorded: 2026-10-03T23:34:13.705Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-02 | warning | fixed | 02-REVIEW-FIX.md |
-| WR-03 | warning | fixed | 02-REVIEW-FIX.md |
-| WR-04 | warning | fixed | 02-REVIEW-FIX.md |
-| WR-05 | warning | fixed | 02-REVIEW-FIX.md |
-| WR-07 | warning | fixed | 02-REVIEW-FIX.md |
-| IN-01 | info | fixed | 02-REVIEW-FIX.md |
-| IN-02 | info | fixed | 02-REVIEW-FIX.md |
-| IN-03 | info | fixed | 02-REVIEW-FIX.md |
-| IN-04 | info | fixed | 02-REVIEW-FIX.md |
-| IN-05 | info | fixed | 02-REVIEW-FIX.md |
-| IN-06 | info | fixed | 02-REVIEW-FIX.md |
-| IN-07 | info | fixed | 02-REVIEW-FIX.md |
-| IN-08 | info | fixed | 02-REVIEW-FIX.md |
-| IN-09 | info | fixed | 02-REVIEW-FIX.md |
-| IN-12 | info | fixed | 02-REVIEW-FIX.md |
+| WR-08 | warning | open | - |
+| IN-13 | info | open | - |
+| IN-14 | info | open | - |
+| IN-15 | info | open | - |
+| IN-16 | info | open | - |
+| WR-02 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| WR-03 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| WR-04 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| WR-05 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| WR-07 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-01 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-02 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-03 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-04 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-05 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-06 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-07 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-08 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-09 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-12 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-10 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-11 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-06 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
