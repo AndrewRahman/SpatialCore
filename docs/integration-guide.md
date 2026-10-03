@@ -216,8 +216,8 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   and M-110), EAR also feeds the rear height speakers U+135 / U-135, even at and just above the
   horizon; SpatialCore keeps the horizon pan on M+110 / M-110 there, because matching EAR would
   change the sound above the horizon. On a consumer-defined layout whose ear-level ring leaves a
-  gap of 180 degrees or more between neighbouring speakers (no shipped layout does; the widest
-  shipped gap is 140 degrees), the first third of the gap stays on the speaker at that edge, the
+  gap of 179 degrees or more between neighbouring speakers (180 or more, with a 1-degree numerical
+  margin; no shipped layout has one, the widest shipped gap is 140 degrees), the first third of the gap stays on the speaker at that edge, the
   middle third pans between the two edge speakers and the last third stays on the other one, so
   every below-horizon direction is still audible. VBAP and VBIP put no gain on an elevated speaker for a source
   at or below -1 degree; MDAP's spread ring can still reach one just below the horizon. Binaural and
