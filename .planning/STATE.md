@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 02
 current_phase_name: Algorithm & Format Verification
 status: verifying
-stopped_at: Completed 02-09-PLAN.md
-last_updated: "2026-10-03T10:29:01.227Z"
+stopped_at: Completed 02-10-PLAN.md
+last_updated: "2026-10-03T21:55:22.596Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 02 execution started
-state_head: 3f061faf3aa4abf56931392d755024b3401368f8
+state_head: dc945acd93f3fecbcac6d4c5cff9803dbb5eb635
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 15
+  completed_plans: 15
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ## Current Position
 
 Phase: 02 (Algorithm & Format Verification) — EXECUTING
-Plan: 9 of 9 (02-09 complete; all plans executed)
+Plan: 10 of 10 (02-10 complete; all plans executed)
 Status: Phase complete — ready for verification
 Last activity: 2026-10-03 — Phase 02 execution started
 
@@ -89,6 +89,7 @@ Progress: [██████████] 100%
 | Phase 02 P07 | 8min | 3 tasks | 5 files |
 | Phase 02 P08 | 5 min | 2 tasks | 9 files |
 | Phase 02 P09 | 5 min | 2 tasks | 5 files |
+| Phase 02 P10 | wall 4h50m (incl. usage-limit pause) | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 02]: 02-08: pair-pan wedge encoded in existing VBAPTriplet fields (nadirVertex>=0, nadirMask==0, nadirGain==0); no public member added
 - [Phase 02]: 02-08: 5.1.4 rear gap (|az|>110) not special-cased; same wedge as other pairs, EAR difference documented and not pinned
 - [Phase 02]: 02-09: 5.1.x wedge region depth (about -59 degrees) is a geometric derivation tan(el)=tan(-30)/cos(D/2), not a 02-08 measurement; WR-01 closed by scoping #22 to above the horizon
+- [Phase 02]: 02-10: [ambi-pin] bound is kAmbiPinTolerance = 2.5e-5 (derived from conditioning, 2.3x below the +0.1% epsilon failure), anchored by a double-precision decode at 4.0e-5; library and reference untouched
+- [Phase 02]: 02-10: Release gate runs ctest on build-release/tests, because ctest from the build root finds no tests and exits 0 (CI has the same blind spot, deferred to Phase 6)
 
 ### Pending Todos
 
@@ -150,8 +153,8 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-03T10:29:01.181Z
-Stopped at: Completed 02-09-PLAN.md
+Last session: 2026-10-03T21:55:19.174Z
+Stopped at: Completed 02-10-PLAN.md
 Resume file: None
 Next command: `/gsd-execute-phase 1`
 
