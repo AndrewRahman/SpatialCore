@@ -77,7 +77,7 @@ named gaps, it does not rebuild the modules.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 
-**Plans**: 7/9 plans executed (02-08 and 02-09 close UAT gap G-02-2)
+**Plans**: 8/9 plans executed (02-08 and 02-09 close UAT gap G-02-2)
 
 Plans:
 **Wave 1**
@@ -96,7 +96,7 @@ Plans:
 - [x] 02-07-PLAN.md — README, integration guide and skill brought in line with the code; OpenSpatialDelay DR-3 build; phase gate; cross-repo follow-ups recorded *(wave 4)*
 
 **Gap closure — UAT G-02-2** (below-horizon band must pan as ITU-R BS.2127 / EAR; user chose to change the panning)
-- [ ] 02-08-PLAN.md — Tracer on 7.1.4 az 60, then all 8 height layouts: one pair-pan region per ear-level pair replaces the tying trapezoid triangles; ear 2.1.0 band pins; band continuity 0.12 -> 0.01; above-horizon bit-identical (#22 untouched) *(gap wave 1)*
+- [x] 02-08-PLAN.md — Tracer on 7.1.4 az 60, then all 8 height layouts: one pair-pan region per ear-level pair replaces the tying trapezoid triangles; ear 2.1.0 band pins; band continuity 0.12 -> 0.01; above-horizon bit-identical (#22 untouched) *(gap wave 1)*
 - [ ] 02-09-PLAN.md — Guide, README and skill state the EAR-exact band and the 5.1.4 rear-gap exception, #22 scoped above the horizon (WR-01 fixed); phase gate; DR-3 OSD build; superseding OSD follow-ups *(gap wave 2)*
 
 ### Phase 3: Binaural Defects & HRTF Packaging
@@ -225,7 +225,7 @@ External Dependencies.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
-| 2. Algorithm & Format Verification | 7/9 | In Progress|  |
+| 2. Algorithm & Format Verification | 8/9 | In Progress|  |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
