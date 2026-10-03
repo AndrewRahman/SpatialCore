@@ -726,7 +726,12 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
     // moves the decode by 5.8e-5 to 6.3e-5 on 7.0, 7.1, 7.1.2, 7.1.4 and 7.1.6,
     // while real regressions (wrong order, stride, speaker order, dropped
     // regularisation) move it by 0.1 to 1. A +0.01% change (about 6e-6) is below
-    // rounding, and no tolerance can resolve it.
+    // rounding, and no tolerance can resolve it. The +0.1% resolution holds on
+    // those five 7.x layouts only: on the other ten the same change moves the
+    // decode by 9.6e-7 (Quad) to 2.2e-5 (5.1.2), under the bound, so a
+    // regression confined to them is caught only if it is of the 0.1 to 1
+    // kind. The pin as a whole still fails a +0.1% change, through the 7.x
+    // layouts (IN-07; measured with a double solve of each layout's E).
     //
     // Hence kAmbiPinTolerance = 2.5e-5: about 2.5x above the worst rounding
     // spread and 2.5x below the +0.1% change. kAmbiFloatVsDoubleTolerance =
