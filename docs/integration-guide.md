@@ -111,10 +111,18 @@ public:
 > yourself. `RenderEngine` (`#include <SpatialCore/SpatialCore.h>`, header
 > `Engine/RenderEngine.h`) owns all five render paths (direct-binaural HRTF, simple
 > binaural, stereo variants, Ambisonics, discrete surround) and the glitch-free
-> double-buffered layout swap. Call `engine.prepare(sampleRate, maxBlock)` and
+> three-slot layout handoff (`TripleBufferIndex`: the audio thread's layout slot is
+> never written, so back-to-back `setOutputFormat()` calls are safe). Call `engine.prepare(sampleRate, maxBlock)` and
 > `engine.setOutputFormat(fmt)` in `prepareToPlay`; then per block fill a `RenderSources`
 > (the per-object mono signals produced by YOUR effect DSP) plus a `RenderBlockContext`
 > (per-block format/layout snapshot) and call `engine.renderBlock(sources, ctx, buffer)`.
+> Set `ctx.engineDerivesDispatch = true` (with `ctx.engineComputesGains = true`) instead of
+> deriving `isBinaural` / `isStereoVariant` / `isAmbiOutput` / `activeFormat` / `ambiOrder`
+> from your own format state: the engine then takes all five from the same per-block
+> layout snapshot it renders, so a format switch landing mid-block cannot tear them
+> apart (SC-16). Call `setOutputFormat()` from the message thread only, and treat
+> `getActiveLayout()` / `getActiveOutputFormat()` as the writer-thread view, not for the
+> audio thread.
 > See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
 ## Step 5: PluginEditor — Using SpatialCore UI
