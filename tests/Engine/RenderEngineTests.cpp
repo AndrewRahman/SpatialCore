@@ -604,6 +604,10 @@ TEST_CASE ("RenderEngine: the direct-binaural HRTF branch stays finite for an in
 // comparison is within float rounding, not exact, because the two copies are
 // compiled separately; see kAmbiPinTolerance below.
 // ----------------------------------------------------------------------------
+// Indentation in this namespace is split on purpose (IN-09):
+// referenceAmbiDecode is left unindented so it diffs byte-for-byte against the
+// d43cb15 blob; the helpers after it are indented as everywhere else in this
+// file. Do not re-indent referenceAmbiDecode.
 namespace
 {
 void referenceAmbiDecode (const SpeakerLayout& layout,
@@ -734,15 +738,14 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
     // layouts (IN-07; measured with a double solve of each layout's E).
     //
     // Hence kAmbiPinTolerance = 2.5e-5: about 2.5x above the worst rounding
-    // spread and 2.5x below the +0.1% change. kAmbiFloatVsDoubleTolerance =
+    // spread (1.0e-5) and 2.3x below the +0.1% change (5.8e-5). kAmbiFloatVsDoubleTolerance =
     // 4e-5 is about 2.2x the worst float-vs-double distance. It re-checks the
     // premise above on every build, so a toolchain that moves the noise floor
     // fails there with a message that says so, instead of looking like a
     // library change.
     //
     // The previous bound (1e-6) came from RESEARCH F10, a Debug-grade "worst 0"
-    // measurement plus an unmeasured margin. The full derivation is in
-    // .planning/debug/ambi-pin-release-tolerance.md (G-02-10).
+    // measurement plus an unmeasured margin.
     constexpr float kAmbiPinTolerance = 2.5e-5f;
     constexpr double kAmbiFloatVsDoubleTolerance = 4.0e-5;
 
