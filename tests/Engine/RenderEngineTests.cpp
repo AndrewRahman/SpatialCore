@@ -3,6 +3,7 @@
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/Core/SpatialMath.h>
 #include "../Binaural/BinauralTestUtilities.h"
+#include "../TestNumerics.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -708,19 +709,9 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
     constexpr float kAmbiPinTolerance = 2.5e-5f;
     constexpr double kAmbiFloatVsDoubleTolerance = 4.0e-5;
 
-    // Folds one distance into a running maximum. std::max (a, b) is
-    // (a < b) ? b : a, so a NaN distance would be silently dropped and never
-    // reach a tolerance CHECK (WR-06). A non-finite distance is therefore
-    // rejected here: it returns false and leaves the maximum untouched, so the
-    // caller can count it and fail loudly.
-    template <typename T>
-    bool accumulateWorstFinite (T& worst, T distance)
-    {
-        if (! std::isfinite (distance))
-            return false;
-        worst = std::max (worst, distance);
-        return true;
-    }
+    // Non-finite-aware max-reduction (WR-06), shared with the other test files
+    // through tests/TestNumerics.h (WR-07).
+    using spatialcore_test::accumulateWorstFinite;
 
     // The same decode as referenceAmbiDecode, in double, on the same float
     // inputs: E is bit-identical to what both float decoders see, and the

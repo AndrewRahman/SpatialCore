@@ -4,6 +4,7 @@
 #include <SpatialCore/IO/SpeakerLayout.h>
 #include <SpatialCore/Core/SpatialMath.h>
 #include "../reference/ShReference.h"
+#include "../TestNumerics.h"
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -12,6 +13,7 @@
 
 using namespace spatialcore;
 using Catch::Matchers::WithinAbs;
+using spatialcore_test::accumulateWorstFinite;
 
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kDegToRad = kPi / 180.0f;
@@ -203,6 +205,7 @@ TEST_CASE("SH: SN3D addition theorem, sum over m of Y_lm^2 == 1 at orders 1-6 (D
     for (int l = 1; l <= AmbisonicsCodec::MAX_AMBI_ORDER; ++l)
     {
         double worst = 0.0;
+        int nonFinite = 0;
         std::pair<float, float> worstDir { 0.0f, 0.0f };
         for (const auto& d : dirs)
         {
@@ -212,11 +215,21 @@ TEST_CASE("SH: SN3D addition theorem, sum over m of Y_lm^2 == 1 at orders 1-6 (D
                 const double y = evalSH (acn, d.first, d.second);
                 sum += y * y;
             }
-            const double dev = std::abs (sum - 1.0);
-            if (dev > worst) { worst = dev; worstDir = d; }
+            // WR-07: a NaN sum must fail, not be skipped by "dev > worst".
+            const double before = worst;
+            if (! accumulateWorstFinite (worst, std::abs (sum - 1.0)))
+            {
+                if (nonFinite++ == 0)
+                    UNSCOPED_INFO("order " << l << ": first non-finite sum " << sum
+                                  << " at az=" << d.first << " el=" << d.second << " rad");
+                continue;
+            }
+            if (worst > before)
+                worstDir = d;
         }
         INFO("order " << l << ": worst |sum - 1| = " << worst
              << " at az=" << worstDir.first << " el=" << worstDir.second << " rad");
+        CHECK(nonFinite == 0);
         CHECK(worst <= 2e-5);
     }
 }
@@ -231,10 +244,18 @@ TEST_CASE("SH: negative elevation keeps its true sign, Y(az,-el) = (-1)^(l+|m|) 
         const float parity = ((l + std::abs (m)) % 2 == 0) ? 1.0f : -1.0f;
 
         float worst = 0.0f;
+        int nonFinite = 0;
         for (const auto& d : dirs)
-            worst = std::max (worst, std::abs (evalSH (c, d.first, -d.second)
-                                               - parity * evalSH (c, d.first, d.second)));
+        {
+            // WR-07: std::max would drop a NaN parity error.
+            const float err = std::abs (evalSH (c, d.first, -d.second)
+                                        - parity * evalSH (c, d.first, d.second));
+            if (! accumulateWorstFinite (worst, err) && nonFinite++ == 0)
+                UNSCOPED_INFO("ACN " << c << ": first non-finite parity error at az="
+                              << d.first << " el=" << d.second << " rad");
+        }
         INFO("ACN " << c << " (l=" << l << ", m=" << m << "), worst parity error " << worst);
+        CHECK(nonFinite == 0);
         CHECK(worst <= 1e-5f);
     }
 }
@@ -423,6 +444,7 @@ TEST_CASE("SH: encode, dense decode, re-encode round trip at orders 1-6 (D-11a, 
         const auto D = denseDecode (E, M, S, 1e-6);
 
         double worst = 0.0;
+        int nonFinite = 0;
         for (const auto& src : sources)
         {
             float coeffs[AmbisonicsCodec::MAX_AMBI_CHANNELS] = {};
@@ -438,10 +460,16 @@ TEST_CASE("SH: encode, dense decode, re-encode round trip at orders 1-6 (D-11a, 
                 double y = 0.0;
                 for (int s = 0; s < S; ++s)
                     y += E[static_cast<size_t> (c * S + s)] * g[static_cast<size_t> (s)];
-                worst = std::max (worst, std::abs (y - static_cast<double> (coeffs[c])));
+                // WR-07: a singular or garbage solve gives NaN everywhere, which
+                // std::max would drop, reporting worst == 0.
+                if (! accumulateWorstFinite (worst, std::abs (y - static_cast<double> (coeffs[c])))
+                    && nonFinite++ == 0)
+                    UNSCOPED_INFO("order " << order << ": first non-finite re-encode at ACN " << c
+                                  << " source az=" << src.first << " el=" << src.second << " rad");
             }
         }
         INFO("order " << order << ": worst re-encode coefficient error " << worst);
+        CHECK(nonFinite == 0);
         CHECK(worst <= 1e-5);
     }
 }

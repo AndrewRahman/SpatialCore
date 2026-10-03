@@ -4,6 +4,7 @@
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 #include <SpatialCore/Core/SpatialMath.h>
 #include "../reference/PanningReference.h"
+#include "../TestNumerics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -336,6 +337,7 @@ struct StepResult
     float maxStep = 0.0f;
     float atAzDeg = 0.0f;
     int   speaker = -1;
+    int   nonFinite = 0;      // NaN/Inf steps, kept out of maxStep (WR-07)
 };
 
 /** Largest per-speaker gain change between consecutive azimuths of a full
@@ -351,10 +353,14 @@ StepResult maxStepOverSweep (const SpatializationAlgorithm& algo, const LayoutCo
     {
         for (int s = 0; s < n; ++s)
         {
-            const float step = std::abs (a[s] - b[s]);
-            if (step > r.maxStep)
+            const float before = r.maxStep;
+            if (! spatialcore_test::accumulateWorstFinite (r.maxStep, std::abs (a[s] - b[s])))
             {
-                r.maxStep = step;
+                ++r.nonFinite;
+                continue;
+            }
+            if (r.maxStep > before)
+            {
                 r.atAzDeg = azDeg;
                 r.speaker = s;
             }
@@ -682,7 +688,9 @@ TEST_CASE ("Panning laws: 360-degree continuity where the algorithm is continuou
             {
                 const StepResult r = maxStepOverSweep (*algo, ctx, n, elevations[e], stepDeg, 0.5f);
                 INFO (rig->name << " " << laws->name << " el " << elevations[e] << " step " << stepDeg
-                      << " max step " << r.maxStep << " at az " << r.atAzDeg << " speaker " << r.speaker);
+                      << " max step " << r.maxStep << " at az " << r.atAzDeg << " speaker " << r.speaker
+                      << " non-finite steps " << r.nonFinite);
+                CHECK (r.nonFinite == 0);
                 CHECK (r.maxStep <= bound);
             }
         }
@@ -972,7 +980,9 @@ TEST_CASE ("Panning laws: VBAP lower-hemisphere continuity, scoped (D-04, D-18)"
             {
                 const StepResult r = maxStepOverSweep (vbap, ctx, n, el, 0.1f, 0.5f);
                 INFO (rig->name << " " << scope.label << " el " << el << " max step " << r.maxStep
-                      << " at az " << r.atAzDeg << " speaker " << r.speaker);
+                      << " at az " << r.atAzDeg << " speaker " << r.speaker
+                      << " non-finite steps " << r.nonFinite);
+                CHECK (r.nonFinite == 0);
                 CHECK (r.maxStep <= scope.bound);
             }
     }

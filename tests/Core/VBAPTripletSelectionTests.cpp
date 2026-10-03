@@ -4,6 +4,7 @@
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 #include "../reference/EarReference.h"
+#include "../TestNumerics.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1199,13 +1200,16 @@ TEST_CASE ("EAR band: below the horizon VBAP keeps the ear-level pair pan of its
                 computeVBAPGains3D (layout, triplets, az, el, g);
                 earLevelPairPan (layout, static_cast<double> (az), ref);
 
+                // WR-07: a NaN gain counts as a violation instead of being
+                // dropped by std::max.
                 float worst = 0.0f;
+                bool finite = true;
                 for (int s = 0; s < layout.numSpeakers; ++s)
-                    worst = std::max (worst, std::abs (g[s] - ref[s]));
-                if (worst > 1e-5f)
+                    finite = spatialcore_test::accumulateWorstFinite (worst, std::abs (g[s] - ref[s])) && finite;
+                if (! finite || worst > 1e-5f)
                 {
                     ++gainViolations;
-                    noteFailure ("differs from the pair pan", azDeg, elDeg, worst);
+                    noteFailure (finite ? "differs from the pair pan" : "non-finite gain", azDeg, elDeg, worst);
                 }
 
                 int counts[3];
