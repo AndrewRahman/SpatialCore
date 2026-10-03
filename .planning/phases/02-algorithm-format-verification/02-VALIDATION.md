@@ -71,6 +71,10 @@ checks. Full-suite command used by every plan:
 | 02-07-T1 | 02-07 | 4 | VERIFY-01 (D-10 docs), D-14/D-15/D-16/D-17 docs, nearest-speaker helper comment-only deprecation (Discretion; moved from 02-01-T3) | T-02-19 | N/A | grep gate | Task 1 `<verify>` in `02-07-PLAN.md` | ✅ | ⬜ pending |
 | 02-07-T2 | 02-07 | 4 | D-18, F12 skill drift | T-02-19 | N/A | grep gate | Task 2 `<verify>` in `02-07-PLAN.md` | ✅ | ⬜ pending |
 | 02-07-T3 | 02-07 | 4 | DR-4 phase gate, D-17 repo-wide, DR-3 OSD build | T-02-17, T-02-18 | OSD repo and plugin folders untouched | full suite + tag sweep + cross-repo build | full-suite command above, per-tag loop, `test -z "$(git grep -n 'Pulkki 2000' -- ':!.planning')"`, `cmake --build /tmp/osd-dr3-check/build --target OpenSpatialDelay OpenSpatialDelayTests` | n/a | ⬜ pending |
+| 02-08-T1 | 02-08 | 1 | EXTR-01, D-04 band tracer (G-02-2) | T-02-20, T-02-21 | N/A | unit e2e via RenderEngine | `./build/tests/SpatialCoreTests "[g02-2]"` | ✅ | ⬜ pending |
+| 02-08-T2 | 02-08 | 1 | EXTR-01, D-04 band oracle and continuity | T-02-22 | N/A | unit + regenerate-diff | `./build/tests/SpatialCoreTests "[band]"` and the `EarReference.h` regenerate-diff | ✅ | ⬜ pending |
+| 02-09-T1 | 02-09 | 2 | EXTR-01 docs (guide, README, skill) | T-02-24 | N/A | grep gate | Task 1 `<verify>` in `02-09-PLAN.md` | ✅ | ⬜ pending |
+| 02-09-T2 | 02-09 | 2 | DR-4 phase gate, DR-3 OSD build | T-02-25, T-02-26 | OSD repo and plugin folders untouched | full suite + tag sweep + cross-repo build | full-suite command above, per-tag loop (incl. `[band]`, `[g02-2]`), `cmake --build /tmp/osd-dr3-check/build --target OpenSpatialDelay OpenSpatialDelayTests` | n/a | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

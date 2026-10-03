@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
   - id: WR-02
     severity: warning
@@ -35,7 +35,7 @@ findings:
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 8
+open: 7
 total: 8
 recorded: 2026-10-01T07:45:53.017Z
 ---
@@ -44,7 +44,7 @@ recorded: 2026-10-01T07:45:53.017Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
+| WR-01 | warning | fixed | 02-08 + 02-09: the band no longer ties; guide and skill scope #22 to above the horizon |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
 | WR-04 | warning | open | - |
