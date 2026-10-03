@@ -814,9 +814,19 @@ TEST_CASE ("RenderEngine: the order-3 speaker decode matches the pre-change priv
         for (int s = 0; s < active.layout.numSpeakers; ++s)
             for (int c = 0; c < 16; ++c)
             {
-                worstHere = std::max (worstHere, std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]));
-                libVsExact = std::max (libVsExact, std::abs (static_cast<double> (active.ambiDecodeMatrix[s][c]) - exact[s][c]));
-                refVsExact = std::max (refVsExact, std::abs (static_cast<double> (reference[s][c]) - exact[s][c]));
+                // std::max (a, b) is (a < b) ? b : a, so a NaN b is silently
+                // dropped and the entry would never reach the tolerance CHECKs
+                // below (WR-06). Reject non-finite distances explicitly before
+                // they enter the max-reduction.
+                const float  dNew = std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]);
+                const double dLib = std::abs (static_cast<double> (active.ambiDecodeMatrix[s][c]) - exact[s][c]);
+                const double dRef = std::abs (static_cast<double> (reference[s][c]) - exact[s][c]);
+                REQUIRE (std::isfinite (dNew));
+                REQUIRE (std::isfinite (dLib));
+                REQUIRE (std::isfinite (dRef));
+                worstHere = std::max (worstHere, dNew);
+                libVsExact = std::max (libVsExact, dLib);
+                refVsExact = std::max (refVsExact, dRef);
             }
         INFO ("worst |new - old| = " << worstHere);
         INFO ("worst |library - double solve| = " << libVsExact);
