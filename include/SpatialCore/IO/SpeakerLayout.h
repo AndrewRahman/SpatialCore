@@ -103,6 +103,15 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
 // triplets for n ear-level speakers (G-02-2). Each appended triplet has
 // lowerHemisphere == true.
 //
+// Ear-level gaps (WR-05): when two neighbouring ear-level speakers are 179
+// degrees or more apart in azimuth (the ring does not surround the listener),
+// that gap gets two virtual ear-level vertices at one third and two thirds of
+// the way across, downmixed onto the nearer of the two speakers. The first
+// third of the gap stays on one speaker, the middle third pans between the two,
+// the last third stays on the other, so every below-horizon direction is
+// enclosed and audible. The count is then 2 (n + 2g) for g such gaps (g is 0 on
+// every shipped layout, so they get exactly 2n).
+//
 // Appends and never clears. Message/prepare thread only (allocates via
 // push_back) -- never call from processBlock. Appends nothing for flat layouts,
 // for layouts with any speaker below -10 degrees, or with fewer than 3

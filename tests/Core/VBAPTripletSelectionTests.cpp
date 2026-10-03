@@ -1287,3 +1287,175 @@ TEST_CASE ("EAR: every finite direction resolves to a triplet with unit power on
         CHECK (elevatedLeak == 0);
     }
 }
+
+// ----------------------------------------------------------------------------
+// WR-05: an ear-level ring that does not surround the listener (an azimuth gap
+// of 180 degrees or more between neighbouring ear-level speakers). Before the
+// fix the hull orientation test dropped the wrapping pair's cap and wedge
+// (4 extras instead of 6 on a 3-speaker ring) and below-horizon directions in
+// the gap had no enclosing triplet: silent or near-silent in Release, an assert
+// in Debug. These layouts are consumer-defined: no shipped layout has a gap
+// that wide (the widest is 140 degrees, 5.x's rear).
+// ----------------------------------------------------------------------------
+
+namespace
+{
+SpeakerLayout makeLayoutDeg (const std::vector<std::pair<float, float>>& speakersDeg)
+{
+    SpeakerLayout l {};
+    l.numSpeakers     = static_cast<int> (speakersDeg.size());
+    l.lfeChannelIndex = -1;
+    l.totalChannels   = l.numSpeakers;
+    for (int s = 0; s < l.numSpeakers; ++s)
+        l.speakers[s] = { juce::degreesToRadians (speakersDeg[static_cast<size_t> (s)].first),
+                          juce::degreesToRadians (speakersDeg[static_cast<size_t> (s)].second), s };
+    return l;
+}
+
+struct GapLayoutCase
+{
+    const char* name;
+    std::vector<std::pair<float, float>> speakersDeg;   // (azimuth, elevation)
+    int earLevel;      // n: speakers within 10 degrees of the horizon
+    int bridgedGaps;   // g: ear-level azimuth gaps of 179 degrees or more
+};
+} // namespace
+
+TEST_CASE ("EAR gap: an ear-level ring with an azimuth gap of 180 degrees or more still covers every below-horizon direction with sound (WR-05)",
+           "[ear][gap]")
+{
+    const GapLayoutCase cases[] = {
+        { "front-only ring 0/+30/-30 plus 3 heights (300-degree rear gap)",
+          { { 0, 0 }, { 30, 0 }, { -30, 0 }, { 30, 45 }, { -30, 45 }, { 180, 45 } }, 3, 1 },
+        { "ring 0/+90/-90 plus 2 heights (exactly 180-degree rear gap)",
+          { { 0, 0 }, { 90, 0 }, { -90, 0 }, { 45, 45 }, { -45, 45 } }, 3, 1 },
+        { "control: ring 0/+100/-100 plus 2 heights (160-degree gap, no bridge)",
+          { { 0, 0 }, { 100, 0 }, { -100, 0 }, { 45, 45 }, { -45, 45 } }, 3, 0 },
+    };
+
+    const float elevatedLimit = juce::degreesToRadians (10.0f);
+
+    for (const auto& c : cases)
+    {
+        const SpeakerLayout layout = makeLayoutDeg (c.speakersDeg);
+        const int n = layout.numSpeakers;
+
+        std::vector<VBAPTriplet> regular;
+        buildVBAPTripletsForLayout (layout, regular);
+        const auto triplets = combinedTriplets (layout);
+        REQUIRE (triplets.size() >= regular.size());
+
+        // Documented count: 2 (n + 2g) -- one cap and one wedge per
+        // neighbouring pair of the ear-level ring, where each bridged gap adds
+        // two virtual ear-level vertices to the ring.
+        const size_t extras = triplets.size() - regular.size();
+
+        // 5000 seeded random directions, uniform over the lower hemisphere
+        // (the reviewer's measurement), plus every 2 degrees of a grid.
+        std::vector<std::pair<float, float>> dirs;
+        std::mt19937_64 rng (2025);
+        std::uniform_real_distribution<double> zDist (-1.0, 0.0);
+        std::uniform_real_distribution<double> azDist (-3.14159265358979323846, 3.14159265358979323846);
+        for (int i = 0; i < 5000; ++i)
+        {
+            const double z = zDist (rng);
+            dirs.emplace_back (static_cast<float> (azDist (rng)), static_cast<float> (std::asin (z)));
+        }
+        for (int a = -180; a < 180; a += 2)
+            for (int e = -90; e < 0; e += 2)
+                dirs.emplace_back (juce::degreesToRadians (static_cast<float> (a)),
+                                   juce::degreesToRadians (static_cast<float> (e)));
+
+        long silent = 0, offUnit = 0, uncovered = 0, elevatedLeak = 0;
+        std::string firstFailure;
+        auto noteFailure = [&] (const char* what, float az, float el, float value)
+        {
+            if (firstFailure.empty())
+                firstFailure = std::string (what) + " at az " + std::to_string (juce::radiansToDegrees (az))
+                             + " el " + std::to_string (juce::radiansToDegrees (el))
+                             + " value " + std::to_string (value);
+        };
+
+        for (const auto& [az, el] : dirs)
+        {
+            if (! anyTripletContains (triplets, az, el))
+            {
+                ++uncovered;
+                noteFailure ("no enclosing triplet", az, el, 0.0f);
+            }
+
+            float g[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, az, el, g);
+            const float p = powerOf (g, n);
+
+            // The reviewer's "silent" criterion, and the stricter unit-power one
+            // (written so a NaN power counts as a failure).
+            if (! (p >= 0.5f))
+            {
+                ++silent;
+                noteFailure ("silent (power < 0.5)", az, el, p);
+            }
+            if (! (std::abs (p - 1.0f) <= 2e-6f))
+            {
+                ++offUnit;
+                noteFailure ("power off unit", az, el, p);
+            }
+            for (int s = 0; s < n; ++s)
+                if (layout.speakers[s].elevationRad > elevatedLimit && g[s] != 0.0f)
+                {
+                    ++elevatedLeak;
+                    noteFailure ("elevated speaker gain below the horizon", az, el, g[s]);
+                }
+        }
+
+        // Continuity: the bridge pans smoothly across the gap. Largest gain step
+        // between neighbouring 0.1-degree samples, along azimuth at four
+        // elevations and along elevation at five azimuths inside the rear gap.
+        // A NaN step counts as a failure (WR-06 pattern).
+        float maxStep = 0.0f;
+        long nonFiniteSteps = 0;
+        auto stepBetween = [&] (float az0, float el0, float az1, float el1)
+        {
+            float g0[MAX_SPEAKERS] = {};
+            float g1[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, az0, el0, g0);
+            computeVBAPGains3D (layout, triplets, az1, el1, g1);
+            for (int s = 0; s < n; ++s)
+            {
+                const float d = std::abs (g1[s] - g0[s]);
+                if (! std::isfinite (d))
+                {
+                    ++nonFiniteSteps;
+                    noteFailure ("non-finite gain step", az1, el1, d);
+                }
+                else if (d > maxStep)
+                {
+                    maxStep = d;
+                    if (d > 0.01f)
+                        noteFailure ("gain step above 0.01", az1, el1, d);
+                }
+            }
+        };
+        for (float elDeg : { -5.0f, -15.0f, -45.0f, -75.0f })
+            for (int k = 0; k < 3600; ++k)
+                stepBetween (juce::degreesToRadians (-180.0f + 0.1f * static_cast<float> (k)),
+                             juce::degreesToRadians (elDeg),
+                             juce::degreesToRadians (-180.0f + 0.1f * static_cast<float> (k + 1)),
+                             juce::degreesToRadians (elDeg));
+        for (float azDeg : { 120.0f, 150.0f, 180.0f, -150.0f, -120.0f })
+            for (int k = 0; k < 899; ++k)
+                stepBetween (juce::degreesToRadians (azDeg), juce::degreesToRadians (-0.05f - 0.1f * static_cast<float> (k)),
+                             juce::degreesToRadians (azDeg), juce::degreesToRadians (-0.05f - 0.1f * static_cast<float> (k + 1)));
+
+        INFO (c.name << ": extras " << extras << ", silent " << silent << ", uncovered " << uncovered
+              << ", max step " << maxStep << ", first failure: " << firstFailure);
+        CHECK (dirs.size() == 5000u + 180u * 45u);
+        CHECK (extras == static_cast<size_t> (2 * (c.earLevel + 2 * c.bridgedGaps)));
+        CHECK (silent == 0);
+        CHECK (offUnit == 0);
+        CHECK (uncovered == 0);
+        CHECK (elevatedLeak == 0);
+        CHECK (nonFiniteSteps == 0);
+        CHECK (maxStep <= 0.01f);
+    }
+}

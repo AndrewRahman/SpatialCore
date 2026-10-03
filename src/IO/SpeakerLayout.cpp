@@ -195,13 +195,30 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
 // speakers that collapses to the pair's horizon pan, which is what the wedge
 // computes. The equivalence assumes the ear-level speakers sit at 0 degrees
 // elevation, as every shipped layout does.
+//
+// Gap bridge (WR-05): the construction above needs the ear-level ring to
+// surround the listener. When two neighbouring ear-level speakers A and B are
+// kGapBridgeRad (179 degrees) or more apart in azimuth, the hull no longer
+// contains the origin, its "away from the origin" facet orientation fails and
+// the wrapping pair's cap and wedge are lost, leaving that part of the lower
+// hemisphere unenclosed. Each such gap gets two virtual ear-level vertices, at
+// one third and two thirds of the way from A to B, downmixed 1:1 onto A and B
+// respectively (exactly as a -30 degree copy downmixes onto its speaker). The
+// ring then surrounds the listener again and gets its caps and wedges as
+// usual: the first third of the gap stays on A, the middle third pans A to B,
+// the last third stays on B. No shipped layout has such a gap (the widest is
+// 140 degrees), so their triplets are unchanged bit for bit.
 //==============================================================================
 namespace
 {
-constexpr double kEarLevelLimitRad    = 10.0 * 3.14159265358979323846 / 180.0;
-constexpr double kVirtualRingElevRad  = -30.0 * 3.14159265358979323846 / 180.0;
+constexpr double kPiD                 = 3.14159265358979323846;
+constexpr double kEarLevelLimitRad    = 10.0 * kPiD / 180.0;
+constexpr double kVirtualRingElevRad  = -30.0 * kPiD / 180.0;
 constexpr double kHullDetEpsilon      = 1e-3;
 constexpr double kSupportPlaneEpsilon = 1e-7;
+// 1 degree short of 180: from about 179.93 degrees the wrapping cap's
+// determinant (0.75 sin gap) already falls under kHullDetEpsilon.
+constexpr double kGapBridgeRad        = 179.0 * kPiD / 180.0;
 
 struct HullVertex
 {
@@ -209,6 +226,7 @@ struct HullVertex
     int    target;      // real speaker index this vertex downmixes onto
     bool   isVirtual;
     bool   isNadir;
+    double azRad;       // azimuth the vertex was built from (copies reuse it)
 };
 
 HullVertex makeHullVertex (double azRad, double elRad, int target, bool isVirtual)
@@ -216,7 +234,7 @@ HullVertex makeHullVertex (double azRad, double elRad, int target, bool isVirtua
     return { std::cos (elRad) * std::sin (azRad),
              std::cos (elRad) * std::cos (azRad),
              std::sin (elRad),
-             target, isVirtual, false };
+             target, isVirtual, false, azRad };
 }
 
 // Row r of t.inv times a direction p is the gain of slot r. m holds the three
@@ -250,7 +268,7 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
             return;
 
     std::vector<HullVertex> verts;
-    verts.reserve (static_cast<size_t> (2 * N + 1));
+    verts.reserve (static_cast<size_t> (2 * (N + 4) + 1));
 
     std::uint16_t earMask = 0;
     int earCount = 0;
@@ -273,22 +291,54 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
     if (earCount < 3)
         return;
 
-    const size_t numReal = verts.size();
-    for (size_t v = 0; v < numReal; ++v)
+    // Gap bridge (WR-05, see above): two virtual ear-level vertices in every
+    // neighbouring-pair azimuth gap of kGapBridgeRad or more.
     {
-        const int s = verts[v].target;
-        verts.push_back (makeHullVertex (static_cast<double> (layout.speakers[s].azimuthRad),
-                                         kVirtualRingElevRad, s, true));
+        std::vector<std::pair<double, size_t>> ring;   // (azimuth in [0, 2 pi), vertex)
+        ring.reserve (verts.size());
+        for (size_t v = 0; v < verts.size(); ++v)
+        {
+            double a = std::atan2 (verts[v].x, verts[v].y);
+            if (a < 0.0)
+                a += 2.0 * kPiD;
+            ring.emplace_back (a, v);
+        }
+        std::sort (ring.begin(), ring.end());
+
+        const size_t m = ring.size();
+        for (size_t p = 0; p < m; ++p)
+        {
+            const size_t q = (p + 1) % m;
+            double gap = ring[q].first - ring[p].first;
+            if (q == 0)
+                gap += 2.0 * kPiD;
+            if (gap < kGapBridgeRad)
+                continue;
+
+            const int targetA = verts[ring[p].second].target;
+            const int targetB = verts[ring[q].second].target;
+            verts.push_back (makeHullVertex (ring[p].first + gap / 3.0,       0.0, targetA, true));
+            verts.push_back (makeHullVertex (ring[p].first + 2.0 * gap / 3.0, 0.0, targetB, true));
+        }
     }
 
-    HullVertex nadir { 0.0, 0.0, -1.0, firstEar, true, true };
+    // Ear-level ring = the real ear-level speakers, then any bridge vertices.
+    const size_t numEar = verts.size();
+    for (size_t v = 0; v < numEar; ++v)
+        verts.push_back (makeHullVertex (verts[v].azRad, kVirtualRingElevRad, verts[v].target, true));
+
+    HullVertex nadir { 0.0, 0.0, -1.0, firstEar, true, true, 0.0 };
     verts.push_back (nadir);
 
     const float nadirShare = static_cast<float> (1.0 / std::sqrt (static_cast<double> (earCount)));
     const size_t V = verts.size();
 
-    std::vector<std::pair<int, int>> capPairs;
-    capPairs.reserve (static_cast<size_t> (earCount));
+    // Ear-level ring vertex a hull vertex belongs to (a -30 degree copy maps to
+    // the ear-level vertex it was made from).
+    auto earVertexOf = [numEar] (size_t v) { return v < numEar ? v : v - numEar; };
+
+    std::vector<std::pair<size_t, size_t>> capPairs;
+    capPairs.reserve (numEar);
 
     for (size_t a = 0; a + 2 < V; ++a)
     {
@@ -318,6 +368,7 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
                     continue;
 
                 // Plane normal (b - a) x (c - a), oriented away from the origin.
+                // Correct because the (bridged) ear-level ring surrounds it.
                 const double e1x = vb.x - va.x, e1y = vb.y - va.y, e1z = vb.z - va.z;
                 const double e2x = vc.x - va.x, e2y = vc.y - va.y, e2z = vc.z - va.z;
                 double nx = e1y * e2z - e1z * e2y;
@@ -367,24 +418,23 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
 
                 // Remember the neighbouring ear-level pair this cap spans (slot
                 // order, nadir slot skipped) so its wedge can be built below.
-                const int pairA = (t.nadirVertex == 0) ? t.j : t.i;
-                const int pairB = (t.nadirVertex == 2) ? t.j : t.k;
-                capPairs.emplace_back (pairA, pairB);
+                const size_t pairA = (t.nadirVertex == 0) ? b : a;
+                const size_t pairB = (t.nadirVertex == 2) ? b : c;
+                capPairs.emplace_back (earVertexOf (pairA), earVertexOf (pairB));
             }
         }
     }
 
-    // One pair-pan wedge per neighbouring ear-level pair: the two real speakers
+    // One pair-pan wedge per neighbouring ear-level pair: the pair's two
+    // ear-level vertices (real speakers, or a bridge vertex in a WR-05 gap)
     // plus the virtual nadir, nadir share 0. Slot 2 is the nadir; k is a
     // placeholder that nadirVertex makes the output mapping ignore.
     for (const auto& pair : capPairs)
     {
-        const HullVertex va = makeHullVertex (static_cast<double> (layout.speakers[pair.first].azimuthRad),
-                                              static_cast<double> (layout.speakers[pair.first].elevationRad),
-                                              pair.first, false);
-        const HullVertex vb = makeHullVertex (static_cast<double> (layout.speakers[pair.second].azimuthRad),
-                                              static_cast<double> (layout.speakers[pair.second].elevationRad),
-                                              pair.second, false);
+        // Ear-level ring vertices: a real speaker's is built from its own
+        // azimuth and elevation; a bridge vertex downmixes onto its target.
+        const HullVertex& va = verts[pair.first];
+        const HullVertex& vb = verts[pair.second];
 
         const double m[3][3] = {
             { va.x, vb.x, nadir.x },
@@ -400,8 +450,8 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
             continue;
 
         VBAPTriplet w;
-        w.i = pair.first;
-        w.j = pair.second;
+        w.i = va.target;
+        w.j = vb.target;
         w.k = firstEar;
         setInverse (w, m, 1.0 / det);
 
