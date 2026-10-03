@@ -949,14 +949,15 @@ TEST_CASE ("Panning laws: VBAP lower-hemisphere continuity, scoped (D-04, D-18)"
     // degrees before the cap takes over.
     //
     // The -30..0 band is one pair-pan region per neighbouring ear-level pair
-    // (G-02-2): the horizon pan at the source azimuth, continuous at the horizon
-    // slope, so it gets the same 0.01 bound (it needed a far looser one while
-    // the band was coplanar quads split into tied triangles, RESEARCH F5). The
-    // seam between band and cap (-35, -40) is checked on every rig: on 5.1.x and 7.1.x those sweeps cross
-    // between a pair wedge and a cap triangle, which agree analytically on their
-    // shared edge (on the cap's top face the nadir share is 0 and both reduce to
-    // the same pair pan). A seam or band sweep above 0.01 is a construction
-    // defect, not a bound to loosen.
+    // (G-02-2): the horizon pan at the source azimuth, continuous at the
+    // horizon slope, so it gets the same 0.01 bound (it needed a far looser
+    // one while the band was coplanar quads split into tied triangles,
+    // RESEARCH F5). The seam between band and cap (-35, -40) is checked on
+    // every rig: on 5.1.x and 7.1.x those sweeps cross between a pair wedge
+    // and a cap triangle, which agree analytically on their shared edge (on
+    // the cap's top face the nadir share is 0 and both reduce to the same pair
+    // pan). A seam or band sweep above 0.01 is a construction defect, not a
+    // bound to loosen.
     const VBAPAlgorithm vbap;
 
     struct Scope { const char* label; std::vector<float> elevations; float bound; };
