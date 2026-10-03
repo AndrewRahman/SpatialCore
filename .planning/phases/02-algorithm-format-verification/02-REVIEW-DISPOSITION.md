@@ -105,14 +105,14 @@ findings:
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
 open: 0
 total: 25
-recorded: 2026-10-03T23:48:29.075Z
+recorded: 2026-10-03T23:49:32.350Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| IN-17 | info | fixed | 02-REVIEW-FIX.md |
+| IN-17 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-08 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-13 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-14 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
