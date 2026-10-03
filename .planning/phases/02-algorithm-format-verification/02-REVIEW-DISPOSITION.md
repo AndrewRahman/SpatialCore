@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: IN-17
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`FloatSemanticsGuard.h` attributes the ConstantPower, KNN, DirectBinaural and Ambisonics guards to `SpatialMath`"
   - id: WR-08
     severity: warning
@@ -103,16 +103,16 @@ findings:
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-open: 1
+open: 0
 total: 25
-recorded: 2026-10-03T23:48:11.134Z
+recorded: 2026-10-03T23:48:29.075Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| IN-17 | info | open | - |
+| IN-17 | info | fixed | 02-REVIEW-FIX.md |
 | WR-08 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-13 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-14 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
