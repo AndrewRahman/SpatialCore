@@ -811,23 +811,32 @@ TEST_CASE ("RenderEngine: the order-3 speaker decode matches the pre-change priv
         float worstHere = 0.0f;
         double libVsExact = 0.0;
         double refVsExact = 0.0;
+        int nonFinite = 0;
         for (int s = 0; s < active.layout.numSpeakers; ++s)
             for (int c = 0; c < 16; ++c)
             {
                 // std::max (a, b) is (a < b) ? b : a, so a NaN b is silently
                 // dropped and the entry would never reach the tolerance CHECKs
-                // below (WR-06). Reject non-finite distances explicitly before
-                // they enter the max-reduction.
+                // below (WR-06). Count non-finite distances and keep them out
+                // of the max-reduction, then fail once per layout (IN-10).
                 const float  dNew = std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]);
                 const double dLib = std::abs (static_cast<double> (active.ambiDecodeMatrix[s][c]) - exact[s][c]);
                 const double dRef = std::abs (static_cast<double> (reference[s][c]) - exact[s][c]);
-                REQUIRE (std::isfinite (dNew));
-                REQUIRE (std::isfinite (dLib));
-                REQUIRE (std::isfinite (dRef));
+                if (! std::isfinite (dNew) || ! std::isfinite (dLib) || ! std::isfinite (dRef))
+                {
+                    // Name only the first bad entry; the count says how many.
+                    if (nonFinite++ == 0)
+                        UNSCOPED_INFO ("first non-finite decode entry: s=" << s << " c=" << c
+                                       << " lib=" << active.ambiDecodeMatrix[s][c]
+                                       << " ref=" << reference[s][c]
+                                       << " exact=" << exact[s][c]);
+                    continue;
+                }
                 worstHere = std::max (worstHere, dNew);
                 libVsExact = std::max (libVsExact, dLib);
                 refVsExact = std::max (refVsExact, dRef);
             }
+        CHECK (nonFinite == 0);
         INFO ("worst |new - old| = " << worstHere);
         INFO ("worst |library - double solve| = " << libVsExact);
         INFO ("worst |reference - double solve| = " << refVsExact);
