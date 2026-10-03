@@ -9,10 +9,14 @@
 // implementation of ITU-R BS.2127 -- independent of the code under test. Speaker positions are
 // parsed from layoutDefs in src/IO/SpeakerLayout.cpp.
 //
-// Every case below lies in ear's VirtualNgon (nadir-cap) region, where the D-04 construction
-// matches ear exactly. The -30..0 deg band is deliberately NOT pinned against ear: there ear uses
-// bilinear QuadRegions while SpatialCore uses triplets (RESEARCH Reference Data C, F4) -- test that
-// band by properties instead. Gains are L2-normalised; unused trailing slots are zero.
+// Two sets of cases, both matched exactly by SpatialCore's VBAP:
+//   kEarCases_*     -- nadir cap (below -30 deg), ear's VirtualNgon region;
+//   kEarBandCases_* -- the -30..0 deg band, ear's bilinear QuadRegion, which with the -30 deg copies
+//                      downmixed onto their ear-level speakers equals the pair's horizon pan. SpatialCore
+//                      pans it with pair-pan wedges since G-02-2 (Plan 02-08).
+// 5.1.4 behind the listener (|azimuth| above 110 deg) is the one deliberate difference: ear also feeds
+// U+135/U-135 there at and above the horizon, SpatialCore keeps the horizon pan, so those directions
+// are not pinned. Gains are L2-normalised; unused trailing slots are zero.
 
 namespace spatialcore_ref
 {
@@ -45,6 +49,75 @@ inline constexpr EarCase kEarCases_S9_1_6[] = {
     { -90.0f, -60.0f, { 0.2041241f, 0.2041241f, 0.2041241f, 0.2041241f, 0.8164966f, 0.2041241f, 0.2041241f, 0.2041241f, 0.2041241f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
     { 120.0f, -50.0f, { 0.1486895f, 0.1486895f, 0.1486895f, 0.4781848f, 0.1486895f, 0.7852256f, 0.1486895f, 0.1486895f, 0.1486895f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
     { 30.0f, -90.0f, { 0.3333333f, 0.3333333f, 0.3333333f, 0.3333333f, 0.3333333f, 0.3333333f, 0.3333333f, 0.3333333f, 0.3333333f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+};
+
+// Below-horizon band (-30..0 deg) cases: ear's QuadRegion, equal to the pair's horizon pan, matched exactly
+// since G-02-2. 5.1.4's rear gap (|azimuth| above 110 deg) is deliberately not pinned.
+
+// S5_1_2: 7 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 110/0, -110/0, 90/45, -90/45
+inline constexpr int kEarBandNumSpeakers_S5_1_2 = 7;
+inline constexpr EarCase kEarBandCases_S5_1_2[] = {
+    { 60.0f, -15.0f, { 0.8374076f, 0.0000000f, 0.0000000f, 0.5465790f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -70.0f, -25.0f, { 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f } },
+    { 170.0f, -40.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.7509424f, 0.6603677f, 0.0000000f, 0.0000000f } },
+};
+
+// S5_1_4: 9 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 110/0, -110/0, 45/45, -45/45, 135/45, -135/45
+inline constexpr int kEarBandNumSpeakers_S5_1_4 = 9;
+inline constexpr EarCase kEarBandCases_S5_1_4[] = {
+    { 60.0f, -15.0f, { 0.8374076f, 0.0000000f, 0.0000000f, 0.5465790f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -70.0f, -25.0f, { 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -100.0f, -20.0f, { 0.0000000f, 0.1817159f, 0.0000000f, 0.0000000f, 0.9833511f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+};
+
+// S7_1_2: 9 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 90/0, -90/0, 135/0, -135/0, 90/45, -90/45
+inline constexpr int kEarBandNumSpeakers_S7_1_2 = 9;
+inline constexpr EarCase kEarBandCases_S7_1_2[] = {
+    { 60.0f, -10.0f, { 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -110.0f, -20.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.7773343f, 0.0000000f, 0.6290878f, 0.0000000f, 0.0000000f } },
+    { 160.0f, -28.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.9063078f, 0.4226183f, 0.0000000f, 0.0000000f } },
+};
+
+// S7_1_4: 11 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 90/0, -90/0, 135/0, -135/0, 45/45, -45/45, 135/45, -135/45
+inline constexpr int kEarBandNumSpeakers_S7_1_4 = 11;
+inline constexpr EarCase kEarBandCases_S7_1_4[] = {
+    { 60.0f, -5.0f, { 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { 60.0f, -15.0f, { 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { 60.0f, -25.0f, { 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -165.0f, -35.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.5000000f, 0.8660254f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { 110.0f, -20.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.7773343f, 0.0000000f, 0.6290878f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+};
+
+// S7_1_6: 13 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 90/0, -90/0, 135/0, -135/0, 45/45, -45/45, 135/45, -135/45, 90/45, -90/45
+inline constexpr int kEarBandNumSpeakers_S7_1_6 = 13;
+inline constexpr EarCase kEarBandCases_S7_1_6[] = {
+    { 45.0f, -12.0f, { 0.9390708f, 0.0000000f, 0.0000000f, 0.3437238f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -60.0f, -22.0f, { 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { 170.0f, -30.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.8191520f, 0.5735764f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+};
+
+// S9_1_4: 13 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 90/0, -90/0, 135/0, -135/0, 60/0, -60/0, 45/45, -45/45, 135/45, -135/45
+inline constexpr int kEarBandNumSpeakers_S9_1_4 = 13;
+inline constexpr EarCase kEarBandCases_S9_1_4[] = {
+    { 45.0f, -12.0f, { 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -75.0f, -18.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -160.0f, -26.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.4226183f, 0.9063078f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+};
+
+// S9_1_6: 15 speakers, gains in layoutDefs speaker order (az/el deg): 30/0, -30/0, 0/0, 90/0, -90/0, 135/0, -135/0, 60/0, -60/0, 45/45, -45/45, 90/45, -90/45, 135/45, -135/45
+inline constexpr int kEarBandNumSpeakers_S9_1_6 = 15;
+inline constexpr EarCase kEarBandCases_S9_1_6[] = {
+    { 45.0f, -12.0f, { 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.7071068f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -100.0f, -24.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.9570998f, 0.0000000f, 0.2897585f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { 150.0f, -8.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.9659258f, 0.2588190f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+};
+
+// SML13_1: 13 speakers, gains in layoutDefs speaker order (az/el deg): 0/0, -45/0, -90/0, -135/0, 180/0, 135/0, 90/0, 45/0, -45/45, -135/45, 135/45, 45/45, 0/90
+inline constexpr int kEarBandNumSpeakers_SML13_1 = 13;
+inline constexpr EarCase kEarBandCases_SML13_1[] = {
+    { 20.0f, -10.0f, { 0.7773343f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.6290878f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { -110.0f, -25.0f, { 0.0000000f, 0.0000000f, 0.7773343f, 0.6290878f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
+    { 160.0f, -20.0f, { 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.7773343f, 0.6290878f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f, 0.0000000f } },
 };
 
 } // namespace spatialcore_ref

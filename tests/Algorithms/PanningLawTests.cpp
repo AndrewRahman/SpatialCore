@@ -937,13 +937,18 @@ TEST_CASE ("Panning laws: VBAP lower-hemisphere continuity, scoped (D-04, D-18)"
     // Nadir cap: below the -30 ring the EAR construction is a fan of triangles
     // around the virtual nadir, and VBAP is continuous there (at most 0.01 per
     // 0.1 degree). 5.1.2 and 5.1.4 are checked only from -65 down: their sparse
-    // rear ring (110 / -110, a 140-degree gap) puts trapezoid facets as low as
-    // about -59 degrees.
+    // rear ring (110 / -110, a 140-degree gap) is a pair wedge down to about -59
+    // degrees before the cap takes over.
     //
-    // The -30..0 band: the facets between the ear-level ring and its -30 copies
-    // are coplanar quads, split into two triangles with the same min-sum tie as
-    // the upper hemisphere (RESEARCH F5, AndrewRahman/SpatialCore#22), so only a
-    // looser bound of 0.12 per 0.1 degree is asserted there.
+    // The -30..0 band is one pair-pan region per neighbouring ear-level pair
+    // (G-02-2): the horizon pan at the source azimuth, continuous at the horizon
+    // slope, so it gets the same 0.01 bound (it needed a far looser one while
+    // the band was coplanar quads split into tied triangles, RESEARCH F5). The
+    // seam between band and cap (-35, -40) is checked on every rig: on 5.1.x and 7.1.x those sweeps cross
+    // between a pair wedge and a cap triangle, which agree analytically on their
+    // shared edge (on the cap's top face the nadir share is 0 and both reduce to
+    // the same pair pan). A seam or band sweep above 0.01 is a construction
+    // defect, not a bound to loosen.
     const VBAPAlgorithm vbap;
 
     struct Scope { const char* label; std::vector<float> elevations; float bound; };
@@ -958,7 +963,8 @@ TEST_CASE ("Panning laws: VBAP lower-hemisphere continuity, scoped (D-04, D-18)"
         const Scope scopes[] = {
             { "nadir cap", sparseRear ? std::vector<float> { -65.0f, -75.0f }
                                       : std::vector<float> { -50.0f, -60.0f, -75.0f }, 0.01f },
-            { "-30..0 band", { -5.0f, -15.0f, -25.0f }, 0.12f },
+            { "-30..0 band", { -5.0f, -15.0f, -25.0f }, 0.01f },
+            { "band/cap seam", { -35.0f, -40.0f }, 0.01f },
         };
 
         for (const auto& scope : scopes)

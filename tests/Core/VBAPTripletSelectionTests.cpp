@@ -15,6 +15,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace spatialcore;
@@ -918,6 +919,219 @@ TEST_CASE ("EAR oracle: VBAP matches PyPI ear 2.1.0 in the nadir-cap region on 5
         }
     }
     CHECK (casesChecked == 13);
+}
+
+TEST_CASE ("EAR oracle: VBAP matches PyPI ear 2.1.0 in the below-horizon band on every height layout, 5.1.4's rear gap excluded (D-04, G-02-2)",
+           "[ear][golden][band]")
+{
+    using namespace spatialcore_ref;
+    const EarOracleSet sets[] = {
+        { LayoutID::S5_1_2,  OutputFormat::Surround5_1_2,   kEarBandNumSpeakers_S5_1_2,
+          kEarBandCases_S5_1_2,  std::size (kEarBandCases_S5_1_2) },
+        { LayoutID::S5_1_4,  OutputFormat::Surround5_1_4,   kEarBandNumSpeakers_S5_1_4,
+          kEarBandCases_S5_1_4,  std::size (kEarBandCases_S5_1_4) },
+        { LayoutID::S7_1_2,  OutputFormat::Surround7_1_2,   kEarBandNumSpeakers_S7_1_2,
+          kEarBandCases_S7_1_2,  std::size (kEarBandCases_S7_1_2) },
+        { LayoutID::S7_1_4,  OutputFormat::Surround7_1_4,   kEarBandNumSpeakers_S7_1_4,
+          kEarBandCases_S7_1_4,  std::size (kEarBandCases_S7_1_4) },
+        { LayoutID::S7_1_6,  OutputFormat::Surround7_1_6,   kEarBandNumSpeakers_S7_1_6,
+          kEarBandCases_S7_1_6,  std::size (kEarBandCases_S7_1_6) },
+        { LayoutID::S9_1_4,  OutputFormat::Surround9_1_4,   kEarBandNumSpeakers_S9_1_4,
+          kEarBandCases_S9_1_4,  std::size (kEarBandCases_S9_1_4) },
+        { LayoutID::S9_1_6,  OutputFormat::Surround9_1_6,   kEarBandNumSpeakers_S9_1_6,
+          kEarBandCases_S9_1_6,  std::size (kEarBandCases_S9_1_6) },
+        { LayoutID::SML13_1, OutputFormat::SurroundSML13_1, kEarBandNumSpeakers_SML13_1,
+          kEarBandCases_SML13_1, std::size (kEarBandCases_SML13_1) },
+    };
+
+    size_t casesChecked = 0;
+    for (const auto& set : sets)
+    {
+        EngineRig rig (set.format);
+        const SpeakerLayout& layout = getLayoutDef (set.id);
+        const auto triplets = combinedTriplets (layout);
+        INFO ("layout " << layoutName (set.id));
+        REQUIRE (rig.numSpeakers() == set.numSpeakers);
+        REQUIRE (layout.numSpeakers == set.numSpeakers);
+
+        for (size_t c = 0; c < set.numCases; ++c)
+        {
+            const auto& ec = set.cases[c];
+            INFO ("az " << ec.azimuthDeg << " el " << ec.elevationDeg);
+
+            float viaEngine[MAX_SPEAKERS] = {};
+            rig.gainsAt (ec.azimuthDeg, ec.elevationDeg, viaEngine);
+
+            float direct[MAX_SPEAKERS] = {};
+            computeVBAPGains3D (layout, triplets, juce::degreesToRadians (ec.azimuthDeg),
+                                juce::degreesToRadians (ec.elevationDeg), direct);
+
+            for (int s = 0; s < set.numSpeakers; ++s)
+            {
+                INFO ("speaker " << s);
+                CHECK_THAT (viaEngine[s], WithinAbs (ec.gains[s], 1e-5f));
+                CHECK_THAT (direct[s],    WithinAbs (ec.gains[s], 1e-5f));
+            }
+            ++casesChecked;
+        }
+    }
+    CHECK (casesChecked == 26);
+}
+
+namespace
+{
+/** Independent double-precision reference for the band: the 2D pair pan of the
+    two azimuth-neighbouring ear-level speakers (|elevation| at most 10 degrees),
+    from the source's horizontal direction only. All other speakers get 0. */
+void earLevelPairPan (const SpeakerLayout& layout, double azRad, float* out)
+{
+    const double twoPi = 2.0 * 3.14159265358979323846;
+    const double earLimit = 10.0 * 3.14159265358979323846 / 180.0;
+
+    for (int s = 0; s < MAX_SPEAKERS; ++s)
+        out[s] = 0.0f;
+
+    std::vector<std::pair<double, int>> ear;   // (azimuth wrapped to [0, 2 pi), speaker)
+    for (int s = 0; s < layout.numSpeakers; ++s)
+    {
+        if (std::abs (static_cast<double> (layout.speakers[s].elevationRad)) > earLimit)
+            continue;
+        double a = std::fmod (static_cast<double> (layout.speakers[s].azimuthRad), twoPi);
+        if (a < 0.0)
+            a += twoPi;
+        ear.emplace_back (a, s);
+    }
+    std::sort (ear.begin(), ear.end());
+
+    const size_t n = ear.size();
+    for (size_t p = 0; p < n; ++p)
+    {
+        const auto& A = ear[p];
+        const auto& B = ear[(p + 1) % n];
+
+        // Solve [sin aA, sin aB; cos aA, cos aB] g = [sin az, cos az].
+        const double m00 = std::sin (A.first), m01 = std::sin (B.first);
+        const double m10 = std::cos (A.first), m11 = std::cos (B.first);
+        const double det = m00 * m11 - m01 * m10;
+        if (std::abs (det) < 1e-9)
+            continue;
+
+        const double rx = std::sin (azRad), ry = std::cos (azRad);
+        const double gA = (rx * m11 - m01 * ry) / det;
+        const double gB = (m00 * ry - rx * m10) / det;
+        if (gA < -1e-9 || gB < -1e-9)
+            continue;
+
+        const double norm = std::sqrt (gA * gA + gB * gB);
+        out[A.second] = static_cast<float> (std::max (0.0, gA) / norm);
+        out[B.second] = static_cast<float> (std::max (0.0, gB) / norm);
+        return;
+    }
+}
+
+/** Same classifier rule as computeVBAPGains3D: 0 regular, 1 nadir cap, 2 wedge. */
+int testTier (const VBAPTriplet& t)
+{
+    if (! t.lowerHemisphere)
+        return 0;
+    return (t.nadirVertex >= 0 && t.nadirMask == 0) ? 2 : 1;
+}
+
+/** Counts, per tier, the triplets enclosing the direction with the code's own
+    float arithmetic and -1e-6f test. */
+void enclosingByTier (const std::vector<VBAPTriplet>& triplets, float azRad, float elRad, int* counts)
+{
+    counts[0] = counts[1] = counts[2] = 0;
+    const float px = std::cos (elRad) * std::sin (azRad);
+    const float py = std::cos (elRad) * std::cos (azRad);
+    const float pz = std::sin (elRad);
+
+    for (const auto& tri : triplets)
+    {
+        const float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;
+        const float g1 = tri.inv[1][0] * px + tri.inv[1][1] * py + tri.inv[1][2] * pz;
+        const float g2 = tri.inv[2][0] * px + tri.inv[2][1] * py + tri.inv[2][2] * pz;
+        if (g0 >= -1e-6f && g1 >= -1e-6f && g2 >= -1e-6f)
+            ++counts[testTier (tri)];
+    }
+}
+} // namespace
+
+TEST_CASE ("EAR band: below the horizon VBAP keeps the ear-level pair pan of its azimuth, with exactly one pair region enclosing, on every height layout (D-04, G-02-2)",
+           "[ear][band]")
+{
+    const float elevations[] = { -0.5f, -1.0f, -2.0f, -5.0f, -10.0f, -15.0f, -20.0f, -25.0f, -29.5f };
+    const double earLimit = 10.0 * 3.14159265358979323846 / 180.0;
+
+    for (LayoutID id : kHeightLayouts)
+    {
+        const SpeakerLayout& layout = getLayoutDef (id);
+        const auto triplets = combinedTriplets (layout);
+
+        long directions = 0, gainViolations = 0, regionViolations = 0;
+        std::string firstFailure;
+        auto noteFailure = [&] (const char* what, float azDeg, float elDeg, float value)
+        {
+            if (firstFailure.empty())
+                firstFailure = std::string (what) + " at az " + std::to_string (azDeg)
+                             + " el " + std::to_string (elDeg) + " value " + std::to_string (value);
+        };
+
+        for (int k = 0; k < 720; ++k)
+        {
+            const float azDeg = -180.0f + 0.5f * static_cast<float> (k);
+            const float az = juce::degreesToRadians (azDeg);
+
+            // Within 0.01 degrees of an ear-level speaker's azimuth two
+            // neighbouring wedges legitimately share an edge.
+            bool nearSpeaker = false;
+            for (int s = 0; s < layout.numSpeakers; ++s)
+            {
+                if (std::abs (static_cast<double> (layout.speakers[s].elevationRad)) > earLimit)
+                    continue;
+                double d = std::fmod (static_cast<double> (azDeg) - static_cast<double> (juce::radiansToDegrees (layout.speakers[s].azimuthRad)), 360.0);
+                if (d > 180.0)  d -= 360.0;
+                if (d < -180.0) d += 360.0;
+                if (std::abs (d) < 0.01)
+                    nearSpeaker = true;
+            }
+
+            for (float elDeg : elevations)
+            {
+                const float el = juce::degreesToRadians (elDeg);
+                ++directions;
+
+                float g[MAX_SPEAKERS] = {};
+                float ref[MAX_SPEAKERS] = {};
+                computeVBAPGains3D (layout, triplets, az, el, g);
+                earLevelPairPan (layout, static_cast<double> (az), ref);
+
+                float worst = 0.0f;
+                for (int s = 0; s < layout.numSpeakers; ++s)
+                    worst = std::max (worst, std::abs (g[s] - ref[s]));
+                if (worst > 1e-5f)
+                {
+                    ++gainViolations;
+                    noteFailure ("differs from the pair pan", azDeg, elDeg, worst);
+                }
+
+                int counts[3];
+                enclosingByTier (triplets, az, el, counts);
+                const bool badRegions = counts[0] > 0 || counts[1] > 0 || (! nearSpeaker && counts[2] != 1);
+                if (badRegions)
+                {
+                    ++regionViolations;
+                    noteFailure ("wrong enclosing regions (regular/cap/wedge)", azDeg, elDeg,
+                                 static_cast<float> (counts[0] * 10000 + counts[1] * 100 + counts[2]));
+                }
+            }
+        }
+
+        INFO ("layout " << layoutName (id) << " first failure: " << firstFailure);
+        CHECK (directions == 720L * 9L);
+        CHECK (gainViolations == 0);
+        CHECK (regionViolations == 0);
+    }
 }
 
 TEST_CASE ("EAR: a source directly under any ear-level speaker of any height layout gets unity on it (D-04)",
