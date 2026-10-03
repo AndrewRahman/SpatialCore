@@ -3,6 +3,10 @@ phase: 02
 review: 02-REVIEW.md
 titles: json
 findings:
+  - id: IN-17
+    severity: info
+    disposition: open
+    title: "`FloatSemanticsGuard.h` attributes the ConstantPower, KNN, DirectBinaural and Ambisonics guards to `SpatialMath`"
   - id: WR-08
     severity: warning
     disposition: fixed
@@ -99,20 +103,21 @@ findings:
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-open: 0
-total: 24
-recorded: 2026-10-03T23:45:53.997Z
+open: 1
+total: 25
+recorded: 2026-10-03T23:48:11.134Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-08 | warning | fixed | 02-REVIEW-FIX.md |
-| IN-13 | info | fixed | 02-REVIEW-FIX.md |
-| IN-14 | info | fixed | 02-REVIEW-FIX.md |
-| IN-15 | info | fixed | 02-REVIEW-FIX.md |
-| IN-16 | info | fixed | 02-REVIEW-FIX.md |
+| IN-17 | info | open | - |
+| WR-08 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-13 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-14 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-15 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-16 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-02 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-03 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-04 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
