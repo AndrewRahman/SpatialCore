@@ -4,3 +4,4 @@ JUCE
 *.xcworkspace
 *.xcodeproj
 .context/
+build-release/

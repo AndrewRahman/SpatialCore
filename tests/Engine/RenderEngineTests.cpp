@@ -567,7 +567,9 @@ TEST_CASE ("RenderEngine: the direct-binaural HRTF branch stays finite for an in
 // pre-change code regardless of when this test runs. Only the name and the
 // static-member qualification differ; the body is byte-identical (left
 // unindented so it diffs cleanly against the blob). It uses ACN 0-15, which the
-// D-08 constant fix does not touch, so the pin stays exact after that fix.
+// D-08 constant fix does not touch, so the pin is unaffected by that fix. The
+// comparison is within float rounding, not exact, because the two copies are
+// compiled separately; see kAmbiPinTolerance below.
 // ----------------------------------------------------------------------------
 namespace
 {
@@ -667,9 +669,120 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
     };
     static_assert (sizeof (kSpeakerFormats) / sizeof (kSpeakerFormats[0]) == NUM_LAYOUT_DEFS,
                    "one speaker OutputFormat per LayoutID");
+
+    // Derivation of the two bounds below (G-02-10; full evidence in
+    // .planning/debug/ambi-pin-release-tolerance.md).
+    //
+    // The library decoder and referenceAmbiDecode run the same float algorithm
+    // in different translation units. At -O3 on FMA hardware (Apple Silicon)
+    // clang contracts the E*E^T sums into fused multiply-adds, and the
+    // vectoriser keeps only the scalar tail fused, so the two copies round
+    // differently. Debug (-O0) vectorises nothing and is bit-identical; Release
+    // arm64 differs by up to 5.3e-6 on 10 of 15 layouts.
+    //
+    // E*E^T is singular (rank at most 15 of 16) and only the 0.01 Tikhonov term
+    // makes it invertible, with cond(EET + 0.01 I) from 501 (Quad) to 1786
+    // (9.1.6). One rounding therefore moves the decode by 1e-6 to 1e-5.
+    //
+    // Measured: the spread between the two float decoders is 0 in Debug, 5.3e-6
+    // in Release arm64, and 1.0e-5 for the worst compiler variant tried. Each
+    // float decoder sits up to 1.4e-5 (Release) / 1.7e-5 (Debug) / 1.8e-5 (any
+    // variant tried) from a double-precision solve of the same E.
+    //
+    // The smallest change the pin must catch is a +0.1% Tikhonov epsilon. It
+    // moves the decode by 5.8e-5 to 6.3e-5 on 7.0, 7.1, 7.1.2, 7.1.4 and 7.1.6,
+    // while real regressions (wrong order, stride, speaker order, dropped
+    // regularisation) move it by 0.1 to 1. A +0.01% change (about 6e-6) is below
+    // rounding, and no tolerance can resolve it.
+    //
+    // Hence kAmbiPinTolerance = 2.5e-5: about 2.5x above the worst rounding
+    // spread and 2.5x below the +0.1% change. kAmbiFloatVsDoubleTolerance =
+    // 4e-5 is about 2.2x the worst float-vs-double distance. It re-checks the
+    // premise above on every build, so a toolchain that moves the noise floor
+    // fails there with a message that says so, instead of looking like a
+    // library change.
+    //
+    // The previous bound (1e-6) came from RESEARCH F10, a Debug-grade "worst 0"
+    // measurement plus an unmeasured margin. The full derivation is in
+    // .planning/debug/ambi-pin-release-tolerance.md (G-02-10).
+    constexpr float kAmbiPinTolerance = 2.5e-5f;
+    constexpr double kAmbiFloatVsDoubleTolerance = 4.0e-5;
+
+    // The same decode as referenceAmbiDecode, in double, on the same float
+    // inputs: E is bit-identical to what both float decoders see, and the
+    // Tikhonov term is the float epsilon promoted, so only precision differs.
+    // Fixed-size stack arrays, no heap. The caller zero-initialises outMatrix.
+    void doublePrecisionAmbiDecode (const SpeakerLayout& layout,
+                                    double (*outMatrix)[MAX_SPEAKERS])
+    {
+        constexpr int M = 16;
+        const int N = layout.numSpeakers;
+
+        double E[M][M] = {};
+        for (int s = 0; s < N; ++s)
+            for (int c = 0; c < M; ++c)
+                E[c][s] = static_cast<double> (evalSH (c, layout.speakers[s].azimuthRad,
+                                                          layout.speakers[s].elevationRad));
+
+        double aug[M][M] = {};
+        double inv[M][M] = {};
+        for (int i = 0; i < M; ++i)
+        {
+            for (int j = 0; j < M; ++j)
+            {
+                double sum = 0.0;
+                for (int s = 0; s < N; ++s)
+                    sum += E[i][s] * E[j][s];
+                aug[i][j] = sum;
+            }
+            aug[i][i] += static_cast<double> (0.01f);
+            inv[i][i] = 1.0;
+        }
+
+        // Gauss-Jordan with partial pivoting.
+        for (int col = 0; col < M; ++col)
+        {
+            int pivot = col;
+            for (int row = col + 1; row < M; ++row)
+                if (std::abs (aug[row][col]) > std::abs (aug[pivot][col]))
+                    pivot = row;
+            if (pivot != col)
+                for (int j = 0; j < M; ++j)
+                {
+                    std::swap (aug[col][j], aug[pivot][j]);
+                    std::swap (inv[col][j], inv[pivot][j]);
+                }
+
+            const double diag = aug[col][col];
+            for (int j = 0; j < M; ++j)
+            {
+                aug[col][j] /= diag;
+                inv[col][j] /= diag;
+            }
+            for (int row = 0; row < M; ++row)
+            {
+                if (row == col) continue;
+                const double f = aug[row][col];
+                for (int j = 0; j < M; ++j)
+                {
+                    aug[row][j] -= f * aug[col][j];
+                    inv[row][j] -= f * inv[col][j];
+                }
+            }
+        }
+
+        for (int s = 0; s < N; ++s)
+            for (int c = 0; c < M; ++c)
+            {
+                double sum = 0.0;
+                for (int k = 0; k < M; ++k)
+                    sum += E[k][s] * inv[k][c];
+                outMatrix[s][c] = sum;
+            }
+    }
 }
 
-TEST_CASE ("RenderEngine: the order-3 speaker decode equals the pre-change private decoder on all 15 layouts (D-09)",
+TEST_CASE ("RenderEngine: the order-3 speaker decode matches the pre-change private decoder within float rounding on all 15 layouts (D-09)",
            "[engine][ambi-pin]")
 {
     RenderEngine engine;
@@ -692,18 +805,31 @@ TEST_CASE ("RenderEngine: the order-3 speaker decode equals the pre-change priva
         CHECK (refNumSpeakers == active.layout.numSpeakers);
         CHECK (active.ambiNumSpeakers == active.layout.numSpeakers);
 
+        double exact[MAX_SPEAKERS][MAX_SPEAKERS] = {};
+        doublePrecisionAmbiDecode (active.layout, exact);
+
         float worstHere = 0.0f;
+        double libVsExact = 0.0;
+        double refVsExact = 0.0;
         for (int s = 0; s < active.layout.numSpeakers; ++s)
             for (int c = 0; c < 16; ++c)
+            {
                 worstHere = std::max (worstHere, std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]));
+                libVsExact = std::max (libVsExact, std::abs (static_cast<double> (active.ambiDecodeMatrix[s][c]) - exact[s][c]));
+                refVsExact = std::max (refVsExact, std::abs (static_cast<double> (reference[s][c]) - exact[s][c]));
+            }
         INFO ("worst |new - old| = " << worstHere);
-        CHECK (worstHere <= 1e-6f);
+        INFO ("worst |library - double solve| = " << libVsExact);
+        INFO ("worst |reference - double solve| = " << refVsExact);
+        CHECK (worstHere <= kAmbiPinTolerance);
+        CHECK (libVsExact <= kAmbiFloatVsDoubleTolerance);
+        CHECK (refVsExact <= kAmbiFloatVsDoubleTolerance);
         worst = std::max (worst, worstHere);
         ++layoutsChecked;
     }
     CHECK (layoutsChecked == 15);
     INFO ("worst |new - old| over all 15 layouts = " << worst);
-    CHECK (worst <= 1e-6f);
+    CHECK (worst <= kAmbiPinTolerance);
 }
 
 TEST_CASE ("RenderEngine: decode rows beyond the speaker count are cleared on a layout switch (D-09)",
