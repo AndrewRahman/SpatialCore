@@ -56,7 +56,8 @@ enum class OnSpeakerLaw
     NearUnity,        // >= 1 - 2e-3: d^2 is clamped at 0.001 (DBAP)
     ArgmaxBelowOne,   // largest gain, strictly below 1 -- spreads by design (MDAP, F3)
     Argmax,           // largest gain (ConstantPower)
-    FiniteOnly,       // no on-speaker law for a mode-matching decode (Ambisonics)
+    UnitPowerOnly,    // no on-speaker pattern for a mode-matching decode, but it must be
+                      // audible at unit power (Ambisonics; IN-12: an all-zero decode fails)
     NotApplicable     // no speaker gains (DirectBinaural)
 };
 
@@ -82,7 +83,8 @@ struct PanningLaws
     OnSpeakerLaw    onSpeaker;
     float           onSpeakerOthersTolHeight; // Unity only: tolerance on the other gains, height layouts
     float           powerTol;                 // |sum g^2 - 1|
-    bool            mayBeSilentOffFlatHorizon; // Ambisonics: clamped decode may render silent
+    bool            mayBeSilentBelowHorizon;  // Ambisonics: clamped decode may render silent below
+                                              // the horizon on a height layout (IN-12: there only)
     MirrorRule      mirror;
     float           mirrorTolHeight;          // tolerance on height layouts (flat: 1e-4)
     ContinuityScope continuity;
@@ -103,7 +105,7 @@ const PanningLaws kLaws[] = {
     // MDAP on height layouts at the horizon: 0.5-degree steps, at most 0.12 (was
     // 0.16-0.19 before D-04 gave the below-horizon aux directions real triplets).
     { "MDAP",             OnSpeakerLaw::ArgmaxBelowOne, 0.0f,  1e-4f, false, MirrorRule::FlatOnly,            1e-4f, ContinuityScope::Horizon,    0.01f, 0.12f, 0.5f },
-    { "Ambisonics (HOA)", OnSpeakerLaw::FiniteOnly,     0.0f,  1e-4f, true,  MirrorRule::Everywhere,          1e-4f, ContinuityScope::Everywhere, 0.02f, 0.02f, 0.1f },
+    { "Ambisonics (HOA)", OnSpeakerLaw::UnitPowerOnly,  0.0f,  1e-4f, true,  MirrorRule::Everywhere,          1e-4f, ContinuityScope::Everywhere, 0.02f, 0.02f, 0.1f },
     // DirectBinaural has no speaker gains; its laws are the property checks in
     // "DirectBinaural: property checks at the horizon".
     { "Direct Binaural",  OnSpeakerLaw::NotApplicable,  0.0f,  0.0f,  false, MirrorRule::NotApplicable,       0.0f,  ContinuityScope::None,       0.0f,  0.0f,  0.1f },
@@ -338,6 +340,7 @@ struct StepResult
     float atAzDeg = 0.0f;
     int   speaker = -1;
     int   nonFinite = 0;      // NaN/Inf steps, kept out of maxStep (WR-07)
+    int   silent = 0;         // all-zero samples: a silent sweep has no steps (IN-12)
 };
 
 /** Largest per-speaker gain change between consecutive azimuths of a full
@@ -371,6 +374,8 @@ StepResult maxStepOverSweep (const SpatializationAlgorithm& algo, const LayoutCo
     {
         const float azDeg = -180.0f + stepDeg * static_cast<float> (k);
         gainsAt (algo, ctx, n, azDeg, elDeg, distance, cur);
+        if (! (powerOf (cur, n) > 0.0f))
+            ++r.silent;
         if (k == 0)
             std::memcpy (first, cur, sizeof (cur));
         else
@@ -473,9 +478,12 @@ TEST_CASE ("Panning laws: on-speaker behaviour (D-13)", "[panning-law][unity]")
                     case OnSpeakerLaw::Argmax:
                         CHECK (argmax (g, n) == s);
                         break;
-                    case OnSpeakerLaw::FiniteOnly:
-                        // A mode-matching Ambisonics decode has no on-speaker law: the
-                        // decoded pattern spreads over every speaker the order reaches.
+                    case OnSpeakerLaw::UnitPowerOnly:
+                        // A mode-matching Ambisonics decode has no on-speaker pattern: the
+                        // decoded pattern spreads over every speaker the order reaches. It
+                        // must still be audible at unit power there (IN-12), so an unfilled
+                        // or all-zero decode matrix fails this law.
+                        CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, laws->powerTol));
                         break;
                     case OnSpeakerLaw::NotApplicable:
                         FAIL ("surround algorithm with no on-speaker law");
@@ -512,6 +520,7 @@ TEST_CASE ("Panning laws: unit power across sweeps (D-13)", "[panning-law][power
             REQUIRE (laws != nullptr);
 
             int failures = 0;
+            int samples = 0, belowSamples = 0, exemptSilent = 0, unitPower = 0;
             float worstErr = 0.0f, worstAz = 0.0f, worstEl = 0.0f;
 
             for (int e = 0; e < numElevations; ++e)
@@ -522,13 +531,24 @@ TEST_CASE ("Panning laws: unit power across sweeps (D-13)", "[panning-law][power
                     gainsAt (*algo, ctx, n, azDeg, elevations[e], 0.5f, g);
                     const float p = powerOf (g, n);
                     float err = std::isfinite (p) ? std::abs (p - 1.0f) : 1e30f;
+                    ++samples;
 
                     // Ambisonics clamps negative speaker gains, so a below-horizon
-                    // source on a layout with no lower speakers may legitimately
-                    // decode to nothing: off the flat horizon, exact silence is lawful.
-                    const bool flatHorizon = ! rig->height && elevations[e] == 0.0f;
-                    if (laws->mayBeSilentOffFlatHorizon && ! flatHorizon && p == 0.0f)
+                    // source on a height layout with no lower speakers may
+                    // legitimately decode to nothing. Only there is exact silence
+                    // lawful (IN-12: it used to be lawful at every elevation of
+                    // every height layout, so an unfilled decode passed).
+                    const bool belowOnHeight = rig->height && elevations[e] < 0.0f;
+                    belowSamples += belowOnHeight ? 1 : 0;
+                    if (laws->mayBeSilentBelowHorizon && belowOnHeight && p == 0.0f)
+                    {
                         err = 0.0f;
+                        ++exemptSilent;
+                    }
+                    else if (err <= laws->powerTol)
+                    {
+                        ++unitPower;
+                    }
 
                     if (err > laws->powerTol)
                         ++failures;
@@ -541,8 +561,16 @@ TEST_CASE ("Panning laws: unit power across sweeps (D-13)", "[panning-law][power
                 }
 
             INFO (rig->name << " " << laws->name << " worst |power - 1| " << worstErr
-                  << " at az " << worstAz << " el " << worstEl);
+                  << " at az " << worstAz << " el " << worstEl << "; unit power " << unitPower
+                  << " of " << samples << ", exempt silent " << exemptSilent << " of "
+                  << belowSamples << " below-horizon");
             CHECK (failures == 0);
+            // Floors (IN-12): the exemption may not cover most of the
+            // below-horizon samples, and at least half of all samples must be
+            // at unit power. Measured: Ambisonics is never silent on any shipped
+            // layout (0 of 399600 samples on a 5-degree grid).
+            CHECK (exemptSilent * 2 <= belowSamples);
+            CHECK (unitPower * 2 >= samples);
         }
     }
 }
@@ -588,7 +616,7 @@ TEST_CASE ("Panning laws: left/right mirror symmetry (D-13)", "[panning-law][mir
                 continue;
 
             const float tol = rig->height ? laws->mirrorTolHeight : 1e-4f;
-            int checked = 0, skipped = 0, failures = 0;
+            int checked = 0, skipped = 0, failures = 0, silent = 0;
             float worst = 0.0f, worstAz = 0.0f, worstEl = 0.0f;
 
             for (int e = 0; e < numElevations; ++e)
@@ -614,6 +642,9 @@ TEST_CASE ("Panning laws: left/right mirror symmetry (D-13)", "[panning-law][mir
                     gainsAt (*algo, ctx, n, az, el, 0.5f, a);
                     gainsAt (*algo, ctx, n, -az, el, 0.5f, b);
                     ++checked;
+                    // Two all-zero vectors mirror trivially (IN-12): count them.
+                    if (! (powerOf (a, n) > 0.0f) || ! (powerOf (b, n) > 0.0f))
+                        ++silent;
 
                     float diff = 0.0f;
                     for (int s = 0; s < n; ++s)
@@ -628,10 +659,11 @@ TEST_CASE ("Panning laws: left/right mirror symmetry (D-13)", "[panning-law][mir
                     }
                 }
 
-            INFO (laws->name << " checked " << checked << " skipped " << skipped
+            INFO (laws->name << " checked " << checked << " skipped " << skipped << " silent " << silent
                   << " worst " << worst << " at az " << worstAz << " el " << worstEl);
             CHECK (failures == 0);
             CHECK (checked > 0);
+            CHECK (silent == 0);   // every mirror elevation is at or above the horizon
         }
     }
 }
@@ -689,8 +721,9 @@ TEST_CASE ("Panning laws: 360-degree continuity where the algorithm is continuou
                 const StepResult r = maxStepOverSweep (*algo, ctx, n, elevations[e], stepDeg, 0.5f);
                 INFO (rig->name << " " << laws->name << " el " << elevations[e] << " step " << stepDeg
                       << " max step " << r.maxStep << " at az " << r.atAzDeg << " speaker " << r.speaker
-                      << " non-finite steps " << r.nonFinite);
+                      << " non-finite steps " << r.nonFinite << " silent samples " << r.silent);
                 CHECK (r.nonFinite == 0);
+                CHECK (r.silent == 0);
                 CHECK (r.maxStep <= bound);
             }
         }
@@ -982,8 +1015,9 @@ TEST_CASE ("Panning laws: VBAP lower-hemisphere continuity, scoped (D-04, D-18)"
                 const StepResult r = maxStepOverSweep (vbap, ctx, n, el, 0.1f, 0.5f);
                 INFO (rig->name << " " << scope.label << " el " << el << " max step " << r.maxStep
                       << " at az " << r.atAzDeg << " speaker " << r.speaker
-                      << " non-finite steps " << r.nonFinite);
+                      << " non-finite steps " << r.nonFinite << " silent samples " << r.silent);
                 CHECK (r.nonFinite == 0);
+                CHECK (r.silent == 0);
                 CHECK (r.maxStep <= scope.bound);
             }
     }
