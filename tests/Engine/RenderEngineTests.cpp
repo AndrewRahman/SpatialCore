@@ -363,7 +363,7 @@ TEST_CASE ("RenderEngine: escape hatches expose the underlying BinauralRenderer 
 
 // ----------------------------------------------------------------------------
 // D-06(a) extended by D-19(ii): RenderEngine holds the last finite azimuth,
-// elevation and distance per object, field by field, and substitutes it for
+// elevation and distance per object slot, field by field, and substitutes it for
 // any non-finite value before every render path and before engine-side gain
 // computation. Each test builds two engines identically and varies ONLY the
 // position fields, then compares full output buffers with exact ==.
@@ -415,12 +415,12 @@ namespace
                 ptrs.push_back (ch.data());
         }
 
-        void render (float azDeg, float elDeg, float dist)
+        void render (float azDeg, float elDeg, float dist, bool live = true)
         {
             for (auto& ch : out)
                 std::fill (ch.begin(), ch.end(), 0.0f);
 
-            RenderSources s = fixture.makeSources();
+            RenderSources s = fixture.makeSources (live);
             s.objects[0].azimuthDeg   = azDeg;
             s.objects[0].elevationDeg = elDeg;
             s.objects[0].distance     = dist;
@@ -534,6 +534,38 @@ TEST_CASE ("RenderEngine: positions are held per field, so a new finite azimuth 
     CHECK (a->outputFinite());
     CHECK (anyOutputNonzero (*a));
     requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: held positions belong to the slot, keep updating while it is not live, and carry over to a reused slot (D-06a, IN-04)",
+           "[engine][sanitize]")
+{
+    // Pins the "per object slot" wording in docs/integration-guide.md. Three
+    // engines share the same history except for the last block.
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    auto c = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+
+    for (auto* r : { a.get(), b.get(), c.get() })
+    {
+        r->render (30.0f, 0.0f, 0.5f);           // first occupant, live
+        r->render (90.0f, 0.0f, 0.5f, false);    // slot not live: 90 still becomes the held azimuth
+    }
+
+    // The slot is reused and its first update leaves the azimuth unset.
+    a->render (kNaN, 0.0f, 0.5f);
+    b->render (90.0f, 0.0f, 0.5f);   // the slot's last finite azimuth
+    c->render (0.0f, 0.0f, 0.5f);    // the ObjectState default
+    CHECK (a->outputFinite());
+    CHECK (anyOutputNonzero (*a));
+    requireIdenticalOutput (*a, *b);
+
+    // And that is distinguishable from the default position.
+    bool differsFromDefault = false;
+    for (int ch = 0; ch < a->numCh; ++ch)
+        for (int i = 0; i < kBlockSize; ++i)
+            if (a->out[static_cast<size_t> (ch)][static_cast<size_t> (i)] != c->out[static_cast<size_t> (ch)][static_cast<size_t> (i)])
+                differsFromDefault = true;
+    CHECK (differsFromDefault);
 }
 
 TEST_CASE ("RenderEngine: the direct-binaural HRTF branch stays finite for an infinite elevation (D-06a)",

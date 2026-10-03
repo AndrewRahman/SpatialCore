@@ -306,9 +306,11 @@ private:
     //--------------------------------------------------------------------------
     // D-06(a), extended by D-19(ii): hold-last-good position sanitiser.
     // renderBlock copies its RenderSources into sanitizedSources_ and replaces
-    // any non-finite azimuth, elevation or distance with that object's last
-    // finite value, field by field (ADM-OSC forwards NaN for "field not set"
-    // on single-axis updates). Finite values pass through untouched. Bodies
+    // any non-finite azimuth, elevation or distance with that object slot's
+    // last finite value, field by field (ADM-OSC forwards NaN for "field not
+    // set" on single-axis updates). Finite values pass through untouched. The
+    // held values belong to the slot (IN-04): every slot updates every block,
+    // live or not, and only the constructor and prepare() reset them. Bodies
     // live in RenderEngine.cpp so the non-finite checks cannot be folded
     // away by a consumer's -ffast-math (RESEARCH F9).
     //--------------------------------------------------------------------------

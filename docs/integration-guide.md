@@ -237,9 +237,14 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
 
 ### Non-finite positions
 
-- `RenderEngine::renderBlock` holds the last finite azimuth, elevation and distance per object,
-  field by field, before every render path. A field that has never been finite renders as azimuth
-  0, elevation 0, distance 0.5.
+- `RenderEngine::renderBlock` holds the last finite azimuth, elevation and distance per object
+  slot (an index into `RenderSources::objects`), field by field, before every render path. The
+  held values belong to the slot, not to an object: they update on every block whether or not the
+  slot is live, and only the constructor and `prepare()` reset them. A field that has not been
+  finite in that slot since the last `prepare()` renders as azimuth 0, elevation 0, distance 0.5.
+  A slot reused for a different object whose first update leaves a field non-finite renders that
+  field at the slot's last finite value, which may be the previous occupant's, not at the default,
+  so send a complete finite position when you assign a slot.
 - A consumer that calls `SpatializationAlgorithm::computeGains` directly (as OpenSpatialDelay
   does) bypasses that hold and is protected by the algorithm layer instead: every algorithm returns
   finite gains or silence and never hangs. Every algorithm except DBAP returns silence for a
