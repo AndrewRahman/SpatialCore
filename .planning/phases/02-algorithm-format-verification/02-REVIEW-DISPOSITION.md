@@ -49,7 +49,7 @@ findings:
     title: "The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed"
   - id: IN-07
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The +0.1% epsilon \"smallest change the pin must catch\" is resolved on only 5 of 15 layouts"
   - id: IN-08
     severity: info
@@ -57,7 +57,7 @@ findings:
     title: "`doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders"
   - id: IN-09
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Comment hygiene"
   - id: IN-12
     severity: info
@@ -79,9 +79,9 @@ findings:
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-open: 15
+open: 13
 total: 19
-recorded: 2026-10-03T22:49:32.546Z
+recorded: 2026-10-03T23:22:45.966Z
 ---
 
 # Phase 02: Code Review Disposition
@@ -99,9 +99,9 @@ recorded: 2026-10-03T22:49:32.546Z
 | IN-04 | info | open | - |
 | IN-05 | info | open | - |
 | IN-06 | info | open | - |
-| IN-07 | info | open | - |
+| IN-07 | info | fixed | 02-REVIEW-FIX.md |
 | IN-08 | info | open | - |
-| IN-09 | info | open | - |
+| IN-09 | info | fixed | 02-REVIEW-FIX.md |
 | IN-12 | info | open | - |
 | IN-10 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-11 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
