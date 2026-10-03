@@ -49,7 +49,7 @@ findings:
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
 open: 11
 total: 11
-recorded: 2026-10-03T21:59:28.317Z
+recorded: 2026-10-03T21:59:52.119Z
 ---
 
 # Phase 02: Code Review Disposition
