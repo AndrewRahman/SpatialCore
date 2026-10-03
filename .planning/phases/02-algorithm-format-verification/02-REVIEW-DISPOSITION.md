@@ -3,30 +3,6 @@ phase: 02
 review: 02-REVIEW.md
 titles: json
 findings:
-  - id: IN-10
-    severity: info
-    disposition: fixed
-    title: "The new `REQUIRE`s abort the whole test case on the first non-finite entry and report no location"
-  - id: IN-11
-    severity: info
-    disposition: fixed
-    title: "The guard adds about 6.3k assertions and has no negative test proving it fires"
-  - id: WR-06
-    severity: warning
-    disposition: fixed
-    title: "NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously"
-  - id: IN-07
-    severity: info
-    disposition: open
-    title: "The +0.1% epsilon \"smallest change the pin must catch\" is resolved on only 5 of 15 layouts"
-  - id: IN-08
-    severity: info
-    disposition: open
-    title: "`doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders"
-  - id: IN-09
-    severity: info
-    disposition: open
-    title: "Comment hygiene"
   - id: WR-02
     severity: warning
     disposition: open
@@ -35,26 +11,18 @@ findings:
     severity: warning
     disposition: open
     title: "A regular-only triplet list still has no coverage below the horizon, and the failure is an assert on the audio thread"
-  - id: WR-05
-    severity: warning
-    disposition: open
-    title: "`appendLowerHemisphereTriplets` leaves holes when the ear-level ring has an azimuth gap of 180 degrees or more, contradicting its documented 2n output"
-  - id: IN-05
-    severity: info
-    disposition: open
-    title: "The wedge's \"pair pan = EAR QuadRegion\" equivalence assumes 0 degree ear-level speakers, but the code admits up to +/-10 degrees"
-  - id: IN-06
-    severity: info
-    disposition: open
-    title: "The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed"
-  - id: WR-01
-    severity: warning
-    disposition: fixed
-    title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
   - id: WR-04
     severity: warning
     disposition: open
     title: "The \"SpatialCore must not be compiled with fast-math\" invariant is enforced only by comments"
+  - id: WR-05
+    severity: warning
+    disposition: open
+    title: "`appendLowerHemisphereTriplets` leaves holes when the ear-level ring has an azimuth gap of 180 degrees or more, contradicting its documented 2n output"
+  - id: WR-07
+    severity: warning
+    disposition: open
+    title: "The NaN-dropping `std::max` reduction fixed by WR-06 is still present in the Ambisonics codec tests"
   - id: IN-01
     severity: info
     disposition: open
@@ -71,32 +39,74 @@ findings:
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 13
-total: 17
-recorded: 2026-10-03T22:35:56.293Z
+  - id: IN-05
+    severity: info
+    disposition: open
+    title: "The wedge's \"pair pan = EAR QuadRegion\" equivalence assumes 0 degree ear-level speakers, but the code admits up to +/-10 degrees"
+  - id: IN-06
+    severity: info
+    disposition: open
+    title: "The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed"
+  - id: IN-07
+    severity: info
+    disposition: open
+    title: "The +0.1% epsilon \"smallest change the pin must catch\" is resolved on only 5 of 15 layouts"
+  - id: IN-08
+    severity: info
+    disposition: open
+    title: "`doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders"
+  - id: IN-09
+    severity: info
+    disposition: open
+    title: "Comment hygiene"
+  - id: IN-12
+    severity: info
+    disposition: open
+    title: "Ambisonics may be silent everywhere on height layouts and still pass every panning-law check"
+  - id: IN-10
+    severity: info
+    disposition: fixed
+    title: "The new `REQUIRE`s abort the whole test case on the first non-finite entry and report no location"
+  - id: IN-11
+    severity: info
+    disposition: fixed
+    title: "The guard adds about 6.3k assertions and has no negative test proving it fires"
+  - id: WR-06
+    severity: warning
+    disposition: fixed
+    title: "NaN decode entries are silently ignored, so the pin (and the new anchor checks) can pass vacuously"
+  - id: WR-01
+    severity: warning
+    disposition: fixed
+    title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
+open: 15
+total: 19
+recorded: 2026-10-03T22:49:32.546Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| IN-10 | info | fixed | 02-REVIEW-FIX.md |
-| IN-11 | info | fixed | 02-REVIEW-FIX.md |
+| WR-02 | warning | open | - |
+| WR-03 | warning | open | - |
+| WR-04 | warning | open | - |
+| WR-05 | warning | open | - |
+| WR-07 | warning | open | - |
+| IN-01 | info | open | - |
+| IN-02 | info | open | - |
+| IN-03 | info | open | - |
+| IN-04 | info | open | - |
+| IN-05 | info | open | - |
+| IN-06 | info | open | - |
+| IN-07 | info | open | - |
+| IN-08 | info | open | - |
+| IN-09 | info | open | - |
+| IN-12 | info | open | - |
+| IN-10 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
+| IN-11 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-06 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
-| IN-07 | info | open | - (not in the current review) |
-| IN-08 | info | open | - (not in the current review) |
-| IN-09 | info | open | - (not in the current review) |
-| WR-02 | warning | open | - (not in the current review) |
-| WR-03 | warning | open | - (not in the current review) |
-| WR-05 | warning | open | - (not in the current review) |
-| IN-05 | info | open | - (not in the current review) |
-| IN-06 | info | open | - (not in the current review) |
 | WR-01 | warning | fixed | 02-08 + 02-09: the band no longer ties; guide and skill scope #22 to above the horizon (not in the current review) |
-| WR-04 | warning | open | - (not in the current review) |
-| IN-01 | info | open | - (not in the current review) |
-| IN-02 | info | open | - (not in the current review) |
-| IN-03 | info | open | - (not in the current review) |
-| IN-04 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
