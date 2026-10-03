@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 02-algorithm-format-verification
 source: [02-VERIFICATION.md]
 started: 2026-10-01T07:55:50Z
-updated: 2026-10-03T10:50:00Z
+updated: 2026-10-03T11:55:00Z
 ---
 
 ## Current Test
 
-number: 6
-name: Keep 5.1.4's rear-gap difference from EAR?
-expected: |
-  Answer yes or no. Yes keeps it (recommended). No needs a new decision before any code changes.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -76,28 +72,66 @@ expected: |
   above ear height are unchanged from today. The difference is written down in the integration guide, README and skill.
   Yes = keep it (recommended: matching EAR there would change the sound above ear height on 5.1.4 and reintroduce the
   0.71 horizon jump from RESEARCH F4). No = needs a new decision before any code changes.
-result: [pending]
+result: pass
+reported: "Then yes, leave it as it is"
+evidence: |
+  User first asked whether the change made horizon sounds reach height speakers on other layouts. Probed 2026-10-03
+  (scratch Release build, HEAD 4df579c): 8 height layouts x 7,201 azimuths at el 0, max height-speaker gain
+  VBAP <= 4.3e-8 (~-147 dB), VBIP <= 2.1e-4 (~-74 dB, sqrt of the same float noise). [vbap3d-identity] passes
+  (bit-identical to pre-Phase-2 code at and above the horizon). Answered: no; the 5.1.4 rear-gap case is EAR's behaviour, not SpatialCore's.
 
 ### 7. Optional listening check of the corrected 0 to -30 degree band
 expected: In OpenSpatialDelay on 7.1.4, slowly lower a sound from ear height to 30 degrees below at about 60 degrees left. It stays put, with no drift toward one speaker and no side flip. The numbers already prove it; this is only whether you like how it sounds. Skippable.
-result: [pending]
+result: skipped
+reason: "Deferred follow-up: I will check it in the next round of listening reviews. Just add it as a task for the next round."
 
 ### 8. Backstop: Release layout-build abort (D-02a)
 expected: A broken height layout aborts in activateLayout (RenderEngine.cpp:729) during setOutputFormat, never from renderBlock. No Catch2 test can survive an abort; placement evidence only (unchanged by 02-08/02-09).
-result: [pending]
+result: pass
+source: claude-verified
+evidence: |
+  Exercised 2026-10-03 in a scratch worktree (/tmp/sc-backstop, HEAD 4df579c, never committed), Release build.
+  Sabotaged buildVBAPTripletsForLayout to return no triplets for height layouts, then a scratch Catch2 case called
+  engine.setOutputFormat(Surround7_1_4) on the test thread: SIGABRT, exit 134, the "returned" line never printed.
+  Control (sabotage reverted, same probe): setOutputFormat returns, exit 0.
+  The only std::abort in src/ is RenderEngine.cpp:729 (inside activateLayout); RenderEngine::renderBlock contains no
+  activateLayout or abort call.
 
 ### 9. Judgment-tier prohibitions (25)
 expected: Accept the verifier's non-binding judgments in 02-VERIFICATION.md "Prohibitions" (17 from before plus 8 from 02-08/02-09); all 25 hold on the evidence.
-result: [pending]
+result: pass
+source: claude-verified
+evidence: |
+  Re-checked the 8 new items 2026-10-03 (the first 17 were accepted in test 5):
+  no change above the horizon: [vbap3d-identity] passes (262,104 assertions, Release build);
+  no alloc/lock/log: `git diff 306b025..HEAD -- src/Core/SpatialMath.cpp` adds no new/malloc/vector/push_back/resize/mutex/lock/DBG/printf;
+  public API: `git diff 306b025..HEAD -- include/` adds one blank line and comments only;
+  no 5.1.4 special case: builder diff has no layout-specific branch;
+  EarReference.h: regenerated from ear 2.1.0 (.context/venv) and byte-identical (cmp);
+  OSD untouched: `git status --porcelain` empty; no GitHub post: issue #22 last updated 2026-10-01T06:35Z, 0 comments;
+  02-09 scope: 1237af4..a322673 touches only SKILL.md, README (1 line), integration-guide, REVIEW-DISPOSITION, VALIDATION.
+
+### 10. Full test suite passes in a Release build (the build type CI uses)
+expected: All tests pass with CMAKE_BUILD_TYPE=Release, as .github/workflows/ci.yml builds and runs them (ubuntu-latest, Release, ctest).
+result: issue
+source: claude-verified
+reported: "Found while running test 8: Release build of HEAD 4df579c, 193 cases, 192 pass, 1 fails: [ambi-pin] (RenderEngineTests.cpp:700, added in 317cc51 / 02-06). The order-3 decode matrix differs from the test's reference decoder by up to 5.3e-6 on 10 of 15 layouts (7.0/7.1 worst), tolerance is 1e-6. Debug passes. Phase gates ran Debug only; the branch has not been pushed (ahead 59), so CI has never run it."
+severity: major
 
 ## Summary
 
-total: 9
-passed: 5
-issues: 0
-pending: 4
-skipped: 0
+total: 10
+passed: 8
+issues: 1
+pending: 0
+skipped: 1
 blocked: 0
+
+## Deferred Follow-Ups
+
+- test: 7
+  idea: "Listening check in OpenSpatialDelay on 7.1.4: lower a sound from ear height to 30 degrees below at about 60 degrees left; confirm it stays put (no drift, no side flip). User: 'I will check it in the next round of listening reviews. Just add it as a task for the next round.'"
+  deferred_at: 2026-10-03
 
 ## Gaps
 
@@ -133,3 +167,12 @@ blocked: 0
     - "Docs: guide/README/skill state the band now matches EAR exactly except 5.1.4's rear gap; widen WR-01 note that #22 remains above the horizon"
     - "Record OSD follow-up updates: follow-up 1 covers 4 OSD files (glossary.md:127-128, SPECIFICATION.md:491, docs/wiki/output-formats.md:88, .claude/skills/spatial-audio-dsp/SKILL.md:554); follow-up 2 gains a fifth audible change (below-horizon band now EAR-exact)"
   debug_session: .planning/debug/below-horizon-band-vs-ear.md
+
+- gap_id: G-02-10
+  truth: "The full test suite passes in a Release build, the build type CI uses (.github/workflows/ci.yml)"
+  status: failed
+  reason: "Claude-verified: [ambi-pin] fails in Release only; decode matrix vs reference decoder max |diff| 5.3e-6 > 1e-6 tolerance on 10 of 15 layouts. Debug passes."
+  severity: major
+  test: 10
+  artifacts: []  # Filled by diagnosis
+  missing: []    # Filled by diagnosis
