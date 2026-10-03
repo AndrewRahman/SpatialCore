@@ -1,14 +1,18 @@
 ---
-status: diagnosed
+status: testing
 phase: 02-algorithm-format-verification
 source: [02-VERIFICATION.md]
 started: 2026-10-01T07:55:50Z
-updated: 2026-10-03T12:20:00Z
+updated: 2026-10-03T22:10:09Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 11
+name: Accept the 2.5e-5 bound for the [ambi-pin] decode check?
+expected: |
+  Answer yes or no. Yes (recommended): accept the 25-parts-per-million limit. The library decoder is unchanged, so nothing you hear changes. No: keep 1e-6 and force identical rounding with a library-wide compiler flag, which slows the audio code and means re-checking OpenSpatialDelay's sound.
+awaiting: user response
 
 ## Tests
 
@@ -113,17 +117,29 @@ evidence: |
 
 ### 10. Full test suite passes in a Release build (the build type CI uses)
 expected: All tests pass with CMAKE_BUILD_TYPE=Release, as .github/workflows/ci.yml builds and runs them (ubuntu-latest, Release, ctest).
-result: issue
+result: pass
 source: claude-verified
 reported: "Found while running test 8: Release build of HEAD 4df579c, 193 cases, 192 pass, 1 fails: [ambi-pin] (RenderEngineTests.cpp:700, added in 317cc51 / 02-06). The order-3 decode matrix differs from the test's reference decoder by up to 5.3e-6 on 10 of 15 layouts (7.0/7.1 worst), tolerance is 1e-6. Debug passes. Phase gates ran Debug only; the branch has not been pushed (ahead 59), so CI has never run it."
 severity: major
+resolved_by: [02-10]
+reverified: "02-10 re-verification (claude-verified): Release ctest --test-dir build-release/tests 193/193; [ambi-pin] 110 assertions pass in Release and Debug; a +0.1% Tikhonov-epsilon mutation still fails the pin in both builds. Debug 192/193 (HUTUBS PP2, pre-existing, Phase 3)."
+
+### 11. Accept the 2.5e-5 bound for the [ambi-pin] decode check?
+expected: Answer yes or no. Yes (recommended): accept the 25-parts-per-million limit in place of 1e-6. The library decoder is unchanged, so nothing you hear changes; the limit is derived from the matrix conditioning, re-checked against a double-precision solve every run, and still fails for a deliberate +0.1% decoder change. No: keep 1e-6 and force identical rounding with a library-wide compiler flag (slows the audio code; OpenSpatialDelay's sound needs re-checking).
+result: [pending]
+source: 02-VERIFICATION.md human_verification (02-10 SUMMARY question)
+
+### 12. Judgment-tier prohibitions from plan 02-10 (4)
+expected: Accept or reject the verifier's non-authoritative judgment that all 4 hold — (1) no change under src/ or include/ and referenceAmbiDecode untouched; (2) no -ffp-contract or other FP flag in either CMakeLists.txt; (3) the tolerance was derived, not tuned to pass; (4) nothing from the mutation worktree committed, and HUTUBS PP2, other tolerances, ci.yml and /tmp/sc-backstop untouched. Evidence: 02-VERIFICATION.md Prohibitions table.
+result: [pending]
+source: 02-VERIFICATION.md human_verification
 
 ## Summary
 
-total: 10
-passed: 8
-issues: 1
-pending: 0
+total: 12
+passed: 9
+issues: 0
+pending: 2
 skipped: 1
 blocked: 0
 
@@ -170,7 +186,8 @@ blocked: 0
 
 - gap_id: G-02-10
   truth: "The full test suite passes in a Release build, the build type CI uses (.github/workflows/ci.yml)"
-  status: failed
+  status: resolved
+  resolved_by: [02-10]
   reason: "Claude-verified: [ambi-pin] fails in Release only; decode matrix vs reference decoder max |diff| 5.3e-6 > 1e-6 tolerance on 10 of 15 layouts. Debug passes."
   severity: major
   test: 10
