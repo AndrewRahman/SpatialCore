@@ -334,13 +334,16 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
         }
     }
 
-    if (bestTri < 0)
+    const bool usedFallback = (bestTri < 0);
+    if (usedFallback)
     {
         // No triplet encloses this finite direction. Measured never to happen
-        // for finite input on any shipped height layout (D-06; the [ear][coverage]
-        // test), so this is a safety net, not a code path: the one diagnostic
-        // permitted on the audio path is this Debug-only assert (D-06c).
-        jassertfalse;
+        // for finite input on a list built the way RenderEngine builds it (D-06;
+        // the [ear][coverage] and [ear][gap] tests), but a caller can pass a
+        // partial list (for example buildVBAPTripletsForLayout alone, which has
+        // no below-horizon coverage). This used to be a Debug-only jassertfalse
+        // on the audio thread; that is gone (WR-03): JUCE's assertion path logs
+        // and allocates, and the outcome below is defined and audible instead.
 
         if (fallbackTri < 0)
             return;   // empty triplet list: silence
@@ -397,6 +400,38 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
             const float scale = 1.0f / std::sqrt (power);
             for (int s = 0; s < N; ++s)
                 outGains[s] *= scale;
+        }
+    }
+
+    // WR-03: the D-06b candidate can clamp to all zeros (every gain of the
+    // best triplet negative). A finite direction with a non-empty list must
+    // never be silent, so that case takes the nearest real speaker at unity,
+    // the pre-Phase-2 fallback (d43cb15). Only reachable from the fallback
+    // path; stack floats only (DR-1).
+    if (usedFallback)
+    {
+        float power = 0.0f;
+        for (int s = 0; s < N; ++s)
+            power += outGains[s] * outGains[s];
+
+        if (! (power > 1e-12f) && N > 0)
+        {
+            float bestDot = -2.0f;
+            int bestSpeaker = 0;
+            for (int s = 0; s < N; ++s)
+            {
+                outGains[s] = 0.0f;
+                const float sx = std::cos (layout.speakers[s].elevationRad) * std::sin (layout.speakers[s].azimuthRad);
+                const float sy = std::cos (layout.speakers[s].elevationRad) * std::cos (layout.speakers[s].azimuthRad);
+                const float sz = std::sin (layout.speakers[s].elevationRad);
+                const float dot = px * sx + py * sy + pz * sz;
+                if (dot > bestDot)
+                {
+                    bestDot = dot;
+                    bestSpeaker = s;
+                }
+            }
+            outGains[bestSpeaker] = 1.0f;
         }
     }
 }

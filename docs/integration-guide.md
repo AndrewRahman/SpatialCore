@@ -223,8 +223,12 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   AndrewRahman/SpatialCore#22 and not fixed. Below the horizon there is no such tie: regular
   triplets are tried first, then the nadir cap, then the pair regions, and regions of one kind meet
   only on shared edges, where they give the same gains. If no triplet encloses a finite direction
-  (measured never to happen on a shipped layout), the triplet with the largest minimum gain is used,
-  negatives clamped to 0, renormalised.
+  (measured never to happen with the list `RenderEngine` builds), the triplet with the largest
+  minimum gain is used, negatives clamped to 0, renormalised; if that clamps to all zeros, the
+  nearest speaker gets unity. That path never asserts and is never silent for a non-empty list. A
+  consumer calling `computeVBAPGains3D` directly must pass `buildVBAPTripletsForLayout` followed by
+  `appendLowerHemisphereTriplets`: the first alone encloses no below-horizon direction, so every
+  one of them would take this fallback instead of the EAR construction.
 
 ### Non-finite positions
 

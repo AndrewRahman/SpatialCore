@@ -119,7 +119,9 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
 //
 // Deliberately separate from buildVBAPTripletsForLayout: the regular list must
 // stay regular-only so the RenderEngine::activateLayout guard and the
-// [io][layout] test keep seeing it alone.
+// [io][layout] test keep seeing it alone. A caller of computeVBAPGains3D must
+// pass the result of both builders, in that order: the regular list alone does
+// not enclose any below-horizon direction (see computeVBAPGains3D, WR-03).
 void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
                                     std::vector<VBAPTriplet>& triplets);
 

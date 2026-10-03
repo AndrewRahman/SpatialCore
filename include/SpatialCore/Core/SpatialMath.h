@@ -88,6 +88,19 @@ inline void nearestSpeaker3DFallback (const SpeakerLayout& layout,
 */
 float evalSH (int acnIndex, float azimuthRad, float elevationRad);
 void computeVBAPGains2D (const SpeakerLayout& layout, float azimuthRad, float* outGains);
+
+/** 3D VBAP over a precomputed triplet list. Audio-thread safe: no allocation,
+    lock or log.
+
+    `triplets` must be what RenderEngine stores for the layout:
+    buildVBAPTripletsForLayout followed by appendLowerHemisphereTriplets (see
+    SpeakerLayout.h). The first builder alone has no below-horizon coverage.
+    With a partial list, a direction no triplet encloses still gets a defined,
+    audible result (WR-03): the triplet with the largest minimum gain,
+    negatives clamped to 0 (D-06b), or, if that clamps to all zeros, unity on
+    the nearest speaker. There is no assert on this path. An empty list, or a
+    non-finite direction, gives silence.
+*/
 void computeVBAPGains3D (const SpeakerLayout& layout, const std::vector<VBAPTriplet>& triplets,
                          float azimuthRad, float elevationRad, float* outGains);
 

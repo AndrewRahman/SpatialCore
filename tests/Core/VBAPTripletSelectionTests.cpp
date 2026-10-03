@@ -744,9 +744,8 @@ TEST_CASE ("computeVBAPGains2D/3D: non-finite gives silence, huge finite azimuth
 TEST_CASE ("computeVBAPGains3D: no enclosing triplet uses the largest-minimum-gain triplet; an empty list is silent (D-06b)",
            "[robust]")
 {
-    // NOTE: both calls below take the no-triplet path, which fires the D-06c
-    // Debug-only jassertfalse. The "JUCE Assertion failure in SpatialMath.cpp"
-    // lines this prints in a Debug run are expected.
+    // Both calls below take the no-triplet path. Since WR-03 that path has no
+    // assert (it used to fire a Debug-only jassertfalse on the audio thread).
     const SpeakerLayout& layout = getLayoutDef (LayoutID::S7_1_4);
     const int n = layout.numSpeakers;
 
@@ -797,6 +796,88 @@ TEST_CASE ("computeVBAPGains3D: no enclosing triplet uses the largest-minimum-ga
     fillSentinel (silent);
     computeVBAPGains3D (layout, none, juce::degreesToRadians (30.0f), juce::degreesToRadians (-60.0f), silent);
     CHECK (allZeroGains (silent, n));
+}
+
+TEST_CASE ("computeVBAPGains3D: a regular-only list is audible at every below-horizon direction, nearest speaker when the D-06b candidate clamps to silence (WR-03)",
+           "[robust]")
+{
+    // A consumer that calls buildVBAPTripletsForLayout without
+    // appendLowerHemisphereTriplets reaches the no-enclosing-triplet path for
+    // every below-horizon direction. Before WR-03 that was a jassertfalse on
+    // the audio thread in Debug and, where the D-06b candidate's three gains
+    // were all negative, silence in Release.
+    long totalDirections = 0, totalSnapped = 0;
+
+    for (LayoutID id : kHeightLayouts)
+    {
+        const SpeakerLayout& layout = getLayoutDef (id);
+        const int n = layout.numSpeakers;
+        std::vector<VBAPTriplet> regular;
+        buildVBAPTripletsForLayout (layout, regular);
+        REQUIRE_FALSE (regular.empty());
+
+        long directions = 0, snapped = 0, notUnit = 0, mismatches = 0;
+        std::string firstFailure;
+        auto noteFailure = [&] (const char* what, int azDeg, int elDeg, float value)
+        {
+            if (firstFailure.empty())
+                firstFailure = std::string (what) + " at az " + std::to_string (azDeg)
+                             + " el " + std::to_string (elDeg) + " value " + std::to_string (value);
+        };
+
+        for (int azDeg = -180; azDeg < 180; azDeg += 2)
+        {
+            for (int elDeg = -90; elDeg <= -2; elDeg += 2)
+            {
+                const float az = juce::degreesToRadians (static_cast<float> (azDeg));
+                const float el = juce::degreesToRadians (static_cast<float> (elDeg));
+                if (regularTripletContains (regular, az, el))
+                    continue;   // not the fallback path
+                ++directions;
+
+                // Expected: the D-06b candidate, or the nearest-speaker snap
+                // when that candidate clamps to all zeros.
+                float expected[MAX_SPEAKERS] = {};
+                largestMinGainReference (regular, az, el, expected, n);
+                const bool clampedSilent = ! (powerOf (expected, n) > 1e-12f);
+                if (clampedSilent)
+                {
+                    ++snapped;
+                    nearestSpeaker3DFallback (layout, az, el, expected, n);
+                }
+
+                float g[MAX_SPEAKERS];
+                fillSentinel (g);
+                computeVBAPGains3D (layout, regular, az, el, g);
+
+                const float p = powerOf (g, n);
+                if (! (std::abs (p - 1.0f) <= 1e-5f))
+                {
+                    ++notUnit;
+                    noteFailure ("power off unit (silent?)", azDeg, elDeg, p);
+                }
+                for (int s = 0; s < n; ++s)
+                    if (! (std::abs (g[s] - expected[s]) <= (clampedSilent ? 0.0f : 1e-6f)))
+                    {
+                        ++mismatches;
+                        noteFailure ("gain differs from the expected fallback", azDeg, elDeg, g[s]);
+                    }
+            }
+        }
+
+        INFO ("layout " << layoutName (id) << ": fallback directions " << directions
+              << ", nearest-speaker snaps " << snapped << ", first failure: " << firstFailure);
+        CHECK (directions > 0);
+        CHECK (notUnit == 0);
+        CHECK (mismatches == 0);
+        totalDirections += directions;
+        totalSnapped += snapped;
+    }
+
+    // The nearest-speaker branch must actually be exercised, or this test
+    // would not catch its removal.
+    INFO ("fallback directions " << totalDirections << ", nearest-speaker snaps " << totalSnapped);
+    CHECK (totalSnapped > 0);
 }
 
 TEST_CASE ("DirectBinaural: non-finite direction gives silent binaural gains (D-06)", "[robust]")
