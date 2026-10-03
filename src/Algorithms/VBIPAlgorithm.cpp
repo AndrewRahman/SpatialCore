@@ -21,10 +21,13 @@ namespace spatialcore
 void VBIPAlgorithm::computeGains (const SourcePosition& source, const LayoutContext& ctx,
                                    float* outputGains, int numSpeakers) const
 {
-    // Height layouts always carry triplets because RenderEngine::activateLayout
-    // aborts otherwise (D-02a); a hand-built LayoutContext with empty triplets on
-    // a height layout is a caller error this reports in Debug (D-01).
-    jassert (ctx.triplets.empty() == ! layoutHasHeight (ctx.layout));
+    // Height layouts always carry triplets and flat layouts never do:
+    // RenderEngine::activateLayout enforces that on the message thread and
+    // aborts on a mismatch (D-02a). There is deliberately no assert here
+    // (IN-14): this runs on the audio thread, and JUCE's assertion path logs
+    // and allocates. A hand-built LayoutContext that breaks the invariant
+    // still gets a defined, finite result: an empty list pans by 2D VBAP
+    // (azimuth only), a non-empty list by 3D VBAP.
 
     // Start with VBAP gains (proportional to G = L^-1 p over the active pair/triplet)
     if (! ctx.triplets.empty())

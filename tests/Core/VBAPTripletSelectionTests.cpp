@@ -818,6 +818,54 @@ TEST_CASE ("DBAP: a non-finite distance pans the finite direction as distance 0.
     }
 }
 
+TEST_CASE ("VBAP/VBIP/MDAP: a hand-built height-layout context with no triplets pans by 2D VBAP, assert-free (IN-14)",
+           "[robust]")
+{
+    // The D-01 jassert was removed from these three computeGains (it ran on the
+    // audio thread). The documented outcome for a context that breaks the
+    // "height layout <=> triplets" invariant is pinned instead: an empty list
+    // on a height layout pans by azimuth with 2D VBAP, finite and unit power.
+    const EngineRig rig (OutputFormat::Surround7_1_4);
+    const auto& ls = rig.engine.getActiveLayout();
+    REQUIRE (layoutHasHeight (ls.layout));
+
+    const std::vector<VBAPTriplet> noTriplets;
+    const LayoutContext ctx { ls.layout, noTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
+    const int n = ls.layout.numSpeakers;
+
+    const VBAPAlgorithm vbap;
+    const VBIPAlgorithm vbip;
+    const MDAPAlgorithm mdap;
+
+    for (float azDeg : { -170.0f, -95.0f, -30.0f, 0.0f, 12.5f, 60.0f, 135.0f, 180.0f })
+        for (float elDeg : { -40.0f, 0.0f, 35.0f })
+        {
+            const SourcePosition src { juce::degreesToRadians (azDeg), juce::degreesToRadians (elDeg), 0.5f };
+            INFO ("az " << azDeg << " el " << elDeg);
+
+            float expected[MAX_SPEAKERS] = {};
+            computeVBAPGains2D (ls.layout, src.azimuthRad, expected);
+
+            float g[MAX_SPEAKERS];
+            fillSentinel (g);
+            vbap.computeGains (src, ctx, g, n);
+            REQUIRE (allFiniteGains (g, n));
+            CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-4f));
+            for (int s = 0; s < n; ++s)
+                CHECK (g[s] == expected[s]);
+
+            for (const SpatializationAlgorithm* algo : { static_cast<const SpatializationAlgorithm*> (&vbip),
+                                                          static_cast<const SpatializationAlgorithm*> (&mdap) })
+            {
+                fillSentinel (g);
+                algo->computeGains (src, ctx, g, n);
+                INFO (algo->getName().toStdString());
+                REQUIRE (allFiniteGains (g, n));
+                CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-4f));
+            }
+        }
+}
+
 TEST_CASE ("computeVBAPGains2D/3D: non-finite gives silence, huge finite azimuths are wrapped not looped (D-19)",
            "[robust]")
 {
