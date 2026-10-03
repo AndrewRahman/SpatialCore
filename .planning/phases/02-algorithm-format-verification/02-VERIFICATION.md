@@ -1,10 +1,11 @@
 ---
 phase: 02-algorithm-format-verification
-verified: 2026-10-03T10:41:21Z
+verified: 2026-10-03T22:30:00Z
 status: human_needed
-score: 77/78 must-haves verified
+score: 88/88 must-haves verified
 covered_files:
   - .claude/skills/spatial-audio-dsp/SKILL.md
+  - .gitignore
   - .planning/phases/02-algorithm-format-verification/02-01-PLAN.md
   - .planning/phases/02-algorithm-format-verification/02-01-SUMMARY.md
   - .planning/phases/02-algorithm-format-verification/02-02-PLAN.md
@@ -23,6 +24,8 @@ covered_files:
   - .planning/phases/02-algorithm-format-verification/02-08-SUMMARY.md
   - .planning/phases/02-algorithm-format-verification/02-09-PLAN.md
   - .planning/phases/02-algorithm-format-verification/02-09-SUMMARY.md
+  - .planning/phases/02-algorithm-format-verification/02-10-PLAN.md
+  - .planning/phases/02-algorithm-format-verification/02-10-SUMMARY.md
   - README.md
   - docs/integration-guide.md
   - include/SpatialCore/Algorithms/DBAPAlgorithm.h
@@ -57,62 +60,93 @@ covered_files:
   - tests/reference/gen_panning_reference.py
   - tests/reference/gen_sh_reference.py
   - tests/reference/layouts_from_cpp.py
-covered_digest: "v2:sha256:2104f066c10a7ec608d384e6f98f2790fa34085ec02a04fa2ccc8430c9d42bf8"
-behavior_unverified: 1
+covered_digest: "v2:sha256:8d6a2060632fb63607523029d71a5d6efdaad9ad4f3abc64159c4b032fbbff45"
+behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: human_needed
-  previous_score: 57/60
+  previous_score: 77/78
   gaps_closed:
-    - "G-02-2: below-horizon 0 to -30 degree band on height layouts now matches EAR (UAT test 2, severity major)"
-    - "02-07 prohibition 'docs must not describe code differently' (previously partly failed): now holds, docs restate the 02-08 tests"
-    - "WR-01 (guide scoped the coplanar tie to 'above the horizon' while the band tied too): the band tie no longer exists, so the scoping is now correct"
+    - "G-02-10: [ambi-pin] failed in Release on Apple Silicon (UAT test 10, severity major): now passes in Release (build-release/) and Debug (build/); Release ctest 193/193"
+    - "02-01 backstop truth (D-02a Release abort): previously present-but-behavior-unverified, now carries observed-behavior evidence from UAT test 8 (SIGABRT exit 134 in a scratch Release build, control exit 0)"
   gaps_remaining: []
   regressions: []
-behavior_unverified_items:
-  - truth: "RenderEngine::activateLayout aborts in every build type when a height layout yields no regular triplets or a flat layout yields some; only a SpatialCore developer editing layoutDefs or the builder can reach it, and the abort is on the message/prepare thread, never on a path reachable from renderBlock (02-01, D-02a; verification: backstop)"
-    test: "Temporarily edit a layoutDefs height entry so it builds no regular triplets (or lower a flat speaker to 0.8 degrees with the threshold reverted), build Release, call setOutputFormat for that format"
-    expected: "Process aborts inside activateLayout on the calling (message/prepare) thread; renderBlock never reaches it"
-    why_human: "Tagged verification: backstop (non-inferable). The abort kills the test process, so no Catch2 test exercises it. Evidence is placement only: one std::abort at src/Engine/RenderEngine.cpp:729 (re-confirmed this run), none in renderBlock. Unchanged by 02-08 and 02-09 (src/Engine has no diff since 306b025)."
 coincidental_reliance_items:
   - truth: "Finite inputs are untouched by every guard and every std::isfinite check lives in a .cpp, so OpenSpatialDelay's -ffast-math build cannot fold it away (02-04)"
     reason: undeclared-precondition
     harden: "The guards hold only because the SpatialCore target itself is compiled without -ffast-math / -ffinite-math-only. Turn it into a compile-time #error on __FAST_MATH__ / __FINITE_MATH_ONLY__ in the guarded TUs (review WR-04). Unchanged by this round."
+advisory:
+  - finding: "WR-06 (02-REVIEW.md): the std::max reductions in [ambi-pin] drop NaN, so a NaN decode passes the pin and the new double-precision anchor vacuously"
+    category: other
+    reason: "Reproduced by the verifier: with every library decode entry forced to NaN, [ambi-pin] still passed (110 assertions, Release). The codec's own [io][ambisonics] tests do catch it (2 of 7 cases failed under the same mutation), so a NaN decode is not undetected suite-wide. Two-line fix (REQUIRE isfinite per entry) is in the review."
+    evidence_status: "reproduced by verifier (temporary mutation of src/IO/AmbisonicsCodec.cpp, reverted, git status clean)"
+  - finding: "Phase 1 criterion 4 mechanical check drifted from 0 to 11 matches (3 sites are not in the Owner/Repo#N form)"
+    category: other
+    reason: "See 'Cross-phase regression check' below. 9 of 11 are fully qualified AndrewRahman/SpatialCore#N; the 3 unqualified sites are tests/Algorithms/PanningLawTests.cpp:65, :836 (bare #22) and tests/IO/AmbisonicsCodecTests.cpp:170 (SpatialCore#11, no owner). Cosmetic: all name SpatialCore's own tracker."
+    evidence_status: "reproduced by verifier (grep, line list below); live issue resolution not re-run because gh returns HTTP 401"
 human_verification:
-  - test: "Keep 5.1.4's rear-gap difference from EAR? (02-09's one plain-English question, harvested here, not answered.) On a 5.1.4 setup, for a sound directly behind you (beyond 110 degrees either side), EAR also sends part of it to the two rear ceiling speakers, even at ear height. SpatialCore keeps it on the two rear ear-level speakers, so sounds at or above ear height are unchanged from today. This one difference is written down in the integration guide, README and skill."
-    expected: "Answer yes or no. Yes: keep it (recommended: matching EAR there would change the sound above ear height on 5.1.4 and reintroduce the 0.71 horizon jump from RESEARCH F4). No: needs a new decision before any code changes."
-    why_human: "A judgment about sound, not a fact the code can settle. The code and docs agree with each other (verified: the guide, README and skill all state it, and the ear generator carves out |az| > 110 on 5.1.4); the tests pin that SpatialCore differs there only in that region (review swept 3-degree grid vs ear 2.1.0)."
-  - test: "Optional listening check of the corrected band (02-08 coverage D7). In a real OpenSpatialDelay session on 7.1.4, slowly lower a sound from ear height to 30 degrees below at about 60 degrees to the left."
-    expected: "It stays put, with no drift toward one speaker and no side flip. The numbers already prove this (0.7071 / 0.7071 on M+030 / M+090 at every elevation, my own probe below); this is only whether you like how it sounds."
-    why_human: "Audible character is a listening judgment. You already chose to change the panning (UAT test 2, option B)."
-  - test: "Backstop truth: the D-02a Release abort (see behavior_unverified_items)."
-    expected: "Optionally break a layoutDefs height entry on a scratch branch, build Release, call setOutputFormat; the process aborts in activateLayout, never from renderBlock."
-    why_human: "Tagged verification: backstop. An abort cannot be caught by Catch2. Placement evidence only."
-  - test: "Judgment-tier prohibitions: 25 across 9 plans (17 from before plus 8 from 02-08 and 02-09). See the Prohibitions table. I recorded a NON-AUTHORITATIVE judgment for each; all 25 hold on the evidence."
+  - test: "Accept the 2.5e-5 (25 parts per million) bound for the [ambi-pin] decode check, in place of the old 1e-6 (one part per million). 02-10's one plain-English yes/no question, harvested here, not answered."
+    expected: "Answer yes or no. Yes: accept it (recommended). The decoder in the library is unchanged, so nothing you hear changes. The old limit came from a debug-build measurement and was never derived; the new limit is derived from the matrix conditioning, re-checked against a double-precision solve on every run, and I reproduced that it still fails for a deliberate +0.1% change to the decoder in both Release and Debug. No: keep 1e-6 and force identical rounding with a compiler flag on the whole library, which slows the audio code and means re-checking OpenSpatialDelay's sound; that needs a new decision before any change."
+    why_human: "Loosening a test's limit is a trust judgment. The numbers are checked, the acceptance is the user's. Nothing else is blocked on the answer."
+  - test: "Judgment-tier prohibitions from plan 02-10 (4). I recorded a NON-AUTHORITATIVE judgment for each; all 4 hold. See the Prohibitions table."
     expected: "Accept or reject. unverified-prohibition: human review recommended."
-    why_human: "Judgment-tier items are never silently absorbed into a pass. UAT test 5 already accepted the first 17 (with the 02-07 doc-accuracy item partly failing, now cured)."
+    why_human: "Judgment-tier items are never silently absorbed into a pass. The 25 earlier prohibitions were already accepted in UAT tests 5 and 9."
 ---
 
 # Phase 2: Algorithm & Format Verification Verification Report
 
 **Phase Goal:** Every algorithm and every advertised format is confirmed correct by a test, and the Ambisonics convention is written down.
-**Verified:** 2026-10-03T10:41:21Z
+**Verified:** 2026-10-03T22:30:00Z
 **Status:** human_needed
-**Re-verification:** Yes, after gap closure (plans 02-08 and 02-09, UAT gap G-02-2)
+**Re-verification:** Yes, after gap closure (plan 02-10, UAT gap G-02-10); the G-02-2 round that preceded it is kept below for the record
 
 ## Summary
 
-Gap G-02-2 is closed, by evidence in code, in tests and in my own probe. All four ROADMAP success criteria still hold. There are no blockers and no regressions. Status is `human_needed` rather than `passed` because four items remain for the user: the one yes/no question about 5.1.4's rear gap, an optional listening check, the backstop abort (a runtime abort no test can exercise), and the flagged judgment-tier prohibitions.
+Gap G-02-10 is closed. `[ambi-pin]` and the full suite now pass in a Release build on Apple Silicon (`build-release/`, `CMAKE_BUILD_TYPE=Release`) as well as in Debug (`build/`). All four ROADMAP success criteria still hold, nothing regressed, and there are no blockers. Status is `human_needed` rather than `passed` for one reason: plan 02-10 asks the user a yes/no question (accept a 25-parts-per-million limit for the decode check instead of one part per million) and its four judgment-tier prohibitions are flagged for human review. Two warnings are recorded and neither blocks: WR-06 (the check's `std::max` reductions drop NaN) and a cosmetic drift in the Phase 1 issue-reference grep.
 
-**Test run (my own):**
+**Test run (my own, this pass):**
 
-- `cmake --build build --target SpatialCoreTests` exit 0.
-- Full binary: **193 cases, 192 passed, 1 failed; 304,838 assertions, 1 failed.** The one failure is `HUTUBS PP2 — golden HRIR checksum at az=90deg (own control)` (`tests/Binaural/HutubsPP2Tests.cpp:47`), pre-existing and Phase 3 scope. `git log d43cb15..HEAD` on `tests/Binaural`, `src/Binaural` and `src/HRTF` is empty.
-- With that case excluded (the orchestrator's command): **All tests passed (304835 assertions in 192 test cases)**, matching the orchestrator's figure. The trailing "Leaked objects: FFT" notice is the SharedFFTCache static-destruction false positive recorded in `deferred-items.md` (exit code unaffected).
-- Per-tag runs, all pass: `[g02-2]` 203 assertions / 1 case, `[band]` 828 / 3, `[vbap3d-identity]` 262,104 / 1, `[consumer-surface]` 13 / 1, `[ear]` 19,215 / 11, `[io][layout]` 19,119 / 7, `[panning-law]` 7,191 / 10.
-- All three reference headers regenerate **byte-identical** from `.context/venv` (ear 2.1.0, scipy, textbook formulas): `gen_ear_reference.py`, `gen_sh_reference.py`, `gen_panning_reference.py`.
+| Run | Result |
+|---|---|
+| `cmake --build build` and `build-release` (`SpatialCoreTests`) | both up to date, exit 0; `CMAKE_BUILD_TYPE` confirmed Debug and Release in the two caches |
+| Debug, `./build/tests/SpatialCoreTests` (full, no exclusion) | **193 cases, 192 passed, 1 failed; 304,868 assertions, 1 failed.** The one failure is `tests/Binaural/HutubsPP2Tests.cpp:47` (golden checksum, got `0x7a35c1f848c2a410`, expected `0x9e3c2875eeade4b7`). Matches the orchestrator's 192/193. |
+| Debug, with that case excluded | All passed (304,865 assertions in 192 test cases) |
+| Release, `./build-release/tests/SpatialCoreTests` (full, no exclusion) | All passed (304,868 assertions in 193 test cases); HUTUBS PP2 passes in Release |
+| Release, `ctest --test-dir build-release/tests` | 100% passed, 193 of 193. Matches the orchestrator's figure. |
+| `[ambi-pin]` alone, Release and Debug | both: All tests passed (110 assertions in 2 test cases) |
+| Ten Phase 2 tags (`[g02-2]`, `[band]`, `[vbap3d-identity]`, `[consumer-surface]`, `[ear]`, `[io][layout]`, `[panning-law]`, `[sn3d]`, `[roundtrip]`, `[tracer]`), each alone in both trees | all 20 runs pass, identical assertion totals in both builds (203, 828, 262,104, 13, 19,215, 19,119, 7,191, 153, 6, 114) |
 
-## G-02-2 closure (the focus of this re-verification)
+The HUTUBS PP2 Debug failure is pre-existing (introduced with the golden in 2d6dc08, plan 08-04), is recorded in `deferred-items.md`, and belongs to EXTR-02 (Phase 3), not to any Phase 2 truth. The source diff since the last verification pass (`git diff a322673 HEAD -- . ':!.planning' ':!.gsd'`) is two files: `.gitignore` (+1 line) and `tests/Engine/RenderEngineTests.cpp`. So everything verified in the earlier round could only have regressed through that test file, and the tag sweep above passes.
+
+## G-02-10 closure (the focus of this re-verification)
+
+**The gap, per 02-UAT.md test 10:** the full test suite must pass in a Release build, the build type CI uses; `[ambi-pin]` failed there (RenderEngineTests.cpp:700, decode matrix differing from the test's reference decoder by up to 5.3e-6 against a 1e-6 bound on 10 of 15 layouts).
+
+**Code evidence (read, not taken from SUMMARY):**
+
+- `tests/Engine/RenderEngineTests.cpp:708-709`: `kAmbiPinTolerance = 2.5e-5f`, `kAmbiFloatVsDoubleTolerance = 4.0e-5`. The `[ambi-pin]` test (line 785) applies `CHECK (worstHere <= kAmbiPinTolerance)` per layout and again over all 15 (line 832), plus two double-precision anchor checks per layout (lines 825-826), and `layoutsChecked == 15` is asserted.
+- `doublePrecisionAmbiDecode` (lines 715-782) is a real double-precision replica of the decoder (same Tikhonov term, Gauss-Jordan with partial pivoting, same `D = E^T inv` product) fed the same float SH values, and is compared against `active.ambiDecodeMatrix`, the array `RenderEngine::activateLayout` fills through `AmbisonicsCodec::getDecodeMatrix`. It is not tautological.
+- The derivation comment (lines 673-707) matches the debug session's numbers (cond 501 to 1786, spread 0 Debug / 5.3e-6 Release, 1.0e-5 worst variant, 1.4e-5 / 1.7e-5 / 1.8e-5 float-vs-double). Stale wording is gone: the header comment at lines 562-572 now says "within float rounding, not exact", and the test title no longer says "equals". Minor: the comment says the bound is "2.5x below" the +0.1% change while the real ratio is 5.8e-5 / 2.5e-5 = 2.3x (review IN-09).
+- `git diff 1ac244a HEAD -- src include CMakeLists.txt tests/CMakeLists.txt .github` is empty (0 lines). No floating-point flag was added. The 85-line `referenceAmbiDecode` (old lines 574-658, now 576-660) is byte-identical to `1ac244a` (`diff` of the two ranges is empty).
+- `.gitignore` is CRLF throughout and its last line is `build-release/\r\n`; `git check-ignore -v build-release` reports `.gitignore:7`. `git status` shows only the three pre-existing untracked entries (`.gsd/`, `.planning/milestone.lock`, `.planning/state.json`).
+- Recurrence guard: `02-VALIDATION.md` carries the Release suite command (line 27) and the Release tree configure recipe (line 28) and requires the Release suite before `/gsd-verify-work` (line 41); `.planning/codebase/TESTING.md` states the both-build-types rule and why. `deferred-items.md` lists the four 02-10 deferred entries (tight test-local tolerances, no arm64/FMA CI leg, HUTUBS PP2 Debug-only, CI ctest step runs zero tests).
+
+**My own mutation proof (independent of the SUMMARY's, run in this worktree and reverted).** `float epsilon = 0.01f` to `0.01001f` at `src/IO/AmbisonicsCodec.cpp:75` (+0.1%), rebuilt, `[ambi-pin]` run:
+
+| Build | Result with the mutation | After `git checkout` of the file and rebuild |
+|---|---|---|
+| Release | **FAILED**: 11 assertions failed (5 per-layout pin checks at :824, 5 anchor checks at :825, the all-layout check at :832); worst `abs(new - old)` 6.28e-05 against 2.5e-5; library vs double solve 5.79e-05 to 6.29e-05 against 4.0e-05 | 110 assertions pass |
+| Debug | **FAILED**: 11 of 110 assertions failed, same shape | 110 assertions pass (Release ctest 193/193 re-confirmed after the revert) |
+
+So the bound is loose enough to pass the real Release spread (about 5.3e-6) and tight enough to catch a +0.1% decoder change, in both build types, with two independent checks tripping. `git status --short src` was clean afterwards.
+
+**Verdict: G-02-10 is CLOSED.**
+
+### WR-06 reproduced (warning, not a blocker)
+
+The review's one warning is real. `std::max (acc, std::abs (x - y))` returns `acc` when `y` is NaN, so NaN entries are dropped. I proved it two ways: a compiled snippet (`std::max (0.0f, std::abs (NaN - 1.0f))` gives 0, so `0 <= 2.5e-5` passes), and a temporary mutation forcing every library decode entry (`AmbisonicsCodec.cpp:130`) to quiet NaN: `[ambi-pin]` still reported **All tests passed (110 assertions in 2 test cases)**. The mutation was reverted. Impact is bounded: under the same mutation the codec's own `[io][ambisonics]` cases failed (2 of 7, `AmbisonicsCodecTests.cpp:112` `REQUIRE (std::isfinite (v))`), so a NaN decode out of `getDecodeMatrix` is still caught by the suite. What is overstated is the pin's own guarantee for the new anchor ("independent"). The fix is the two-line `REQUIRE (std::isfinite (...))` in 02-REVIEW.md. It is also the only open finding that touches this plan's artifact, so it is worth doing before the phase is closed, but nothing in a must-have depends on it. The disposition ledger records it as `open`.
+
+## G-02-2 closure (previous round, kept for the record)
 
 **The gap, per 02-UAT.md:** on height layouts a source between 0 and -30 degrees elevation must pan as EAR does: the horizon pan holds (7.1.4 az 60 stays 0.7071 / 0.7071 on M+030 / M+090), no lean, no side flip.
 
@@ -148,15 +182,20 @@ Before the fix the earlier verifier measured 0.7210 / 0.6929 at el -5, 0.7472 / 
 
 ## UAT carry-forward
 
-02-UAT.md still reads `status: diagnosed`, 4 passed, 1 issue (test 2). It has not been updated since the gap closure. The orchestrator should move test 2 to pass.
+`02-UAT.md` is `status: diagnosed`: 10 tests, 8 passed, 1 issue (test 10, G-02-10), 1 skipped (test 7). G-02-2 inside it is already `resolved`; G-02-10 is still `failed` because the file has not been updated since the 02-10 closure. The orchestrator should move test 10 to pass (evidence above) and G-02-10 to `resolved`.
 
 | UAT test | UAT result | Status now |
 |---|---|---|
-| 1 DR-3 cross-repo build | pass | Carried, and strengthened: 02-09 re-ran the build on the final code (`/tmp/osd-dr3-check/build.log` ends with `Built target OpenSpatialDelayTests`, 0 `error:` lines; `SpatialCore` is symlinked to this worktree; `git diff 582fa5a HEAD -- src include` is empty, so no source changed after the build; the OSD repo's `git status --porcelain` is empty). The five ADMOSCReceiver.h warnings are pre-existing. Follow-up list updated in 02-09-SUMMARY (4 OSD files, five audible changes), as UAT's amendment required. |
-| 2 Below-horizon band | issue (G-02-2) | **Resolved by 02-08 and 02-09**, as shown above. Needs the UAT file updated. |
-| 3 WR-03 hand-built contexts | pass (accepted under D-01) | Carried. WR-03 is still open in code and is re-reported by the new review; the acceptance still stands because it is reachable only by bypassing `RenderEngine`. |
-| 4 Process gates | pass | Carried. `gh issue view 22` was not re-run: `gh` is unauthenticated in this session (HTTP 401). UAT recorded the body match on 2026-10-01 and #22 is unchanged; 02-09 suggested a comment for #22 but did not post it. |
-| 5 Judgment prohibitions | pass | Carried. The one that partly failed (02-07 docs-match-code) now holds. |
+| 1 DR-3 cross-repo build | pass | Carried. `src`, `include` and CMake are untouched since 02-09, so the OSD build result still applies. |
+| 2 Below-horizon band | pass (G-02-2 resolved by 02-08, 02-09) | Re-checked: `[g02-2]`, `[band]`, `[ear]`, `[vbap3d-identity]`, `[consumer-surface]` pass in both builds. |
+| 3 WR-03 hand-built contexts | pass (accepted under D-01) | Carried. |
+| 4 Process gates | pass | Carried. `gh` returns HTTP 401 this session, so `gh issue view 22` was not re-run. |
+| 5 Judgment prohibitions (17) | pass | Carried. |
+| 6 5.1.4 rear gap | pass (user: "yes, leave it as it is") | Carried. This closes the human item the previous report listed. |
+| 7 Listening check | skipped (deferred follow-up for the next round of listening reviews) | Carried as a deferred follow-up, not a gate. |
+| 8 D-02a Release abort | pass (SIGABRT exit 134, control exit 0) | Carried; see the 02-01 row below. `src/Engine` is unchanged. |
+| 9 Judgment prohibitions (25) | pass | Carried. |
+| 10 Release suite | issue (G-02-10) | **Now passes**, as shown above. Needs the UAT file updated. |
 
 ## Goal Achievement
 
@@ -179,7 +218,7 @@ Before the fix the earlier verifier measured 0.7210 / 0.6929 at el -5, 0.7472 / 
 | 02-04: below-horizon VBAP matches ear 2.1.0 (as scoped to the nadir cap) | ✓ VERIFIED (as scoped) | ✓ VERIFIED | The band is now pinned too |
 | 02-02: numpy/scipy/ear only after human verification | ? UNCERTAIN | ✓ VERIFIED | UAT test 4: the user's own delegation is quoted in 02-02-SUMMARY |
 | 02-03: nothing filed until a human approved the text | ? UNCERTAIN | ✓ VERIFIED | UAT test 4: filed issue body identical to the approved draft `02-03-ISSUE-BODY.md` |
-| 02-01: D-02a abort, every build type, not reachable from renderBlock | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED (backstop) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED (backstop) | Unchanged. Placement re-confirmed. See human items. |
+| 02-01: D-02a abort, every build type, not reachable from renderBlock | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED (backstop) | ✓ VERIFIED | UAT test 8 observed the behavior: a Release build with the triplet builder sabotaged aborted in `setOutputFormat(Surround7_1_4)` (SIGABRT, exit 134, the "returned" line never printed) and returned normally with the sabotage reverted (exit 0). Placement re-confirmed: one `std::abort()` at `src/Engine/RenderEngine.cpp:729`, none in `renderBlock`. It is a one-off scratch experiment, not a regression test (no Catch2 test can survive an abort), so it stays a manual backstop. |
 | 02-04: finite inputs untouched, isfinite only in .cpp | ✓ VERIFIED (coincidental-reliance) | ✓ VERIFIED (coincidental-reliance) | Unchanged advisory (WR-04). |
 
 **02-08: below-horizon band matches EAR (9 truths)**
@@ -210,11 +249,34 @@ Before the fix the earlier verifier measured 0.7210 / 0.6929 at el -5, 0.7472 / 
 | 02-09-SUMMARY carries the superseding cross-repo follow-ups (4 files, five audible changes, #22 comment suggested but not posted) | ✓ VERIFIED | Section present with all three. |
 | The user gets one plain-English yes/no question and Claude runs the checks | ✓ VERIFIED | Question present in 02-09-SUMMARY, harvested as a human item below. |
 
-**Score:** 77/78 truths verified; 1 present-but-behaviour-unverified (the backstop abort), routed to human verification.
+**02-10: honest [ambi-pin] bound (9 truths)**
+
+| Truth | Status | Evidence |
+|---|---|---|
+| `[ambi-pin]` passes in Release (arm64, `build-release/`) and Debug within `kAmbiPinTolerance = 2.5e-5` on all 15 layouts | ✓ VERIFIED | Both builds: 110 assertions in 2 test cases pass. Release ctest 193/193. This supersedes plan 02-06's "within 1e-6" truth, which the debug session showed was never achievable on arm64 Release. |
+| The bound is derived, and the comment records the derivation and no longer says the pin is exact | ✓ VERIFIED | Comment lines 673-707 read and cross-checked against the debug session; header comment and test title now say "within float rounding". The 2.5x vs 2.3x wording slip is IN-09. |
+| Each float decoder is within `kAmbiFloatVsDoubleTolerance = 4.0e-5` of a double-precision decode on all 15 layouts in both build types | ✓ VERIFIED | Checks at :825-826 pass in both builds. They tripped under my +0.1% mutation (5.79e-05 to 6.29e-05), so they are live. |
+| +0.1% Tikhonov change fails the pin in both builds (at least 3 per-layout checks plus the all-layout check) and the tree passes again once reverted | ✓ VERIFIED | Reproduced by me: 11 failed assertions in each build (5 per-layout, 5 anchor, 1 all-layout), 110 pass after revert. |
+| Library decoder and verbatim reference unchanged; no FP flag | ✓ VERIFIED | `git diff 1ac244a HEAD -- src include CMakeLists.txt tests/CMakeLists.txt .github` is empty; `referenceAmbiDecode` byte-identical. |
+| Phase gate in both build types: Debug full suite except HUTUBS; Release under ctest with no exclusion; Phase 2 tags in both | ✓ VERIFIED | My runs: Debug 192/193 (HUTUBS only), Release 193/193; ten tags each in both builds pass. The SUMMARY's 17-tag sweep was not repeated in full; the ten above include every tag that backs the ROADMAP criteria. |
+| Recurrence guard: Release command in VALIDATION, build-type rule in TESTING.md, `build-release/` gitignored | ✓ VERIFIED | Files read; `git check-ignore` confirms. The `ctest` directory caveat the executor found (`build-release/tests`, not the build root) is recorded in both files and is correct. |
+| Out-of-scope items recorded, not fixed (tight tolerances, no arm64/FMA CI leg, HUTUBS Debug-only) | ✓ VERIFIED | Four `02-10:` entries in `deferred-items.md` (the fourth, CI's ctest step running zero tests, was found during execution). `.github/` diff is empty. |
+| The user gets one plain-English yes/no question and Claude runs every build and test | ✓ VERIFIED | Question present in 02-10-SUMMARY, harvested as a human item below. |
+
+**Score:** 88/88 truths verified (78 from the earlier rounds, 9 new for 02-10, with the 02-01 backstop truth moved from present-but-behavior-unverified to verified on UAT test 8's observed abort; 0 present-but-behavior-unverified).
+
+### Deferred Items
+
+Items not met inside Phase 2 and addressed (or owned) later. Informational only, they do not affect the status.
+
+| # | Item | Addressed In | Evidence |
+|---|------|-------------|----------|
+| 1 | CI has no arm64/FMA leg, and CI's `ctest` step runs zero tests (build-root `ctest` finds none; `.github/workflows/ci.yml`) | Phase 6 | ROADMAP Phase 6 success criterion 3: "A green macOS CI run builds against JUCE 9.0.0 and runs the Catch2 suite. (SpatialCore#9)". Clear match for both. |
+| 2 | HUTUBS PP2 golden checksum fails in Debug only (`HutubsPP2Tests.cpp:47`) | Phase 3 (per `deferred-items.md` and EXTR-02), not named in ROADMAP text | Phase 3 lists EXTR-02 and "dedicated test files" for `PartitionedConvolver` and `BinauralRenderer`, but no ROADMAP sentence names the golden checksum. Treated as a pre-existing out-of-scope failure, not as matched-and-deferred. It does not touch a Phase 2 truth. |
 
 ### Prohibitions (judgment-tier, non-authoritative LLM judgments; human review recommended)
 
-The 17 earlier items are carried from the first verification and UAT test 5. The previously partly-failing 02-07 item now holds. New items:
+The first 25 are carried from earlier rounds (UAT tests 5 and 9 accepted them). The previously partly-failing 02-07 item holds. Four new items from 02-10 are at the bottom of the table and are not yet accepted:
 
 | Plan | Prohibition (short) | Verifier judgment |
 |---|---|---|
@@ -227,6 +289,10 @@ The 17 earlier items are carried from the first verification and UAT test 5. The
 | 02-09 | Docs must not describe behaviour the code lacks | Holds, with the "about -59 degrees" figure a stated derivation I re-checked |
 | 02-09 | OSD repo not modified; no installing targets built; no GitHub post; CONTEXT unchanged | Holds: OSD status empty; no `gh` write; I did not touch OSD |
 | 02-09 | No change outside the named bullets and paragraphs | Holds: guide +24/-12 in two bullets, README one line, skill three lines |
+| 02-10 | No change under `src/` or `include/`; no edit to any line of `referenceAmbiDecode` | Holds: `git diff 1ac244a HEAD -- src include` is empty; the function text is byte-identical |
+| 02-10 | No `-ffp-contract` or other FP flag in `CMakeLists.txt` or `tests/CMakeLists.txt` | Holds: diff of both is empty |
+| 02-10 | Do not tune a tolerance to make a measurement pass; stop and report if a stop rule breaks | Holds on the evidence: the number is derived from measured conditioning and spread, the SUMMARY records the stop rules (Release worst 5.28e-6 vs limit 1.25e-5; worst float-vs-exact 1.68e-5 vs limit 2.0e-5) as not broken, and my mutation shows the bound still discriminates. The limit did move from 1e-6 to 2.5e-5, which is the user's yes/no decision below. |
+| 02-10 | Do not commit the mutation or anything from the disposable worktree; do not touch HUTUBS PP2, other tolerances, `ci.yml` or `/tmp/sc-backstop` | Holds: `git log -p 1ac244a..HEAD -- src` is empty, `.github/` diff is empty, the only test file changed is `RenderEngineTests.cpp`, `/tmp/sc-backstop` still exists |
 
 ### Required Artifacts
 
@@ -239,6 +305,8 @@ The 17 earlier items are carried from the first verification and UAT test 5. The
 | `tests/reference/gen_ear_reference.py`, `EarReference.h`, `README.md` | ✓ VERIFIED | Regenerate byte-identically |
 | `docs/integration-guide.md`, `README.md`, `.claude/skills/spatial-audio-dsp/SKILL.md` | ✓ VERIFIED | New text present, CRLF intact |
 | `02-REVIEW-DISPOSITION.md`, `02-VALIDATION.md` | ✓ VERIFIED | WR-01 fixed; the four new validation rows exist (still marked pending, a bookkeeping item, not a goal gap) |
+| `tests/Engine/RenderEngineTests.cpp` (`[ambi-pin]`, `doublePrecisionAmbiDecode`, two derived constants) | ✓ VERIFIED | Substantive (real double-precision solve, not a stub), wired (reads `RenderEngine::getActiveLayout().ambiDecodeMatrix`), registered in `tests/CMakeLists.txt` and run in both builds. See WR-06 for the NaN blind spot. |
+| `.gitignore`, `02-VALIDATION.md`, `.planning/codebase/TESTING.md`, `deferred-items.md` | ✓ VERIFIED | `build-release/` ignored; Release gate and ctest-directory caveat present; four 02-10 deferred entries present. The `02-VALIDATION.md` rows for 02-08, 02-09 and 02-10 still read pending (bookkeeping, not a goal gap). |
 | Earlier plans' artifacts (02-01 to 02-07) | ✓ VERIFIED | No regressions; tests above pass |
 
 ### Key Link Verification
@@ -248,7 +316,10 @@ The 17 earlier items are carried from the first verification and UAT test 5. The
 | `RenderEngine::activateLayout` | `appendLowerHemisphereTriplets` | ✓ WIRED | Called after the guard, before the swap (`RenderEngine.cpp:735`) |
 | `computeVBAPGains3D` | wedge and cap fields | ✓ WIRED | `selectionTier` reads `lowerHemisphere`, `nadirVertex`, `nadirMask`; the output mapping reads `nadirGain` |
 | Docs | tests | ✓ WIRED | The guide's 0.7071 / 0.7071 example and the PyPI ear 2.1.0 claim are `[g02-2]` and the `[ear][golden][band]` pins |
-| `EarReference.h` | `gen_ear_reference.py` | ✓ WIRED | Regenerate-diff empty |
+| `EarReference.h` | `gen_ear_reference.py` | ✓ WIRED | Regenerate-diff empty (generators and reference headers unchanged since the last pass: `git diff a322673 HEAD -- tests/reference` is empty) |
+| `[ambi-pin]` | `AmbisonicsCodec::getDecodeMatrix` via `RenderEngine::setOutputFormat` then `activateLayout` | ✓ WIRED | My mutation of the codec's epsilon (and of its output to NaN) changed `[ambi-pin]`'s outcome, which could not happen unless the test reads the library's matrix |
+| `[ambi-pin]` derivation comment | `.planning/debug/ambi-pin-release-tolerance.md` | ✓ WIRED | Cites G-02-10 and the path; figures match |
+| `02-VALIDATION.md` Release command | `build-release/` | ✓ WIRED | Command runs 193 tests; `build-release/` is gitignored |
 
 ### Data-Flow Trace (Level 4)
 
@@ -258,11 +329,14 @@ Not applicable to UI. The equivalent trace is `setOutputFormat` then `activateLa
 
 | Behaviour | Command | Result | Status |
 |---|---|---|---|
-| Suite builds | `cmake --build build --target SpatialCoreTests` | exit 0 | ✓ PASS |
-| Suite passes except the deferred HUTUBS case | `./build/tests/SpatialCoreTests "~HUTUBS PP2 — golden HRIR checksum at az=90deg (own control)"` | 192 cases / 304,835 assertions pass | ✓ PASS |
+| Suite builds, both trees | `cmake --build build` and `cmake --build build-release` (`--target SpatialCoreTests`) | exit 0, up to date | ✓ PASS |
+| Release suite as CI would run it | `ctest --test-dir build-release/tests --output-on-failure` | 100% passed, 193 of 193 | ✓ PASS |
+| G-02-10 gap itself | `./build-release/tests/SpatialCoreTests "[ambi-pin]"` and the same in `build/` | 110 assertions pass in each | ✓ PASS |
+| The pin can still fail | temporary +0.1% epsilon mutation, both trees, then revert | 11 failed assertions in each; 110 pass after revert | ✓ PASS |
+| Debug suite passes except the deferred HUTUBS case | `./build/tests/SpatialCoreTests "~HUTUBS PP2 — golden HRIR checksum at az=90deg (own control)"` | 192 cases / 304,865 assertions pass | ✓ PASS |
 | G-02-2 end to end | own probe (7.1.4, 5.1.4) | 0.7071 / 0.7071 at 0, -5, -15, -25, -30; mirrors at -60 | ✓ PASS |
 | Reference headers are generated, not typed | three `gen_*_reference.py` vs checked-in headers | 3/3 identical | ✓ PASS |
-| Tags `[g02-2]` `[band]` `[vbap3d-identity]` `[consumer-surface]` `[ear]` `[io][layout]` `[panning-law]` | per-tag runs | all pass | ✓ PASS |
+| Ten Phase 2 tags | per-tag runs in `build` and `build-release` | all 20 runs pass | ✓ PASS |
 | Issue #22 still open | `gh issue view 22` | **SKIPPED**: `gh` returns HTTP 401 this session. UAT already recorded the match. | ? SKIP (no decision rides on it) |
 
 ### Probe Execution
@@ -273,13 +347,17 @@ No `scripts/*/tests/probe-*.sh` exist and no plan declares one. Step 7c: N/A.
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |---|---|---|---|---|
-| EXTR-01 | 02-01, 02-02, 02-03, 02-04, 02-05, 02-07, 02-08, 02-09 | Every public algorithm computes correct gains; the 3D triplet fallback is eliminated or fails loudly | ✓ SATISFIED | Algorithm tests pass; `[panning-law]` covers all 8; both nearest-speaker fallbacks gone; below-horizon VBAP pinned to ear 2.1.0 including the band |
-| EXTR-03 | 02-02, 02-06, 02-07 | Layouts, format registry and Ambisonics codec return real data; 23 formats, 15 layouts, encode/decode to order 6 | ✓ SATISFIED | SC3 and SC4 evidence |
-| VERIFY-01 | 02-02, 02-06, 02-07 | Ambisonics channel-order and normalisation convention stated (SpatialCore#11) | ✓ SATISFIED | SC1. REQUIREMENTS.md already shows `[x]` and "Complete". #11 itself was never closed on GitHub (only by commit-message reference). |
+| EXTR-01 | 02-01, 02-02, 02-03, 02-04, 02-05, 02-07, 02-08, 02-09 | Every public algorithm computes correct gains; the 3D triplet fallback is eliminated or fails loudly | ✓ SATISFIED | Algorithm tests pass in both builds; `[panning-law]` covers all 8; the nearest-speaker fallback has no caller in `src/` (only the deprecated public inline definition at `include/SpatialCore/Core/SpatialMath.h:45` remains, kept for the major-version rule, per D-01); below-horizon VBAP pinned to ear 2.1.0 including the band |
+| EXTR-03 | 02-02, 02-06, 02-07, 02-10 | Layouts, format registry and Ambisonics codec return real data; 23 formats, 15 layouts, encode/decode to order 6 | ✓ SATISFIED | SC3 and SC4 evidence; the decode pin (`[ambi-pin]`) now holds on the shipping build type as well |
+| VERIFY-01 | 02-02, 02-06, 02-07, 02-10 | Ambisonics channel-order and normalisation convention stated (SpatialCore#11) | ✓ SATISFIED | SC1. REQUIREMENTS.md already shows `[x]` and "Complete". #11 itself was never closed on GitHub (only by commit-message reference). |
 
-No orphaned requirements: REQUIREMENTS.md maps only EXTR-01, EXTR-03 and VERIFY-01 to Phase 2 (traceability rows 427, 428, 442), and ROADMAP.md lists the same three. 02-08 and 02-09 declare only EXTR-01.
+All three phase requirement IDs (EXTR-01, EXTR-03, VERIFY-01) appear in plan frontmatter and are accounted for. No orphaned requirements: REQUIREMENTS.md maps only EXTR-01, EXTR-03 and VERIFY-01 to Phase 2 (traceability rows 427, 428, 442) and ROADMAP.md lists the same three. 02-08 and 02-09 declare only EXTR-01; 02-10 declares VERIFY-01 and EXTR-03.
 
-**Tracking defect (answers 02-09's note that `requirements.mark-complete EXTR-01` found no match).** REQUIREMENTS.md does contain the entry, in the same `- [ ] **EXTR-01**: ...` form as the `[x]` entries (line 138 for EXTR-01, 148 for EXTR-03). So the text format is not the cause. The likely cause is the traceability table: the rows for EXTR-01 and EXTR-03 carry the free-text status "Largely verified by tests" (lines 427, 428) where the completed rows carry "Complete", so the tool's row matcher finds no "Pending" row to flip. Both checkboxes are still `[ ]` and the rows still say "Largely verified by tests", although the evidence satisfies both requirements. I did not edit REQUIREMENTS.md (the orchestrator owns tracking). Suggested edit: set both checkboxes to `[x]` and both traceability statuses to "Complete".
+**Tracking defect: the 02-10 SUMMARY's "`requirements mark-complete` found no `EXTR-03` entry" is wrong about the cause, and it is the same defect the previous pass found for EXTR-01.** Resolved against REQUIREMENTS.md explicitly:
+
+- The entry exists. Line 148 is `- [ ] **EXTR-03**: Layouts, format registry, and Ambisonics codec return real data`, in the same form as the `[x]` entries (line 138 is the matching `- [ ] **EXTR-01**`). The traceability row exists too: line 428, `| EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |`.
+- I read the tool (`~/.claude/gsd-core/bin/lib/milestone.cjs`, the `mark-complete` path, around lines 160-215). It flips the checkbox, then updates the traceability row only if the row's Status cell is `Pending` or `Gaps Found`. `Largely verified by tests` is neither, so the row write is rejected and, by design (#2788), the checkbox flip is rolled back. The tool then reports no hit, which reads as "no entry" but means "entry found, status text not flippable".
+- Current state: both EXTR-01 and EXTR-03 are still `[ ]` with status "Largely verified by tests", although the evidence satisfies both. I did not edit REQUIREMENTS.md (the orchestrator owns tracking). Suggested edit: set both checkboxes to `[x]` and both traceability Status cells to `Complete` by hand, since the tool will not do it.
 
 ### Anti-Patterns Found
 
@@ -290,55 +368,79 @@ No orphaned requirements: REQUIREMENTS.md maps only EXTR-01, EXTR-03 and VERIFY-
 | `src/Core/SpatialMath.cpp`, `include/.../SpeakerLayout.h` | 243-256 / 30-52 | WR-02: wedge kind identified only by the implicit `nadirVertex >= 0 && nadirMask == 0` sentinel | ⚠️ Advisory | Hand-built triplets with `nadirMask == 0` would be reclassified; nothing enforces the encoding |
 | `src/Core/SpatialMath.cpp` | 337-355 | WR-03: regular-only triplet list has no below-horizon coverage; Debug assert on the audio thread | ⚠️ Advisory (UAT test 3 accepted) | Reachable only by bypassing `RenderEngine` |
 | `src/Algorithms/{VBAP,VBIP,MDAP}Algorithm.cpp` | jassert sites | Release fall-through to 2D pan on a height layout with empty triplets | ⚠️ Advisory | Hand-built contexts only, accepted under D-01 |
+| `tests/Engine/RenderEngineTests.cpp` | 817-819 (also 824-832) | WR-06: `std::max` reductions drop NaN, so a NaN decode passes `[ambi-pin]` and the anchor | ⚠️ Warning | Reproduced (see the G-02-10 section). Bounded: `[io][ambisonics]` catches NaN from `getDecodeMatrix`. Not a blocker for any must-have. |
+| `tests/Engine/RenderEngineTests.cpp` | 692-696, 715-782, 673-707 | IN-07 (the +0.1% catch is resolved on only 5 of 15 layouts), IN-08 (double helper has no `N <= M` guard and shares the float SH input), IN-09 (comment says 2.5x where the ratio is 2.3x, duplicated path sentence, indentation split unexplained) | ℹ️ Info | None affects a must-have |
+| `tests/Algorithms/PanningLawTests.cpp`, `tests/IO/AmbisonicsCodecTests.cpp` | 65, 836 / 170 | Unqualified issue references (bare `#22` twice, `SpatialCore#11` without owner) | ⚠️ Warning | See "Cross-phase regression check". Cosmetic, they name SpatialCore's own tracker |
+| (files changed by 02-10: `tests/Engine/RenderEngineTests.cpp`, `.gitignore`) | | TBD / FIXME / XXX | none found | Debt-marker gate clear |
 
-### Code review cross-check (02-REVIEW.md: 0 critical, 3 warnings, 2 info)
+### Code review cross-check
 
-I checked each finding against the must-haves. **None contradicts a must-have.**
+**Earlier review (G-02-2 round: 0 critical, 3 warnings, 2 info).** Unchanged by this pass: `src`, `include` and `tests/reference` have no diff since `a322673`, so WR-05, WR-02, WR-03, IN-05 and IN-06 stand as recorded (none contradicts a must-have; WR-05, WR-02 and WR-03 are follow-ups for hand-built layouts or a future minor version, see the disposition ledger).
 
-- **WR-05** is new. It is real, but every must-have that mentions "2n triplets" or "every height layout" is scoped to the 8 shipped height layouts, and on those it holds (the reviewer swept 200,000 random directions per layout with no hits; `[ear][coverage]` and `[io][layout]` pass in my run). The reachable surface is a consumer-defined `SpeakerLayout` passed to the public `appendLowerHemisphereTriplets`, outside the SC-13 facade, and `RenderEngine` only builds layouts from the closed `OutputFormat` enum. The honest doc defect is that the header promises "2n" and lists only three no-op conditions. Recommend a follow-up (decline-and-document, plus a test), not a blocker. There is no human decision needed beyond the 02-UAT test 3 acceptance, which already covers this class (hand-built contexts, D-01).
-- **WR-02** and **WR-03** are re-reports of known items. WR-02 touches no must-have: the 02-08 prohibition says the wedge is encoded in existing fields, and it is. A `Kind` field would conflict with that prohibition and DR-3 unless it is defaulted, so it is a follow-up for a future major or minor version. WR-03 was accepted in UAT test 3.
-- **IN-05** (equivalence assumes ear-level speakers at 0 degrees while the code admits up to +/-10 degrees) is true of the code and is already stated in a code comment. No shipped layout has an ear-level speaker off 0 degrees.
-- **IN-06** (test duplicates the tier classifier) is a test-hygiene item. It weakens the "exactly one wedge encloses" check only if production's rule drifts, so it is worth folding into the WR-02 follow-up.
+**02-10 review (`02-REVIEW.md`, 0 critical, 1 warning, 3 info; findings renumbered WR-06, IN-07, IN-08, IN-09 past existing IDs).** Checked against the must-haves:
+
+- **WR-06** is real and reproduced, see the G-02-10 section. It does not contradict a must-have (the truth is about the Release suite passing, the derivation, and the mutation proof, all verified), but it weakens the pin's own claim to catch a broken decode. Recommend the two-line fix before the phase is closed.
+- **IN-07** is true: the +0.1% resolution is shown on 7.0, 7.1, 7.1.2, 7.1.4, 7.1.6, which is what the must-have required ("at least 3 failing per-layout pin checks"). My mutation gave 5 per-layout plus 5 anchor failures.
+- **IN-08** is true and harmless today (15 speakers is the maximum, `N <= M`). The anchor tests the solve and its conditioning, not `evalSH`; SH values are pinned separately by `[sn3d]` (49 scipy literals, 153 assertions, passes in both builds).
+- **IN-09** is true (comment hygiene).
+- The disposition ledger (`02-REVIEW-DISPOSITION.md`) records all four as `open` (14 open of 15).
+
+### Cross-phase regression check: Phase 1 criterion 4
+
+Phase 1's verification used `grep -rhoE '[[:alnum:]/-]*#[0-9]+' include/ src/ tests/ | grep -cv 'OpenSpatialDelay#'` and recorded `0`. I re-ran it: it returns **11**. All 11 predate 02-10 (the 02-10 diff touches neither `include/`, `src/` nor those test files, apart from `RenderEngineTests.cpp`, which contains no `#NNN`).
+
+| File:line | Text | Form |
+|---|---|---|
+| `include/SpatialCore/Core/SpatialMath.h:78` | `AndrewRahman/SpatialCore#11` | qualified |
+| `include/SpatialCore/IO/AmbisonicsCodec.h:11` | `AndrewRahman/SpatialCore#11` | qualified |
+| `include/SpatialCore/Algorithms/VBIPAlgorithm.h:19` | `AndrewRahman/SpatialCore#20` | qualified |
+| `include/SpatialCore/Algorithms/DBAPAlgorithm.h:21` | `AndrewRahman/SpatialCore#10` | qualified |
+| `src/Algorithms/VBIPAlgorithm.cpp:18` | `AndrewRahman/SpatialCore#20` | qualified |
+| `tests/Algorithms/PanningLawTests.cpp:243, 553, 644` | `AndrewRahman/SpatialCore#22` | qualified (3) |
+| `tests/IO/AmbisonicsCodecTests.cpp:170` | `SpatialCore#11` | owner missing |
+| `tests/Algorithms/PanningLawTests.cpp:65, 836` | bare `#22` (`(F5, #22)`) | **bare** |
+
+**Judgment: not a real regression of the criterion's intent, but a real drift in form on three sites, plus an obsolete check command.** Reasoning:
+
+- The criterion is "every `#NNN` resolves in the tracker it names, OSD references written `Spatial-Media-Lab/OpenSpatialDelay#NNN`". Phase 1's purpose was to stop bare numbers that a reader would resolve in the wrong repo (the code had bare OSD issue numbers). Nine of the eleven are in the explicit `Owner/Repo#N` form, which is exactly the form the criterion asks for; they name SpatialCore's own tracker, which did not appear in code comments when Phase 1 ran, so the grep's "anything not OSD is a violation" proxy could not distinguish them. The check command, not the code, is what no longer fits.
+- The three non-qualified sites are the real drift. All three refer to SpatialCore's own issues (#22 is the coplanar-tie issue filed in Phase 2 and its text was confirmed identical to the approved draft in UAT test 4; #11 is the Ambisonics convention issue, ROADMAP line 75 and REQUIREMENTS line 326). In context, `#22` is unambiguous: line 243 and 553 of the same file cite it qualified. But a bare `#22` in a repo whose comments also cite OSD issues is the exact pattern Phase 1 banned.
+- I could not re-resolve the issues live (`gh` returns HTTP 401 this session). #22 and #11 are evidenced by UAT test 4 and the requirements file. #10 and #20 are cited by qualified references written in Phases 1 and 2 and were not re-resolved this pass.
+
+**Classification: WARNING (advisory), not a blocker.** The drift came in with plans 02-05 and 02-08 (the bare `#22`) and 02-06 or earlier (`SpatialCore#11`), and Phase 2 did not re-run Phase 1's grep. Recommended fix, three one-token comment edits (`#22` to `AndrewRahman/SpatialCore#22` at PanningLawTests.cpp:65 and :836; `SpatialCore#11` to `AndrewRahman/SpatialCore#11` at AmbisonicsCodecTests.cpp:170) and amend the Phase 1 check to `grep -rhoE '[[:alnum:]/-]*#[0-9]+' include/ src/ tests/ | grep -cv 'OpenSpatialDelay#\|AndrewRahman/SpatialCore#'`, which would then return 0. This is not a Phase 2 goal item, so no gap is raised against Phase 2.
 
 ### Human Verification Required
 
-#### 1. Keep 5.1.4's rear-gap difference from EAR? (yes or no)
+#### 1. Accept the 25-parts-per-million bound for the decode check? (yes or no)
 
-**Test:** On a 5.1.4 setup, for a sound directly behind you, EAR also sends part of it to the two rear ceiling speakers. SpatialCore keeps it on the two rear speakers at ear height, so sounds at or above ear height stay exactly as they are today.
-**Expected:** Answer yes or no. Yes keeps it (the recommendation). No needs a new decision before any code changes, because matching EAR there would change the sound above ear height on 5.1.4.
-**Why human:** A judgment about sound. It is documented in the guide, README and skill, and nothing is blocked on the answer.
+**Test:** None to run. 02-10 changed one test's allowed difference, between the library's Ambisonics decoder and a copy of the original decoder, from 1e-6 (one part per million) to 2.5e-5 (25 parts per million).
+**Expected:** Answer yes or no. Yes keeps the new limit (the recommendation). The decoder in the library is unchanged, so nothing you hear changes. The old limit came from a measurement on a debug build and was never derived; the new one is worked out from the matrix maths, re-checked against a double-precision solve on every test run, and I reproduced that it still fails when the decoder is deliberately changed by 0.1%, in both Release and Debug. No means keeping one part per million and forcing identical rounding with a compiler setting on the whole library, which slows the audio code and means re-checking OpenSpatialDelay's sound; that needs a new decision before any change.
+**Why human:** Loosening a test's limit is a trust judgment. The numbers are checked; the acceptance is yours. Nothing else is blocked on the answer.
 
-#### 2. Optional listening check of the corrected band
+#### 2. Judgment-tier prohibitions from 02-10 (4)
 
-**Test:** In a real session on 7.1.4, slowly lower a sound from ear height to 30 degrees below, 60 degrees to the left.
-**Expected:** It stays where it is, with no drift to one speaker and no flip. The numbers already prove it.
-**Why human:** Audible character is a listening judgment. Skip it if you are happy with the numbers.
+**Test:** Review the last four rows of the Prohibitions table.
+**Expected:** Accept or reject. All four hold on the evidence.
+**Why human:** Judgment-tier items are never silently absorbed into a pass. The 25 earlier prohibitions were already accepted in UAT tests 5 and 9.
 
-#### 3. Backstop truth: the D-02a abort
-
-**Test:** Optional. Break a `layoutDefs` height entry on a scratch branch, build Release, call `setOutputFormat`.
-**Expected:** The process aborts in `activateLayout`, never from `renderBlock`.
-**Why human:** Tagged `verification: backstop`. No Catch2 test can survive an abort. Placement (one `std::abort` at `RenderEngine.cpp:729`, none in `renderBlock`) is the evidence.
-
-#### 4. Judgment-tier prohibitions (25)
-
-**Test:** Review the Prohibitions table.
-**Expected:** Accept or reject. All 25 hold on the evidence.
-**Why human:** These are unverified prohibitions and human review is recommended.
+**No longer open (closed by the user in UAT since the previous report):** the 5.1.4 rear-gap question (test 6, "yes, leave it as it is"), the 25 earlier prohibitions (tests 5 and 9), and the D-02a abort backstop (test 8, observed). **Deferred follow-up, not a gate:** the optional listening check of the corrected band (test 7, queued by the user for the next round of listening reviews).
 
 ### Gaps Summary
 
-There are no gaps and no blockers. G-02-2 was the only open gap from the previous round and it is closed with a passing test, a regenerate-diffed ear oracle and an independent probe. Nothing regressed: the above-horizon output is still bit-identical, the public headers are unchanged apart from comments, and the OSD build still links.
+There are no gaps and no blockers. G-02-10 was the only open gap and it is closed: the full suite passes in a Release build on Apple Silicon (193/193 under ctest), `[ambi-pin]` passes in Release and Debug, and a deliberate +0.1% decoder change fails it in both, which I reproduced rather than took from the SUMMARY. Nothing regressed: the source diff since the last verification is one test file and one gitignore line, and every Phase 2 tag I ran passes in both build types. The only failing test in either build is the pre-existing Debug-only HUTUBS PP2 checksum, owned by Phase 3.
+
+Status is `human_needed` because the user has one yes/no question open (the 2.5e-5 bound) and four flagged judgment-tier prohibitions to accept.
 
 Follow-ups, none of which blocks the phase:
 
-- Update `02-UAT.md`: test 2 to pass, status to complete.
-- Update REQUIREMENTS.md: EXTR-01 and EXTR-03 to `[x]` and "Complete" (see the tracking note above).
-- Tick the `02-VALIDATION.md` rows for 02-08 and 02-09 (they are still `pending`).
+- **Recommended before closing the phase:** fix WR-06 (two-line `REQUIRE (std::isfinite (...))` per decode entry in `[ambi-pin]`, as written in 02-REVIEW.md). Otherwise the pin's claim to catch a broken decode has a known hole.
+- Qualify the three unqualified issue references (PanningLawTests.cpp:65 and :836, AmbisonicsCodecTests.cpp:170) and amend the Phase 1 criterion 4 grep to exclude `AndrewRahman/SpatialCore#`.
+- Update `02-UAT.md`: test 10 to pass, G-02-10 to resolved, status to complete.
+- Update REQUIREMENTS.md by hand: EXTR-01 and EXTR-03 to `[x]` and `Complete` (the tool cannot, see the tracking note).
+- Tick the `02-VALIDATION.md` rows for 02-08, 02-09 and 02-10 (still `pending`).
 - Carry the 02-09 OSD follow-ups into the OSD repo.
-- Optional hardening: WR-05 (decline layouts whose ear-level ring does not surround the listener), WR-02/IN-06 (explicit triplet kind), WR-03 (single builder entry point), WR-04 (compile-time fast-math check).
+- Optional hardening: IN-07 to IN-09, WR-05, WR-02/IN-06, WR-03, WR-04, and the Phase 6 CI items (arm64/FMA leg, CI's ctest step running zero tests).
 
 ---
 
-_Verified: 2026-10-03T10:41:21Z_
+_Verified: 2026-10-03T22:30:00Z_
 _Verifier: Claude (gsd-verifier)_
