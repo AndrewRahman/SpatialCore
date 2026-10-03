@@ -708,6 +708,20 @@ void referenceAmbiDecode (const SpeakerLayout& layout,
     constexpr float kAmbiPinTolerance = 2.5e-5f;
     constexpr double kAmbiFloatVsDoubleTolerance = 4.0e-5;
 
+    // Folds one distance into a running maximum. std::max (a, b) is
+    // (a < b) ? b : a, so a NaN distance would be silently dropped and never
+    // reach a tolerance CHECK (WR-06). A non-finite distance is therefore
+    // rejected here: it returns false and leaves the maximum untouched, so the
+    // caller can count it and fail loudly.
+    template <typename T>
+    bool accumulateWorstFinite (T& worst, T distance)
+    {
+        if (! std::isfinite (distance))
+            return false;
+        worst = std::max (worst, distance);
+        return true;
+    }
+
     // The same decode as referenceAmbiDecode, in double, on the same float
     // inputs: E is bit-identical to what both float decoders see, and the
     // Tikhonov term is the float epsilon promoted, so only precision differs.
@@ -815,26 +829,21 @@ TEST_CASE ("RenderEngine: the order-3 speaker decode matches the pre-change priv
         for (int s = 0; s < active.layout.numSpeakers; ++s)
             for (int c = 0; c < 16; ++c)
             {
-                // std::max (a, b) is (a < b) ? b : a, so a NaN b is silently
-                // dropped and the entry would never reach the tolerance CHECKs
-                // below (WR-06). Count non-finite distances and keep them out
-                // of the max-reduction, then fail once per layout (IN-10).
+                // accumulateWorstFinite rejects a NaN or Inf distance instead of
+                // letting std::max drop it (WR-06). Count the rejects and fail
+                // once per layout (IN-10).
                 const float  dNew = std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]);
                 const double dLib = std::abs (static_cast<double> (active.ambiDecodeMatrix[s][c]) - exact[s][c]);
                 const double dRef = std::abs (static_cast<double> (reference[s][c]) - exact[s][c]);
-                if (! std::isfinite (dNew) || ! std::isfinite (dLib) || ! std::isfinite (dRef))
-                {
-                    // Name only the first bad entry; the count says how many.
-                    if (nonFinite++ == 0)
-                        UNSCOPED_INFO ("first non-finite decode entry: s=" << s << " c=" << c
-                                       << " lib=" << active.ambiDecodeMatrix[s][c]
-                                       << " ref=" << reference[s][c]
-                                       << " exact=" << exact[s][c]);
-                    continue;
-                }
-                worstHere = std::max (worstHere, dNew);
-                libVsExact = std::max (libVsExact, dLib);
-                refVsExact = std::max (refVsExact, dRef);
+                const bool newOk = accumulateWorstFinite (worstHere, dNew);
+                const bool libOk = accumulateWorstFinite (libVsExact, dLib);
+                const bool refOk = accumulateWorstFinite (refVsExact, dRef);
+                // Name only the first bad entry; the count says how many.
+                if (! (newOk && libOk && refOk) && nonFinite++ == 0)
+                    UNSCOPED_INFO ("first non-finite decode entry: s=" << s << " c=" << c
+                                   << " lib=" << active.ambiDecodeMatrix[s][c]
+                                   << " ref=" << reference[s][c]
+                                   << " exact=" << exact[s][c]);
             }
         CHECK (nonFinite == 0);
         INFO ("worst |new - old| = " << worstHere);
@@ -849,6 +858,40 @@ TEST_CASE ("RenderEngine: the order-3 speaker decode matches the pre-change priv
     CHECK (layoutsChecked == 15);
     INFO ("worst |new - old| over all 15 layouts = " << worst);
     CHECK (worst <= kAmbiPinTolerance);
+}
+
+TEST_CASE ("RenderEngine: the ambi-pin max-reduction rejects non-finite distances instead of dropping them (WR-06, IN-11)",
+           "[engine][ambi-pin]")
+{
+    const double quietNaN = std::numeric_limits<double>::quiet_NaN();
+    const double posInf = std::numeric_limits<double>::infinity();
+
+    double worst = 0.25;
+    CHECK_FALSE (accumulateWorstFinite (worst, quietNaN));
+    CHECK_FALSE (accumulateWorstFinite (worst, posInf));
+    CHECK_FALSE (accumulateWorstFinite (worst, -posInf));
+    CHECK (worst == 0.25);   // a rejected distance leaves the maximum untouched
+
+    // A rejected distance must not poison later finite ones either.
+    CHECK (accumulateWorstFinite (worst, 0.5));
+    CHECK (worst == 0.5);
+    CHECK (accumulateWorstFinite (worst, 0.1));
+    CHECK (worst == 0.5);
+
+    // A NaN on an untouched maximum: bare std::max would keep 0.0 and report no
+    // problem, which is exactly the WR-06 vacuous pass.
+    double fresh = 0.0;
+    CHECK_FALSE (accumulateWorstFinite (fresh, quietNaN));
+    CHECK (accumulateWorstFinite (fresh, 0.125));
+    CHECK (fresh == 0.125);
+
+    // The float instantiation, as used for worstHere.
+    float worstF = 0.0f;
+    CHECK_FALSE (accumulateWorstFinite (worstF, std::numeric_limits<float>::quiet_NaN()));
+    CHECK_FALSE (accumulateWorstFinite (worstF, std::numeric_limits<float>::infinity()));
+    CHECK (worstF == 0.0f);
+    CHECK (accumulateWorstFinite (worstF, 2.0f));
+    CHECK (worstF == 2.0f);
 }
 
 TEST_CASE ("RenderEngine: decode rows beyond the speaker count are cleared on a layout switch (D-09)",
