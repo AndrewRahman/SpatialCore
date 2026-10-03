@@ -364,6 +364,55 @@ TEST_CASE ("EAR tracer: a below-horizon source never reaches an elevated speaker
         }
 }
 
+TEST_CASE ("EAR band tracer: 7.1.4 at azimuth +/-60 holds 0.7071 / 0.7071 from 0 to -30 degrees through RenderEngine and VBAPAlgorithm (D-04, G-02-2)",
+           "[ear][band][g02-2]")
+{
+    EngineRig rig (OutputFormat::Surround7_1_4);
+    REQUIRE (rig.numSpeakers() == 11);
+
+    const float elevations[] = { 0.0f, -5.0f, -10.0f, -15.0f, -20.0f, -25.0f, -30.0f };
+    const float half = 0.70710678f;
+
+    for (float el : elevations)
+    {
+        // Azimuth +60: M+030 / M+090 are speakers 0 and 3.
+        {
+            float g[MAX_SPEAKERS] = {};
+            rig.gainsAt (60.0f, el, g);
+            for (int s = 0; s < rig.numSpeakers(); ++s)
+            {
+                INFO ("az 60 el " << el << " speaker " << s);
+                const float want = (s == 0 || s == 3) ? half : 0.0f;
+                CHECK_THAT (g[s], WithinAbs (want, 1e-5f));
+            }
+            if (el <= -5.0f)
+                for (int s = 7; s <= 10; ++s)
+                {
+                    INFO ("az 60 el " << el << " height speaker " << s);
+                    CHECK (g[s] == 0.0f);
+                }
+        }
+
+        // Azimuth -60 mirrors it on speakers 1 and 4.
+        {
+            float g[MAX_SPEAKERS] = {};
+            rig.gainsAt (-60.0f, el, g);
+            for (int s = 0; s < rig.numSpeakers(); ++s)
+            {
+                INFO ("az -60 el " << el << " speaker " << s);
+                const float want = (s == 1 || s == 4) ? half : 0.0f;
+                CHECK_THAT (g[s], WithinAbs (want, 1e-5f));
+            }
+            if (el <= -5.0f)
+                for (int s = 7; s <= 10; ++s)
+                {
+                    INFO ("az -60 el " << el << " height speaker " << s);
+                    CHECK (g[s] == 0.0f);
+                }
+        }
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Above the horizon the new selection must be bit-identical to d43cb15
 // ----------------------------------------------------------------------------

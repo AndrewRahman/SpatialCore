@@ -31,14 +31,24 @@ struct VBAPTriplet
     // ear-level speaker it downmixes onto, so duplicate indices are legal and
     // gains accumulate. `inv` is always built from the vertex's real direction.
 
+    // A pair-pan wedge (G-02-2) is an ordinary lower-hemisphere triplet whose
+    // nadir slot carries no share: nadirVertex >= 0 with nadirMask == 0 and
+    // nadirGain == 0. It is two neighbouring ear-level speakers plus the virtual
+    // nadir, whose share is discarded, so the result is that pair's 2D pan at
+    // the source azimuth at every elevation down to the nadir cap (EAR's
+    // QuadRegion result). It is tried only after every regular triplet and every
+    // nadir-cap triangle.
+
     /** true: only consulted when no ordinary triplet contains the source. */
     bool lowerHemisphere = false;
     /** 0..2 = which of the i/j/k slots is the virtual nadir (that slot's index
         is ignored); -1 = this triplet has no nadir vertex. */
     int nadirVertex = -1;
-    /** Bit s set = ear-level speaker s receives the nadir share. */
+    /** Bit s set = ear-level speaker s receives the nadir share.
+     *  0 on a pair-pan wedge. */
     std::uint16_t nadirMask = 0;
-    /** Per-speaker share of the nadir gain: 1 / sqrt (number of mask bits). */
+    /** Per-speaker share of the nadir gain: 1 / sqrt (number of mask bits).
+     *  0 on a pair-pan wedge. */
     float nadirGain = 0.0f;
 };
 
@@ -86,9 +96,12 @@ bool layoutHasHeight (const SpeakerLayout& layout);
 void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
                                   std::vector<VBAPTriplet>& triplets);
 
-// Append the ITU-R BS.2127 (EAR) lower-hemisphere triplets (D-04): the hull of
-// the ear-level speakers, a virtual -30 degree copy under each, and a virtual
-// nadir. Each appended triplet has lowerHemisphere == true.
+// Append the ITU-R BS.2127 (EAR) lower-hemisphere triplets (D-04). Per
+// neighbouring ear-level pair it appends one nadir-cap triangle (the pair's two
+// virtual -30 degree copies plus the virtual nadir) and one pair-pan wedge (the
+// pair's two ear-level speakers plus the nadir, zero nadir share), so 2n
+// triplets for n ear-level speakers (G-02-2). Each appended triplet has
+// lowerHemisphere == true.
 //
 // Appends and never clears. Message/prepare thread only (allocates via
 // push_back) -- never call from processBlock. Appends nothing for flat layouts,

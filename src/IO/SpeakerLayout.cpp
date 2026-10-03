@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
 
 namespace spatialcore
 {
@@ -177,6 +178,23 @@ void buildVBAPTripletsForLayout (const SpeakerLayout& layout,
 // nadir}. The lower-hemisphere-only hull is deliberate (RESEARCH F4): a full-
 // sphere hull has facets that skip the ear-level speakers on sparse-rear
 // layouts and pan below-horizon sources onto height speakers.
+//
+// Output, for n ear-level speakers, is 2n triplets (G-02-2):
+//   - n nadir-cap triangles: the two -30 degree copies of a neighbouring pair
+//     plus the virtual nadir (the hull's own facets that touch the nadir,
+//     matching EAR's VirtualNgon exactly);
+//   - n pair-pan wedges: the same neighbouring pair's two real ear-level
+//     speakers plus the virtual nadir, with a zero nadir share, so the result
+//     is the pair's 2D horizon pan at the source azimuth.
+// The hull's remaining facets are the ear-level/-30 degree trapezoids. A
+// planar trapezoid's triangulations all have the same gain sum, so the
+// minimum-sum rule cannot choose between the overlapping triangles (it
+// breaks exact and 1-2 ULP ties by enumeration order, leaning the pan to
+// either side), and no triangulation reproduces EAR. EAR pans each trapezoid
+// as one QuadRegion; with the -30 copies downmixed 1:1 onto their ear-level
+// speakers that collapses to the pair's horizon pan, which is what the wedge
+// computes. The equivalence assumes the ear-level speakers sit at 0 degrees
+// elevation, as every shipped layout does.
 //==============================================================================
 namespace
 {
@@ -199,6 +217,21 @@ HullVertex makeHullVertex (double azRad, double elRad, int target, bool isVirtua
              std::cos (elRad) * std::cos (azRad),
              std::sin (elRad),
              target, isVirtual, false };
+}
+
+// Row r of t.inv times a direction p is the gain of slot r. m holds the three
+// vertex directions as columns; invDet is 1 / det (m).
+void setInverse (VBAPTriplet& t, const double m[3][3], double invDet)
+{
+    t.inv[0][0] = static_cast<float> (  (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * invDet);
+    t.inv[0][1] = static_cast<float> ( -(m[0][1] * m[2][2] - m[0][2] * m[2][1]) * invDet);
+    t.inv[0][2] = static_cast<float> (  (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * invDet);
+    t.inv[1][0] = static_cast<float> ( -(m[1][0] * m[2][2] - m[1][2] * m[2][0]) * invDet);
+    t.inv[1][1] = static_cast<float> (  (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * invDet);
+    t.inv[1][2] = static_cast<float> ( -(m[0][0] * m[1][2] - m[0][2] * m[1][0]) * invDet);
+    t.inv[2][0] = static_cast<float> (  (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * invDet);
+    t.inv[2][1] = static_cast<float> ( -(m[0][0] * m[2][1] - m[0][1] * m[2][0]) * invDet);
+    t.inv[2][2] = static_cast<float> (  (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * invDet);
 }
 } // namespace
 
@@ -254,6 +287,9 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
     const float nadirShare = static_cast<float> (1.0 / std::sqrt (static_cast<double> (earCount)));
     const size_t V = verts.size();
 
+    std::vector<std::pair<int, int>> capPairs;
+    capPairs.reserve (static_cast<size_t> (earCount));
+
     for (size_t a = 0; a + 2 < V; ++a)
     {
         for (size_t b = a + 1; b + 1 < V; ++b)
@@ -293,8 +329,7 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
                 }
 
                 // Keep only supporting planes (hull facets): no vertex may lie
-                // outside. Coplanar quads keep all four triangles, as the
-                // regular set does.
+                // outside.
                 bool isFacet = true;
                 for (size_t v = 0; v < V; ++v)
                 {
@@ -310,32 +345,72 @@ void appendLowerHemisphereTriplets (const SpeakerLayout& layout,
                 if (! isFacet)
                     continue;
 
+                // The only facets without the nadir are the four triangles of
+                // each ear-level/-30 degree trapezoid. They are not emitted:
+                // the pair-pan wedges below replace them (G-02-2, D-04).
+                if (! (va.isNadir || vb.isNadir || vc.isNadir))
+                    continue;
+
                 const double invDet = 1.0 / det;
                 VBAPTriplet t;
                 t.i = va.target;
                 t.j = vb.target;
                 t.k = vc.target;
-                t.inv[0][0] = static_cast<float> (  (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * invDet);
-                t.inv[0][1] = static_cast<float> ( -(m[0][1] * m[2][2] - m[0][2] * m[2][1]) * invDet);
-                t.inv[0][2] = static_cast<float> (  (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * invDet);
-                t.inv[1][0] = static_cast<float> ( -(m[1][0] * m[2][2] - m[1][2] * m[2][0]) * invDet);
-                t.inv[1][1] = static_cast<float> (  (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * invDet);
-                t.inv[1][2] = static_cast<float> ( -(m[0][0] * m[1][2] - m[0][2] * m[1][0]) * invDet);
-                t.inv[2][0] = static_cast<float> (  (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * invDet);
-                t.inv[2][1] = static_cast<float> ( -(m[0][0] * m[2][1] - m[0][1] * m[2][0]) * invDet);
-                t.inv[2][2] = static_cast<float> (  (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * invDet);
+                setInverse (t, m, invDet);
 
                 t.lowerHemisphere = true;
-                t.nadirVertex = va.isNadir ? 0 : (vb.isNadir ? 1 : (vc.isNadir ? 2 : -1));
-                if (t.nadirVertex >= 0)
-                {
-                    t.nadirMask = earMask;
-                    t.nadirGain = nadirShare;
-                }
+                t.nadirVertex = va.isNadir ? 0 : (vb.isNadir ? 1 : 2);
+                t.nadirMask = earMask;
+                t.nadirGain = nadirShare;
 
                 triplets.push_back (t);
+
+                // Remember the neighbouring ear-level pair this cap spans (slot
+                // order, nadir slot skipped) so its wedge can be built below.
+                const int pairA = (t.nadirVertex == 0) ? t.j : t.i;
+                const int pairB = (t.nadirVertex == 2) ? t.j : t.k;
+                capPairs.emplace_back (pairA, pairB);
             }
         }
+    }
+
+    // One pair-pan wedge per neighbouring ear-level pair: the two real speakers
+    // plus the virtual nadir, nadir share 0. Slot 2 is the nadir; k is a
+    // placeholder that nadirVertex makes the output mapping ignore.
+    for (const auto& pair : capPairs)
+    {
+        const HullVertex va = makeHullVertex (static_cast<double> (layout.speakers[pair.first].azimuthRad),
+                                              static_cast<double> (layout.speakers[pair.first].elevationRad),
+                                              pair.first, false);
+        const HullVertex vb = makeHullVertex (static_cast<double> (layout.speakers[pair.second].azimuthRad),
+                                              static_cast<double> (layout.speakers[pair.second].elevationRad),
+                                              pair.second, false);
+
+        const double m[3][3] = {
+            { va.x, vb.x, nadir.x },
+            { va.y, vb.y, nadir.y },
+            { va.z, vb.z, nadir.z }
+        };
+
+        const double det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+        if (std::abs (det) < kHullDetEpsilon)
+            continue;
+
+        VBAPTriplet w;
+        w.i = pair.first;
+        w.j = pair.second;
+        w.k = firstEar;
+        setInverse (w, m, 1.0 / det);
+
+        w.lowerHemisphere = true;
+        w.nadirVertex = 2;
+        w.nadirMask = 0;
+        w.nadirGain = 0.0f;
+
+        triplets.push_back (w);
     }
 }
 

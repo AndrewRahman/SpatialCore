@@ -240,6 +240,21 @@ void computeVBAPGains2D (const SpeakerLayout& layout,
 //==============================================================================
 // v0.2: 3D VBAP for height layouts (7.1.4, 9.1.6) -- uses pre-computed triplets
 //==============================================================================
+namespace
+{
+/** Selection tier of a triplet (see computeVBAPGains3D): 0 regular, 1 nadir
+    cap, 2 pair-pan wedge. A wedge is a lower-hemisphere triplet whose nadir slot
+    carries a zero share (nadirVertex >= 0, nadirMask == 0). Integer tests only. */
+int selectionTier (const VBAPTriplet& t)
+{
+    if (! t.lowerHemisphere)
+        return 0;
+    if (t.nadirVertex >= 0 && t.nadirMask == 0)
+        return 2;
+    return 1;
+}
+} // namespace
+
 void computeVBAPGains3D (const SpeakerLayout& layout,
                          const std::vector<VBAPTriplet>& triplets,
                          float azimuthRad, float elevationRad,
@@ -267,23 +282,27 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
     float bestG[3] = {};
 
     // D-06b safety net: the triplet with the largest min (g0, g1, g2) seen by
-    // the passes that ran. Pass 1 only runs when pass 0 found nothing, so when
-    // neither pass encloses the direction this candidate covers the whole list.
+    // the passes that ran. A later pass only runs when every earlier one found
+    // nothing, so when no pass encloses the direction this candidate covers the
+    // whole list.
     float fallbackMin = -std::numeric_limits<float>::infinity();
     int fallbackTri = -1;
     float fallbackG[3] = {};
 
-    // Regular triplets are always tried before lower-hemisphere ones (pass 0
-    // then pass 1), so above-horizon output is bit-identical to the pre-change
-    // function (D-04, D-06b). Pass 1 only runs when pass 0 found nothing.
-    for (int pass = 0; pass < 2 && bestTri < 0; ++pass)
+    // Three tiers, each tried only when every earlier one found nothing:
+    //   0  regular triplets (unchanged, so above-horizon output is bit-identical
+    //      to the pre-change function: D-04, D-06b),
+    //   1  nadir-cap triangles of the lower hemisphere,
+    //   2  pair-pan wedges (G-02-2): one per neighbouring ear-level pair, whose
+    //      result is that pair's horizon pan. Exactly one wedge encloses a band
+    //      direction and no regular triplet or cap does, so the minimum-sum rule
+    //      never has a tie to break below the horizon.
+    for (int pass = 0; pass < 3 && bestTri < 0; ++pass)
     {
-        const bool wantLower = (pass == 1);
-
         for (int t = 0; t < static_cast<int> (triplets.size()); ++t)
         {
             const auto& tri = triplets[static_cast<size_t> (t)];
-            if (tri.lowerHemisphere != wantLower)
+            if (selectionTier (tri) != pass)
                 continue;
 
             float g0 = tri.inv[0][0] * px + tri.inv[0][1] * py + tri.inv[0][2] * pz;

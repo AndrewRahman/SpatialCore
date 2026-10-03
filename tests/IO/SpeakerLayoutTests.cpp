@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <SpatialCore/IO/OutputFormatRegistry.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include <algorithm>
 #include <cmath>
 #include <set>
+#include <utility>
 #include <vector>
 
 using namespace spatialcore;
@@ -314,9 +316,18 @@ TEST_CASE("SpeakerLayout: lower-hemisphere triplets are flagged, ear-level-only,
                 continue;
             }
 
+            unsigned earMask = 0;
+            int earCount = 0;
+            for (int s = 0; s < layout.numSpeakers; ++s)
+                if (std::abs(layout.speakers[s].elevationRad) <= earLevelLimitRad)
+                {
+                    earMask |= 1u << s;
+                    ++earCount;
+                }
+
+            // G-02-2: n nadir caps plus n pair-pan wedges, no trapezoid triangles.
             const size_t extras = combined.size() - regular.size();
-            CHECK(extras >= 1);
-            CHECK(extras <= 64);
+            CHECK(extras == static_cast<size_t>(2 * earCount));
 
             // The regular prefix is untouched, field by field.
             REQUIRE(combined.size() >= regular.size());
@@ -331,20 +342,17 @@ TEST_CASE("SpeakerLayout: lower-hemisphere triplets are flagged, ear-level-only,
                         CHECK(combined[n].inv[r][c] == regular[n].inv[r][c]);
             }
 
-            unsigned earMask = 0;
-            int earCount = 0;
-            for (int s = 0; s < layout.numSpeakers; ++s)
-                if (std::abs(layout.speakers[s].elevationRad) <= earLevelLimitRad)
-                {
-                    earMask |= 1u << s;
-                    ++earCount;
-                }
+            int caps = 0;
+            int wedges = 0;
+            std::set<std::pair<int, int>> capPairs;
+            std::set<std::pair<int, int>> wedgePairs;
 
             for (size_t n = regular.size(); n < combined.size(); ++n)
             {
                 const auto& t = combined[n];
                 CHECK(t.lowerHemisphere);
-                CHECK(t.nadirVertex >= -1);
+                // Every lower triplet contains the nadir.
+                CHECK(t.nadirVertex >= 0);
                 CHECK(t.nadirVertex <= 2);
 
                 const int slots[3] = { t.i, t.j, t.k };
@@ -357,12 +365,35 @@ TEST_CASE("SpeakerLayout: lower-hemisphere triplets are flagged, ear-level-only,
                     CHECK(std::abs(layout.speakers[slots[v]].elevationRad) <= earLevelLimitRad);
                 }
 
-                if (t.nadirVertex >= 0)
+                int pairSlots[2] = { -1, -1 };
+                int pn = 0;
+                for (int v = 0; v < 3; ++v)
+                    if (v != t.nadirVertex && pn < 2)
+                        pairSlots[pn++] = slots[v];
+                const std::pair<int, int> pair { std::min(pairSlots[0], pairSlots[1]),
+                                                 std::max(pairSlots[0], pairSlots[1]) };
+
+                if (t.nadirMask != 0)
                 {
+                    // Nadir-cap triangle.
+                    ++caps;
+                    capPairs.insert(pair);
                     CHECK(static_cast<unsigned>(t.nadirMask) == earMask);
                     CHECK(std::abs(t.nadirGain - 1.0f / std::sqrt(static_cast<float>(earCount))) < 1e-6f);
                 }
+                else
+                {
+                    // Pair-pan wedge: zero nadir share, two distinct ear-level slots.
+                    ++wedges;
+                    wedgePairs.insert(pair);
+                    CHECK(t.nadirGain == 0.0f);
+                    CHECK(pairSlots[0] != pairSlots[1]);
+                }
             }
+
+            CHECK(caps == earCount);
+            CHECK(wedges == earCount);
+            CHECK(wedgePairs == capPairs);
         }
     }
 }
