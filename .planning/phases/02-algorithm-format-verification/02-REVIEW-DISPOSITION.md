@@ -5,47 +5,47 @@ titles: json
 findings:
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`LayoutState::vbapTriplets` has three kinds of entry, and the wedge kind is identified by an undocumented implicit sentinel"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "A regular-only triplet list still has no coverage below the horizon, and the failure is an assert on the audio thread"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The \"SpatialCore must not be compiled with fast-math\" invariant is enforced only by comments"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`appendLowerHemisphereTriplets` leaves holes when the ear-level ring has an azimuth gap of 180 degrees or more, contradicting its documented 2n output"
   - id: WR-07
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The NaN-dropping `std::max` reduction fixed by WR-06 is still present in the Ambisonics codec tests"
   - id: IN-01
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The guide's \"return silence\" list leaves out ConstantPower and Ambisonics, which are silent only because of argument order"
   - id: IN-02
     severity: info
-    disposition: open
+    disposition: fixed
     title: "\"Positive azimuth toward +Y (left)\" uses AmbiX axis names, which contradict SpatialCore's own Cartesian frame"
   - id: IN-03
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`getDecodeMatrix` fails silently with no way for the caller to detect it"
   - id: IN-04
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
   - id: IN-05
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The wedge's \"pair pan = EAR QuadRegion\" equivalence assumes 0 degree ear-level speakers, but the code admits up to +/-10 degrees"
   - id: IN-06
     severity: info
-    disposition: open
+    disposition: fixed
     title: "The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed"
   - id: IN-07
     severity: info
@@ -53,7 +53,7 @@ findings:
     title: "The +0.1% epsilon \"smallest change the pin must catch\" is resolved on only 5 of 15 layouts"
   - id: IN-08
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`doublePrecisionAmbiDecode` drops the library's guards and shares float E with the other two decoders"
   - id: IN-09
     severity: info
@@ -61,7 +61,7 @@ findings:
     title: "Comment hygiene"
   - id: IN-12
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Ambisonics may be silent everywhere on height layouts and still pass every panning-law check"
   - id: IN-10
     severity: info
@@ -79,30 +79,30 @@ findings:
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-open: 13
+open: 0
 total: 19
-recorded: 2026-10-03T23:22:45.966Z
+recorded: 2026-10-03T23:22:55.903Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
-| WR-07 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
+| WR-02 | warning | fixed | 02-REVIEW-FIX.md |
+| WR-03 | warning | fixed | 02-REVIEW-FIX.md |
+| WR-04 | warning | fixed | 02-REVIEW-FIX.md |
+| WR-05 | warning | fixed | 02-REVIEW-FIX.md |
+| WR-07 | warning | fixed | 02-REVIEW-FIX.md |
+| IN-01 | info | fixed | 02-REVIEW-FIX.md |
+| IN-02 | info | fixed | 02-REVIEW-FIX.md |
+| IN-03 | info | fixed | 02-REVIEW-FIX.md |
+| IN-04 | info | fixed | 02-REVIEW-FIX.md |
+| IN-05 | info | fixed | 02-REVIEW-FIX.md |
+| IN-06 | info | fixed | 02-REVIEW-FIX.md |
 | IN-07 | info | fixed | 02-REVIEW-FIX.md |
-| IN-08 | info | open | - |
+| IN-08 | info | fixed | 02-REVIEW-FIX.md |
 | IN-09 | info | fixed | 02-REVIEW-FIX.md |
-| IN-12 | info | open | - |
+| IN-12 | info | fixed | 02-REVIEW-FIX.md |
 | IN-10 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | IN-11 | info | fixed | 02-REVIEW-FIX.md (not in the current review) |
 | WR-06 | warning | fixed | 02-REVIEW-FIX.md (not in the current review) |
