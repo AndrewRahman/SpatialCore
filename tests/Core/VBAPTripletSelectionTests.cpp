@@ -1584,6 +1584,13 @@ struct GapLayoutCase
     std::vector<std::pair<float, float>> speakersDeg;   // (azimuth, elevation)
     int earLevel;      // n: speakers within 10 degrees of the horizon
     int bridgedGaps;   // g: ear-level azimuth gaps of 179 degrees or more
+    // IN-15: the 0.01 continuity bound assumes no two ear-level speakers are
+    // within about a degree of each other. Between a 0.5-degree pair the
+    // ordinary sine-law pan is steep, so azimuth steps with both ends inside
+    // [steepFromDeg, steepToDeg] are left out of the bound (they must still be
+    // finite). An empty window (from == to) excludes nothing.
+    float steepFromDeg = 0.0f;
+    float steepToDeg   = 0.0f;
 };
 } // namespace
 
@@ -1597,6 +1604,15 @@ TEST_CASE ("EAR gap: an ear-level ring with an azimuth gap of 180 degrees or mor
           { { 0, 0 }, { 90, 0 }, { -90, 0 }, { 45, 45 }, { -45, 45 } }, 3, 1 },
         { "control: ring 0/+100/-100 plus 2 heights (160-degree gap, no bridge)",
           { { 0, 0 }, { 100, 0 }, { -100, 0 }, { 45, 45 }, { -45, 45 } }, 3, 0 },
+        // IN-15: two bridged gaps in one ring (179.5 and 180 degrees), so the
+        // multi-gap loop and 2 (n + 2g) with g = 2 (14 extras for n = 3) are
+        // pinned.
+        { "two bridged gaps: 0/0.5/180 plus 2 heights (179.5- and 180-degree gaps)",
+          { { 0, 0 }, { 0.5f, 0 }, { 180, 0 }, { 45, 45 }, { -45, 45 } }, 3, 2, -1.0f, 1.5f },
+        // IN-15: inside the 179-180 degree margin directly, not through float
+        // rounding of an exactly-180 gap.
+        { "179.5-degree rear gap, inside the margin: 0/+90.25/-90.25 plus 2 heights",
+          { { 0, 0 }, { 90.25f, 0 }, { -90.25f, 0 }, { 45, 45 }, { -45, 45 } }, 3, 1 },
     };
 
     const float elevatedLimit = juce::degreesToRadians (10.0f);
@@ -1680,6 +1696,11 @@ TEST_CASE ("EAR gap: an ear-level ring with an azimuth gap of 180 degrees or mor
         // A NaN step counts as a failure (WR-06 pattern).
         float maxStep = 0.0f;
         long nonFiniteSteps = 0;
+        auto inSteepWindow = [&] (float azRad)
+        {
+            const float azDeg = juce::radiansToDegrees (azRad);
+            return c.steepFromDeg < c.steepToDeg && azDeg >= c.steepFromDeg && azDeg <= c.steepToDeg;
+        };
         auto stepBetween = [&] (float az0, float el0, float az1, float el1)
         {
             float g0[MAX_SPEAKERS] = {};
@@ -1693,6 +1714,10 @@ TEST_CASE ("EAR gap: an ear-level ring with an azimuth gap of 180 degrees or mor
                 {
                     ++nonFiniteSteps;
                     noteFailure ("non-finite gain step", az1, el1, d);
+                }
+                else if (inSteepWindow (az0) && inSteepWindow (az1))
+                {
+                    // the ordinary steep pan between a sub-degree pair (IN-15)
                 }
                 else if (d > maxStep)
                 {
