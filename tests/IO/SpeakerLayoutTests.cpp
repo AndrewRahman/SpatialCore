@@ -373,7 +373,9 @@ TEST_CASE("SpeakerLayout: lower-hemisphere triplets are flagged, ear-level-only,
                 const std::pair<int, int> pair { std::min(pairSlots[0], pairSlots[1]),
                                                  std::max(pairSlots[0], pairSlots[1]) };
 
-                if (t.nadirMask != 0)
+                // The production classifier (WR-02, IN-06), not a re-derivation.
+                REQUIRE(t.kind() != VBAPTriplet::Kind::regular);
+                if (t.kind() == VBAPTriplet::Kind::nadirCap)
                 {
                     // Nadir-cap triangle.
                     ++caps;
@@ -383,7 +385,9 @@ TEST_CASE("SpeakerLayout: lower-hemisphere triplets are flagged, ear-level-only,
                 }
                 else
                 {
-                    // Pair-pan wedge: zero nadir share, two distinct ear-level slots.
+                    // Pair-pan wedge: zero mask, zero nadir share, two distinct
+                    // ear-level slots.
+                    CHECK(t.nadirMask == 0);
                     ++wedges;
                     wedgePairs.insert(pair);
                     CHECK(t.nadirGain == 0.0f);

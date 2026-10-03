@@ -496,6 +496,20 @@ TEST_CASE ("DR-3: the public surface OpenSpatialDelay compiles against is unchan
     CHECK (tri.inv[0][0] == 1.0f);
     CHECK_FALSE (tri.lowerHemisphere);
     CHECK (tri.nadirVertex == -1);
+    CHECK (tri.kind() == VBAPTriplet::Kind::regular);
+
+    // WR-02: the documented lower-hemisphere encoding, field by field. A
+    // non-zero nadirMask is a cap; a zero one is a pair-pan wedge.
+    VBAPTriplet cap;
+    cap.lowerHemisphere = true;
+    cap.nadirVertex = 2;
+    cap.nadirMask = 0x7;
+    cap.nadirGain = 0.57735f;
+    CHECK (cap.kind() == VBAPTriplet::Kind::nadirCap);
+    VBAPTriplet wedge = cap;
+    wedge.nadirMask = 0;
+    wedge.nadirGain = 0.0f;
+    CHECK (wedge.kind() == VBAPTriplet::Kind::pairWedge);
 
     // LayoutContext stays a 4-member aggregate OSD brace-initialises.
     SpeakerLayout layout {};
@@ -1110,12 +1124,10 @@ void earLevelPairPan (const SpeakerLayout& layout, double azRad, float* out)
     }
 }
 
-/** Same classifier rule as computeVBAPGains3D: 0 regular, 1 nadir cap, 2 wedge. */
+/** The production classifier (WR-02, IN-06): 0 regular, 1 nadir cap, 2 wedge. */
 int testTier (const VBAPTriplet& t)
 {
-    if (! t.lowerHemisphere)
-        return 0;
-    return (t.nadirVertex >= 0 && t.nadirMask == 0) ? 2 : 1;
+    return static_cast<int> (t.kind());
 }
 
 /** Counts, per tier, the triplets enclosing the direction with the code's own

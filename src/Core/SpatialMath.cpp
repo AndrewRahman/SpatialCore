@@ -243,15 +243,14 @@ void computeVBAPGains2D (const SpeakerLayout& layout,
 namespace
 {
 /** Selection tier of a triplet (see computeVBAPGains3D): 0 regular, 1 nadir
-    cap, 2 pair-pan wedge. A wedge is a lower-hemisphere triplet whose nadir slot
-    carries a zero share (nadirVertex >= 0, nadirMask == 0). Integer tests only. */
+    cap, 2 pair-pan wedge, from the one classifier VBAPTriplet::kind() (WR-02). */
 int selectionTier (const VBAPTriplet& t)
 {
-    if (! t.lowerHemisphere)
-        return 0;
-    if (t.nadirVertex >= 0 && t.nadirMask == 0)
-        return 2;
-    return 1;
+    static_assert (static_cast<int> (VBAPTriplet::Kind::regular)   == 0
+                && static_cast<int> (VBAPTriplet::Kind::nadirCap)  == 1
+                && static_cast<int> (VBAPTriplet::Kind::pairWedge) == 2,
+                   "the pass loop in computeVBAPGains3D tries tiers 0, 1, 2 in order");
+    return static_cast<int> (t.kind());
 }
 } // namespace
 
@@ -358,7 +357,7 @@ void computeVBAPGains3D (const SpeakerLayout& layout,
     }
 
     // bestTri >= 0 from here on: a found triplet or the D-06b candidate.
-    if (! triplets[static_cast<size_t> (bestTri)].lowerHemisphere)
+    if (triplets[static_cast<size_t> (bestTri)].kind() == VBAPTriplet::Kind::regular)
     {
         float power = bestG[0] * bestG[0] + bestG[1] * bestG[1] + bestG[2] * bestG[2];
         float scale = (power > 1e-12f) ? (1.0f / std::sqrt (power)) : 0.0f;

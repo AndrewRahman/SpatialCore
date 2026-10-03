@@ -244,6 +244,9 @@ public:
         SpeakerLayout layout {};
         float ambiDecodeMatrix[MAX_SPEAKERS][MAX_SPEAKERS] = {};
         int ambiNumSpeakers = 0;
+        // buildVBAPTripletsForLayout's regular triplets, then
+        // appendLowerHemisphereTriplets' nadir caps and pair-pan wedges
+        // (VBAPTriplet::kind(); empty for flat and non-speaker formats).
         std::vector<VBAPTriplet> vbapTriplets;
     };
     const LayoutState& getActiveLayout() const;

@@ -31,21 +31,46 @@ struct VBAPTriplet
     // ear-level speaker it downmixes onto, so duplicate indices are legal and
     // gains accumulate. `inv` is always built from the vertex's real direction.
 
-    // A pair-pan wedge (G-02-2) is an ordinary lower-hemisphere triplet whose
-    // nadir slot carries no share: nadirVertex >= 0 with nadirMask == 0 and
-    // nadirGain == 0. It is two neighbouring ear-level speakers plus the virtual
-    // nadir, whose share is discarded, so the result is that pair's 2D pan at
-    // the source azimuth at every elevation down to the nadir cap (EAR's
-    // QuadRegion result). It is tried only after every regular triplet and every
-    // nadir-cap triangle.
+    // Kinds (WR-02). A triplet list holds three kinds of entry, and
+    // computeVBAPGains3D tries them in this order, each only when every earlier
+    // kind enclosed nothing:
+    //
+    //   kind()     lowerHemisphere  nadirVertex  nadirMask  nadirGain
+    //   regular    false            (ignored)    (ignored)  (ignored)
+    //   nadirCap   true             0..2         != 0       1/sqrt(mask bits)
+    //   pairWedge  true             0..2         == 0       0
+    //
+    // A nadir cap is two virtual -30 degree copies of a neighbouring ear-level
+    // pair plus the virtual nadir, whose share is spread over nadirMask.
+    // A pair-pan wedge (G-02-2) is that pair's two ear-level speakers plus the
+    // virtual nadir, whose share is discarded, so the result is the pair's 2D
+    // pan at the source azimuth at every elevation down to the nadir cap (EAR's
+    // QuadRegion result). nadirMask == 0 is what makes a lower-hemisphere
+    // triplet a wedge: a cap must always have at least one mask bit. kind() is
+    // the one classifier; the engine and the tests all call it.
 
-    /** true: only consulted when no ordinary triplet contains the source. */
+    enum class Kind : std::uint8_t { regular = 0, nadirCap = 1, pairWedge = 2 };
+
+    /** Derived from the fields below, never stored, so a triplet built field
+        by field (DR-3) cannot disagree with it. Integer tests only. */
+    Kind kind() const noexcept
+    {
+        if (! lowerHemisphere)
+            return Kind::regular;
+        if (nadirVertex >= 0 && nadirMask == 0)
+            return Kind::pairWedge;
+        return Kind::nadirCap;
+    }
+
+    /** true: a lower-hemisphere triplet, a nadir cap or a pair-pan wedge (see
+        kind()); both are consulted only when no regular triplet contains the
+        source, caps before wedges. */
     bool lowerHemisphere = false;
     /** 0..2 = which of the i/j/k slots is the virtual nadir (that slot's index
         is ignored); -1 = this triplet has no nadir vertex. */
     int nadirVertex = -1;
     /** Bit s set = ear-level speaker s receives the nadir share.
-     *  0 on a pair-pan wedge. */
+     *  0 on a pair-pan wedge, and only there. */
     std::uint16_t nadirMask = 0;
     /** Per-speaker share of the nadir gain: 1 / sqrt (number of mask bits).
      *  0 on a pair-pan wedge. */
