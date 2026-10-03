@@ -20,7 +20,7 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 
 ### Spatialization Algorithms (8)
 - **Constant Power** — Cosine-distance all-speaker weighting, constant-power normalized (smooth, wide image)
-- **VBAP** — Vector Base Amplitude Panning (Pulkki 1997); below the horizon on height layouts it uses the ITU-R BS.2127 (EAR) lower-hemisphere construction
+- **VBAP** — Vector Base Amplitude Panning (Pulkki 1997); below the horizon on height layouts it uses the ITU-R BS.2127 (EAR) lower-hemisphere construction and matches the EAR reference renderer, except behind the listener on 5.1.4 (see docs/integration-guide.md)
 - **VBIP** — Vector Base Intensity Panning (Pernaux, Boussard & Jot, DAFx-98) — VBAP gains raised to exponent 1/2 and renormalized, aiming the energy vector at the source; wider than VBAP. Single-band: the paper's high-frequency half at all frequencies (dual-band tracked in AndrewRahman/SpatialCore#20).
 - **KNN** — K-Nearest Neighbor (inverse-distance-squared weighting)
 - **DBAP** — Distance-Based Amplitude Panning (Lossius et al., ICMC 2009; effective rolloff 12.04 dB, no spatial blur)

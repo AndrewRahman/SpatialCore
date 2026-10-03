@@ -42,10 +42,10 @@ Pre-compute Delaunay triangulation of speakers into triplets. For each triplet {
 1. Convert source to Cartesian: `p = [cos(el)sin(az), cos(el)cos(az), sin(el)]`
 2. For each triplet: `gains = inv_matrix × p`
 3. Select triplet where all 3 gains are positive (source inside triangle)
-4. If several enclose the source: pick the minimum gain sum (tightest enclosing triangle); exact coplanar ties are decided by float rounding — AndrewRahman/SpatialCore#22
+4. If several enclose the source: pick the minimum gain sum (tightest enclosing triangle); exact coplanar ties (above the horizon on height layouts) are decided by float rounding — AndrewRahman/SpatialCore#22
 5. Constant-power normalize: `scale = 1 / sqrt(g0² + g1² + g2²)`
 
-Below the horizon on layouts with no lower speakers: the ITU-R BS.2127 (EAR) lower-hemisphere construction — a virtual speaker at -30° under each ear-level speaker (downmixed onto the speaker above it) plus a virtual nadir (downmixed `1/sqrt(n)` onto the n ear-level speakers), power-normalised. These are precomputed as flagged lower-hemisphere triplets at layout build and tried only after every regular triplet. If no triplet contains a finite direction: the triplet with the largest minimum gain, negatives clamped to 0, renormalised. A non-finite direction returns silence.
+Below the horizon on layouts with no lower speakers: the ITU-R BS.2127 (EAR) lower-hemisphere construction — a virtual speaker at -30° under each ear-level speaker (downmixed onto the speaker above it) plus a virtual nadir (downmixed `1/sqrt(n)` onto the n ear-level speakers), power-normalised. Between the horizon and the -30° ring each neighbouring ear-level pair is one pan region, as EAR's QuadRegion is: the gains are the pair's horizon pan at the source azimuth, at every elevation. It is stored as a wedge triplet (the two ear-level speakers plus the virtual nadir, nadir share 0), never as triangles of the ear-level/-30° trapezoid, whose two triangulations tie under the minimum-sum rule. Selection order: regular triplets, then nadir-cap triangles, then pair wedges, all precomputed at layout build. VBAP matches PyPI ear 2.1.0 everywhere except behind the listener on 5.1.4 (between M+110 and M-110), where EAR also feeds U+135 / U-135 and SpatialCore keeps the horizon pan. If no triplet contains a finite direction: the triplet with the largest minimum gain, negatives clamped to 0, renormalised. A non-finite direction returns silence.
 
 Determinant threshold: skip triplets with `|det| < 0.01` (near-collinear speakers).
 
@@ -284,7 +284,7 @@ Zenith (1 speaker, +90° elevation):
 
 **VBAP triplets:** 30 pre-computed triangulations covering upper hemisphere. Each triplet stores speaker indices {i,j,k} and pre-computed 3x3 inverse matrix. Determinant threshold 0.01 for degenerate geometry.
 
-**Below-horizon handling:** On height speaker layouts with no lower speakers, VBAP, VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at -30° under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level speakers (the nadir at `1/sqrt(n)` to each) and power-normalised, precomputed as flagged lower-hemisphere triplets at layout build and tried only after every regular triplet. VBAP and VBIP put no gain on an elevated speaker for a source at or below -1°. Binaural (per-source HRTF) and Ambisonics output keep the true negative elevation.
+**Below-horizon handling:** On height speaker layouts with no lower speakers, VBAP, VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at -30° under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level speakers (the nadir at `1/sqrt(n)` to each) and power-normalised. Between the horizon and the -30° ring each neighbouring ear-level pair is one pan region (the pair's horizon pan, held at every elevation); below it the nadir cap blends to equal gain at -90°. All of it is precomputed at layout build and tried only after every regular triplet. VBAP matches PyPI ear 2.1.0 except behind the listener on 5.1.4. VBAP and VBIP put no gain on an elevated speaker for a source at or below -1°. Binaural (per-source HRTF) and Ambisonics output keep the true negative elevation.
 
 **Physical surround layouts:**
 - Quad: 4 speakers at ±30°, ±110° (all ear level)

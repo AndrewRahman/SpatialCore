@@ -201,18 +201,30 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   wider than VBAP between speakers. It is single-band: the paper's VBIP half (above 700 Hz) applies
   at all frequencies, and dual-band VBAP/VBIP is tracked in AndrewRahman/SpatialCore#20.
 - **Below the horizon on height layouts** (no shipped layout has speakers below ear level), VBAP,
-  VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at
-  -30 degrees under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level
-  speakers (the nadir at 1/sqrt(n) to each of the n ear-level speakers) and power-normalised. From
-  0 to -30 degrees a source stays on the ear-level speakers its horizon pan uses; from -30 to -90 it
-  blends to equal gain on the whole ear-level ring. VBAP and VBIP put no gain on an elevated
-  speaker for a source at or below -1 degree; MDAP's spread ring can still reach one just below the
-  horizon. Binaural and Ambisonics output keep the true negative elevation.
-- **3D VBAP picks the minimum-gain-sum triplet** (the tightest enclosing triangle). Where two
-  triangulations of a coplanar speaker quad tie exactly, float rounding decides, so a small azimuth
-  move above the horizon can jump the gains; this is tracked in AndrewRahman/SpatialCore#22 and not
-  fixed. If no triplet encloses a finite direction (measured never to happen on a shipped layout),
-  the triplet with the largest minimum gain is used, negatives clamped to 0, renormalised.
+  VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at -30
+  degrees under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level speakers
+  and power-normalised. Between the horizon and the -30 degree ring each pair of neighbouring
+  ear-level speakers is one pan region, as in EAR, so a source keeps exactly the gains its azimuth
+  gets at 0 degrees: VBAP on 7.1.4 at azimuth 60 gives 0.7071 / 0.7071 on M+030 / M+090 at every
+  elevation from 0 to -30, with no lean toward either speaker. Where neighbouring speakers are far
+  apart the region reaches lower (behind the listener on 5.1.x, down to about -59 degrees). Below it
+  a source blends to equal gain on the whole ear-level ring at -90 (the nadir at 1/sqrt(n) to each
+  of the n ear-level speakers). VBAP's lower-hemisphere gains match PyPI ear 2.1.0, the BS.2127
+  reference renderer, to float precision on every shipped height layout, with one deliberate
+  exception: on 5.1.4 behind the listener (azimuths beyond 110 degrees either side, between M+110
+  and M-110), EAR also feeds the rear height speakers U+135 / U-135, even at and just above the
+  horizon; SpatialCore keeps the horizon pan on M+110 / M-110 there, because matching EAR would
+  change the sound above the horizon. VBAP and VBIP put no gain on an elevated speaker for a source
+  at or below -1 degree; MDAP's spread ring can still reach one just below the horizon. Binaural and
+  Ambisonics output keep the true negative elevation.
+- **3D VBAP picks the minimum-gain-sum triplet** (the tightest enclosing triangle). Above the
+  horizon on height layouts, where two triangulations of a coplanar speaker quad tie exactly, float
+  rounding decides, so a small azimuth move can jump the gains; this is tracked in
+  AndrewRahman/SpatialCore#22 and not fixed. Below the horizon there is no such tie: regular
+  triplets are tried first, then the nadir cap, then the pair regions, and regions of one kind meet
+  only on shared edges, where they give the same gains. If no triplet encloses a finite direction
+  (measured never to happen on a shipped layout), the triplet with the largest minimum gain is used,
+  negatives clamped to 0, renormalised.
 
 ### Non-finite positions
 
