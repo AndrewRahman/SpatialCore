@@ -7,9 +7,10 @@
 // fine and must stay fine.
 //
 // WR-04: every non-finite guard in SpatialCore (D-06, D-19: the hold-last-good
-// sanitiser in RenderEngine, the direction guards in SpatialMath's VBAP,
-// ConstantPower, KNN, DirectBinaural and Ambisonics, and DBAP's non-finite
-// direction/distance rule) is a std::isfinite / std::isnan test. Under
+// sanitiser in RenderEngine, the VBAP direction guards in SpatialMath.cpp, the
+// direction guards in the ConstantPower, KNN, DirectBinaural and Ambisonics
+// *Algorithm.cpp files, and DBAP's non-finite direction/distance rule) is a
+// std::isfinite / std::isnan test. Under
 // -ffast-math or -ffinite-math-only (MSVC: /fp:fast) the compiler may assume no
 // value is ever NaN or infinite and fold those tests to "finite", so a
 // non-finite position would reach the audio path again with no diagnostic.
