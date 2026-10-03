@@ -1,4 +1,5 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <cmath>
 
 namespace spatialcore

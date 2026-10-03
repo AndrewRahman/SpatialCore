@@ -245,7 +245,11 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   for a non-finite direction, and the 2D VBAP path wraps a huge finite azimuth with a bounded
   `std::remainder` instead of looping.
 - These guards live in SpatialCore `.cpp` files, so compiling the consumer with `-ffast-math` does
-  not disable them. SpatialCore's own sources must not be compiled with fast-math.
+  not disable them. SpatialCore's own sources must not be compiled with fast-math, and the build
+  enforces it: every guarded source includes `src/Core/FloatSemanticsGuard.h`, which stops with
+  `#error` under `-ffast-math`, `-ffinite-math-only` or MSVC `/fp:fast`, including when the flag
+  arrives through `CMAKE_CXX_FLAGS` or `add_compile_options` before `add_subdirectory(SpatialCore)`.
+  Apply fast-math per consumer target (`target_compile_options`), as OpenSpatialDelay does.
 
 ## What to Keep vs Replace
 

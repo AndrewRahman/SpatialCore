@@ -1,4 +1,5 @@
 #include <SpatialCore/Algorithms/KNNAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/IO/SpeakerLayout.h>
 #include <algorithm>
 #include <cmath>

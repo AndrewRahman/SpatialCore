@@ -1,4 +1,5 @@
 #include <SpatialCore/Engine/RenderEngine.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/Core/SpatialMath.h>
 
 #include <cstdlib>

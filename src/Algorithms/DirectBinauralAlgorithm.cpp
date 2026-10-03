@@ -1,4 +1,5 @@
 #include <SpatialCore/Algorithms/DirectBinauralAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
