@@ -21,6 +21,13 @@ namespace spatialcore
     AndrewRahman/SpatialCore#10). Because of the d^2 clamp, a source exactly on
     a speaker gets unity on it only to about 1e-3.
 
+    Non-finite input (WR-08), never silent and never NaN for numSpeakers > 0:
+    a non-finite azimuth or elevation gives equal gains 1/sqrt(N) on every
+    speaker; a non-finite distance (NaN, +Inf or -Inf) is treated as 0.5 (the
+    SourcePosition default), so the direction pans normally; a finite distance
+    is clamped to [-1000, 1000] so the d^2 arithmetic cannot overflow. Output
+    power is 1 in every case.
+
     Useful for irregular/non-standard layouts where VBAP triangulation is
     ill-conditioned. */
 class DBAPAlgorithm : public SpatializationAlgorithm

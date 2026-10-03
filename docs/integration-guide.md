@@ -250,8 +250,11 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   finite gains or silence and never hangs. Every algorithm except DBAP returns silence for a
   non-finite azimuth or elevation (ConstantPower, VBAP, VBIP, MDAP, KNN, Ambisonics and
   DirectBinaural), with one exception: on a flat layout VBAP, VBIP and MDAP pan by azimuth only, so
-  a non-finite elevation there is ignored and the source pans normally. DBAP never goes silent: a
-  non-finite direction or distance gives equal gains on every speaker. The 2D VBAP path wraps a
+  a non-finite elevation there is ignored and the source pans normally. DBAP never goes silent and
+  always returns unit power: a non-finite azimuth or elevation gives equal gains (1/sqrt(N)) on
+  every speaker, and a non-finite distance (NaN, +Inf or -Inf) is treated as 0.5, the
+  `SourcePosition` default, so the source still pans by its direction (a finite distance is clamped
+  to -1000..1000 so the arithmetic cannot overflow). The 2D VBAP path wraps a
   huge finite azimuth with a bounded `std::remainder` instead of looping.
 - These guards live in SpatialCore `.cpp` files, so compiling the consumer with `-ffast-math` does
   not disable them. SpatialCore's own sources must not be compiled with fast-math, and the build

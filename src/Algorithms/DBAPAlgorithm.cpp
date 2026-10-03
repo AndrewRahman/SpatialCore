@@ -1,5 +1,9 @@
 #include <SpatialCore/Algorithms/DBAPAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/IO/SpeakerLayout.h>
+
+#include <algorithm>
+#include <cmath>
 
 namespace spatialcore
 {
@@ -13,10 +17,34 @@ void DBAPAlgorithm::computeGains (const SourcePosition& source, const LayoutCont
     for (int s = 0; s < numSpeakers; ++s)
         outputGains[s] = 0.0f;
 
-    if (numSpeakers == 0) return;
+    if (numSpeakers <= 0) return;
+
+    // WR-08: non-finite input follows explicit rules, not std::max argument
+    // order (realtime-safe: stack values only, no allocation or logging).
+    //  - Non-finite azimuth or elevation: there is no direction to pan to, so
+    //    every speaker gets the same gain, 1/sqrt(N) (unit power).
+    //  - Non-finite distance (NaN, +Inf, -Inf): treated as 0.5, the
+    //    SourcePosition default and the value RenderEngine renders for a
+    //    distance that has never been finite, so the direction pans normally.
+    //  - Finite distance: clamped to [-kMaxDistance, kMaxDistance] so the d^2
+    //    arithmetic below cannot overflow to Inf (which would zero every
+    //    weight). Normalised distances are 0..1, so this never moves one.
+    if (! std::isfinite (source.azimuthRad) || ! std::isfinite (source.elevationRad))
+    {
+        const float equalGain = 1.0f / std::sqrt (static_cast<float> (numSpeakers));
+        for (int s = 0; s < numSpeakers; ++s)
+            outputGains[s] = equalGain;
+        return;
+    }
+
+    constexpr float kNonFiniteDistance = 0.5f;
+    constexpr float kMaxDistance       = 1000.0f;
+    const float distance = std::isfinite (source.distance)
+                             ? std::clamp (source.distance, -kMaxDistance, kMaxDistance)
+                             : kNonFiniteDistance;
 
     constexpr float speakerRadius = 1.0f;
-    float physicalDist = source.distance * speakerRadius;
+    float physicalDist = distance * speakerRadius;
     float srcX = physicalDist * std::cos (source.elevationRad) * std::sin (source.azimuthRad);
     float srcY = physicalDist * std::cos (source.elevationRad) * std::cos (source.azimuthRad);
     float srcZ = physicalDist * std::sin (source.elevationRad);

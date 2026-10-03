@@ -734,10 +734,10 @@ TEST_CASE ("Non-finite direction: every algorithm but DBAP is silent; DBAP sprea
 
                     if (dbap)
                     {
-                        // std::max (epsilon, NaN) returns epsilon: equal weights.
+                        // WR-08: an explicit rule, equal gains 1/sqrt(N).
                         CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-5f));
-                        for (int s = 1; s < n; ++s)
-                            CHECK (g[s] == g[0]);
+                        for (int s = 0; s < n; ++s)
+                            CHECK_THAT (g[s], WithinAbs (1.0f / std::sqrt (static_cast<float> (n)), 1e-6f));
                     }
                     else if (flat && field == 1 && azimuthOnlyWhenFlat)
                     {
@@ -753,6 +753,70 @@ TEST_CASE ("Non-finite direction: every algorithm but DBAP is silent; DBAP sprea
     }
 }
 
+
+TEST_CASE ("DBAP: a non-finite distance pans the finite direction as distance 0.5; a huge finite distance is not silent (WR-08)",
+           "[robust]")
+{
+    // Pins the DBAP distance clause of docs/integration-guide.md
+    // "Non-finite positions": NaN, +Inf and -Inf distance with a finite
+    // direction give finite, non-silent, unit-power gains identical to
+    // distance 0.5, so the direction still pans. A huge finite distance is
+    // clamped and must not underflow every weight to silence.
+    const DBAPAlgorithm dbap;
+    const float distances[] = { kNaN, kInf, -kInf };
+    const float hugeDistances[] = { 1e30f, -1e30f, 1e7f };
+    const float directions[][2] = { { 0.3f, 0.2f }, { 0.3f, 0.0f }, { -2.0f, -0.4f }, { 1.2f, 0.7f } };
+
+    for (OutputFormat format : { OutputFormat::Quad, OutputFormat::Surround7_1_4 })
+    {
+        const EngineRig rig (format);
+        const LayoutContext ctx = rig.context();
+        const int n = rig.numSpeakers();
+
+        for (const auto& dir : directions)
+        {
+            float ref[MAX_SPEAKERS];
+            fillSentinel (ref);
+            dbap.computeGains (SourcePosition { dir[0], dir[1], 0.5f }, ctx, ref, n);
+            REQUIRE (allFiniteGains (ref, n));
+
+            // The direction must matter at distance 0.5, or "pans normally"
+            // would be indistinguishable from equal gains.
+            bool unequal = false;
+            for (int s = 1; s < n; ++s)
+                unequal = unequal || std::abs (ref[s] - ref[0]) > 1e-3f;
+            REQUIRE (unequal);
+
+            for (float d : distances)
+            {
+                float g[MAX_SPEAKERS];
+                fillSentinel (g);
+                dbap.computeGains (SourcePosition { dir[0], dir[1], d }, ctx, g, n);
+
+                INFO ((ctx.triplets.empty() ? "Quad" : "7.1.4") << " az " << dir[0] << " el " << dir[1]
+                      << " distance " << d);
+                REQUIRE (allFiniteGains (g, n));
+                CHECK_FALSE (allZeroGains (g, n));
+                CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-5f));
+                for (int s = 0; s < n; ++s)
+                    CHECK (g[s] == ref[s]);
+            }
+
+            for (float d : hugeDistances)
+            {
+                float g[MAX_SPEAKERS];
+                fillSentinel (g);
+                dbap.computeGains (SourcePosition { dir[0], dir[1], d }, ctx, g, n);
+
+                INFO ((ctx.triplets.empty() ? "Quad" : "7.1.4") << " az " << dir[0] << " el " << dir[1]
+                      << " huge distance " << d);
+                REQUIRE (allFiniteGains (g, n));
+                CHECK_FALSE (allZeroGains (g, n));
+                CHECK_THAT (powerOf (g, n), WithinAbs (1.0f, 1e-5f));
+            }
+        }
+    }
+}
 
 TEST_CASE ("computeVBAPGains2D/3D: non-finite gives silence, huge finite azimuths are wrapped not looped (D-19)",
            "[robust]")
