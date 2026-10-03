@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 02-algorithm-format-verification
 source: [02-VERIFICATION.md]
 started: 2026-10-01T07:55:50Z
-updated: 2026-10-03T11:55:00Z
+updated: 2026-10-03T12:20:00Z
 ---
 
 ## Current Test
@@ -174,5 +174,20 @@ blocked: 0
   reason: "Claude-verified: [ambi-pin] fails in Release only; decode matrix vs reference decoder max |diff| 5.3e-6 > 1e-6 tolerance on 10 of 15 layouts. Debug passes."
   severity: major
   test: 10
-  artifacts: []  # Filled by diagnosis
-  missing: []    # Filled by diagnosis
+  root_cause: "Not a decoder defect. [ambi-pin] asserts near bit-exactness (1e-6) between two separately compiled float copies of the same decoder. At -O3 on arm64, clang's default -ffp-contract=on fuses the E*E^T accumulation (AmbisonicsCodec.cpp:69-70 and the same loop in referenceAmbiDecode) into fmuladd; the vectorizer keeps only the scalar tail fused, and the two TUs vectorize differently (runtime M / [49] arrays vs constant M=16 / [16][16]), so the fused/unfused term mix depends on speaker count N (equal only for N=8,9,11). -O0 is bit-identical. E*E^T is singular (rank <= 15 of 16); with the 0.01 Tikhonov term cond is about 500-1800, so the honest float noise floor is about 5e-6 to 2e-5 — above the 1e-6 bound, which came from RESEARCH F10's -O0 measurement ('worst 0'). Proven: -ffp-contract=off on both TUs, or no vectorization, gives 0 difference; per-loop pragma isolates the E*E^T loop."
+  scope_note: "CI (ubuntu-latest x86-64, no FMA) likely passes — reasoned plus clang x86_64 proxy, GCC not run; fails on Apple Silicon Release (developer machine, arm64 slice of shipped builds). Fix the test bound, not the library or the verbatim reference body. Separate, not this gap: HUTUBS PP2 golden hash fails in Debug only, passes in Release (same FP class, Phase 3); other tight test-local-reference tolerances listed in the debug session as at-risk candidates (none fail today)."
+  artifacts:
+    - path: "tests/Engine/RenderEngineTests.cpp"
+      issue: "~700 and ~706: CHECK(worstHere <= 1e-6f) and the all-layout bound sit below the float noise floor of a Tikhonov-regularised Gauss-Jordan solve; referenceAmbiDecode (574-658) is a verbatim transplant and must stay verbatim"
+    - path: "src/IO/AmbisonicsCodec.cpp"
+      issue: "65-72: origin of TU-dependent rounding under FP contraction + vectorization; no defect, no change required"
+    - path: "CMakeLists.txt"
+      issue: "164-180 documents the per-TU FP hazard class (plan 08-02) but sets no -ffp-contract policy; informational"
+    - path: ".github/workflows/ci.yml"
+      issue: "Linux x86-64 Release only; no arm64/FMA leg, and phase gates ran Debug only"
+  missing:
+    - "Replace the 1e-6 bounds in [ambi-pin] with an honest, derived float bound (about 5e-5 fixed, or per-layout k*2^-24*cond*max|D|, or assert each decoder against a double-precision decode); record the derivation beside the number and fix the test comment that cites RESEARCH F10"
+    - "Keep referenceAmbiDecode byte-identical and the library decoder unchanged (pure-refactor pin)"
+    - "Prove it: [ambi-pin] passes in both Debug and Release (macOS arm64), and the bound still fails for a deliberate +0.1% Tikhonov-epsilon change"
+    - "Recurrence guard: the phase gate runs the suite in a Release build too (document in VALIDATION / gate notes); an arm64 CI leg is optional and out of scope unless cheap"
+  debug_session: .planning/debug/ambi-pin-release-tolerance.md
