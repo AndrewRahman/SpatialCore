@@ -1,14 +1,18 @@
 ---
-status: diagnosed
+status: testing
 phase: 02-algorithm-format-verification
 source: [02-VERIFICATION.md]
 started: 2026-10-01T07:55:50Z
-updated: 2026-10-03T02:25:00Z
+updated: 2026-10-03T10:50:00Z
 ---
 
 ## Current Test
 
-[testing complete]
+number: 6
+name: Keep 5.1.4's rear-gap difference from EAR?
+expected: |
+  Answer yes or no. Yes keeps it (recommended). No needs a new decision before any code changes.
+awaiting: user response
 
 ## Tests
 
@@ -29,14 +33,21 @@ amendment: |
 
 ### 2. Below-horizon 0 to -30 degree band versus EAR
 expected: Decide (a) accept as the #22 triangulation defect and correct the docs (guide, README, skill; widen WR-01 tie scope), or (b) treat as a gap for a gap-closure plan. Probe: 7.1.4 az 60 — SpatialCore 0.7210/0.6929 (-5), 0.7472/0.6646 (-15), 0.6768/0.7361 (-25) vs EAR 0.7071/0.7071; max deviation 0.057 (~0.5 dB).
-result: issue
+result: pass
 reported: "b"
 severity: major
+source: claude-verified
 evidence: |
   Re-probed 2026-10-01 (temporary Catch2 case, removed after): 7.1.4, az 60, VBAPAlgorithm via RenderEngine context.
   el 0: M+030 0.7071 / M+090 0.7071; -5: 0.7210/0.6929; -10: 0.7343/0.6788; -15: 0.7472/0.6646;
   -20: 0.7513/0.6599; -25: 0.6768/0.7361; -30: 0.6941/0.7199.
   PyPI ear 2.1.0 (.context/venv, bs2051 4+7+0 without LFE, point_source): 0.7071/0.7071 at every elevation 0 to -30.
+resolution: |
+  Fixed by gap-closure plans 02-08 (a0595dc, 582fa5a) and 02-09 (b4f0046, a322673), per the user's answer "b".
+  Re-verified 2026-10-03 (02-VERIFICATION.md): 7.1.4 az 60 gives 0.7071 / 0.7071 on M+030 / M+090 at el 0, -5, -15, -25, -30
+  via RenderEngine::setOutputFormat + VBAPAlgorithm::computeGains; az -60 mirrors on speakers 1/4. [g02-2], [band],
+  [vbap3d-identity], [consumer-surface] pass; band matches ear 2.1.0 within 3e-7 on all 8 height layouts except 5.1.4
+  behind the listener (test 6).
 
 ### 3. Residual silent degradation on hand-built LayoutContexts (WR-03)
 expected: Confirm D-01/D-02 ("harden upstream") covers (1) empty triplets on a height layout falling to 2D pairwise pan in Release, and (2) builder-only contexts sending below-horizon sources to the largest-min-gain fallback; builder docblock fix is a follow-up, not a blocker.
@@ -58,12 +69,33 @@ result: pass
 source: claude-verified
 evidence: Full suite re-run 2026-10-01 — 190 cases, 189 pass; only the pre-existing HUTUBS PP2 checksum (Phase 3) fails. The one partly-failing judgment is tracked as the test 2 gap.
 
+### 6. Keep 5.1.4's rear-gap difference from EAR?
+expected: |
+  On a 5.1.4 setup, for a sound directly behind you (beyond 110 degrees either side), EAR also sends part of it to the
+  two rear ceiling speakers, even at ear height. SpatialCore keeps it on the two rear ear-level speakers, so sounds at or
+  above ear height are unchanged from today. The difference is written down in the integration guide, README and skill.
+  Yes = keep it (recommended: matching EAR there would change the sound above ear height on 5.1.4 and reintroduce the
+  0.71 horizon jump from RESEARCH F4). No = needs a new decision before any code changes.
+result: [pending]
+
+### 7. Optional listening check of the corrected 0 to -30 degree band
+expected: In OpenSpatialDelay on 7.1.4, slowly lower a sound from ear height to 30 degrees below at about 60 degrees left. It stays put, with no drift toward one speaker and no side flip. The numbers already prove it; this is only whether you like how it sounds. Skippable.
+result: [pending]
+
+### 8. Backstop: Release layout-build abort (D-02a)
+expected: A broken height layout aborts in activateLayout (RenderEngine.cpp:729) during setOutputFormat, never from renderBlock. No Catch2 test can survive an abort; placement evidence only (unchanged by 02-08/02-09).
+result: [pending]
+
+### 9. Judgment-tier prohibitions (25)
+expected: Accept the verifier's non-binding judgments in 02-VERIFICATION.md "Prohibitions" (17 from before plus 8 from 02-08/02-09); all 25 hold on the evidence.
+result: [pending]
+
 ## Summary
 
-total: 5
-passed: 4
-issues: 1
-pending: 0
+total: 9
+passed: 5
+issues: 0
+pending: 4
 skipped: 0
 blocked: 0
 
@@ -71,7 +103,8 @@ blocked: 0
 
 - gap_id: G-02-2
   truth: "On height layouts, a source between 0 and -30 degrees elevation pans as ITU-R BS.2127 (EAR) does: the horizon pan holds (7.1.4 az 60 stays 0.7071/0.7071 on M+030/M+090), with no lean and no side flip — as the integration guide, README, skill and CONTEXT D-04 already claim"
-  status: failed
+  status: resolved
+  resolved_by: [02-08, 02-09]
   reason: "User reported: b (treat as a gap and change the panning to match EAR rather than correct the docs)"
   severity: major
   test: 2
