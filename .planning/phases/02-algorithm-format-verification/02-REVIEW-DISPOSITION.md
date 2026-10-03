@@ -3,18 +3,30 @@ phase: 02
 review: 02-REVIEW.md
 titles: json
 findings:
+  - id: WR-02
+    severity: warning
+    disposition: open
+    title: "`LayoutState::vbapTriplets` has three kinds of entry, and the wedge kind is identified by an undocumented implicit sentinel"
+  - id: WR-03
+    severity: warning
+    disposition: open
+    title: "A regular-only triplet list still has no coverage below the horizon, and the failure is an assert on the audio thread"
+  - id: WR-05
+    severity: warning
+    disposition: open
+    title: "`appendLowerHemisphereTriplets` leaves holes when the ear-level ring has an azimuth gap of 180 degrees or more, contradicting its documented 2n output"
+  - id: IN-05
+    severity: info
+    disposition: open
+    title: "The wedge's \"pair pan = EAR QuadRegion\" equivalence assumes 0 degree ear-level speakers, but the code admits up to +/-10 degrees"
+  - id: IN-06
+    severity: info
+    disposition: open
+    title: "The test re-implements the production tier classifier, and one comment in PanningLawTests.cpp is badly reflowed"
   - id: WR-01
     severity: warning
     disposition: fixed
     title: "Integration guide limits the coplanar-tie gain jumps to \"above the horizon\", but the new lower-hemisphere band has the same jumps"
-  - id: WR-02
-    severity: warning
-    disposition: open
-    title: "`LayoutState::vbapTriplets` now has mixed semantics, and nothing on the field documents it"
-  - id: WR-03
-    severity: warning
-    disposition: open
-    title: "`buildVBAPTripletsForLayout` alone yields incomplete coverage, and the failure mode is a Debug assert on the audio thread"
   - id: WR-04
     severity: warning
     disposition: open
@@ -35,23 +47,26 @@ findings:
     severity: info
     disposition: open
     title: "Hold-last-good is keyed by slot and never reset when a slot is reused, which the guide's \"per object\" wording does not reflect"
-open: 7
-total: 8
-recorded: 2026-10-01T07:45:53.017Z
+open: 10
+total: 11
+recorded: 2026-10-03T10:36:42.828Z
 ---
 
 # Phase 02: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | fixed | 02-08 + 02-09: the band no longer ties; guide and skill scope #22 to above the horizon |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
+| WR-05 | warning | open | - |
+| IN-05 | info | open | - |
+| IN-06 | info | open | - |
+| WR-01 | warning | fixed | 02-08 + 02-09: the band no longer ties; guide and skill scope #22 to above the horizon (not in the current review) |
+| WR-04 | warning | open | - (not in the current review) |
+| IN-01 | info | open | - (not in the current review) |
+| IN-02 | info | open | - (not in the current review) |
+| IN-03 | info | open | - (not in the current review) |
+| IN-04 | info | open | - (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
