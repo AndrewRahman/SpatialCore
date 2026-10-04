@@ -226,7 +226,7 @@ namespace
         int onsetL, onsetR;     // rendered per-ear onset, samples
     };
 
-    // captured from this tree on 2026-10-04 at commit 7453d93, libmysofa v1.3.2; D-16 pins today's 64-sample ITD line; a change here is a change to shipped timing and needs a decision
+    // captured from this tree on 2026-10-04 at commit 7453d93, libmysofa v1.3.2; D-16 pins today's 64-sample ITD line; a change here is a change to shipped timing and needs a decision. Tracked by AndrewRahman/SpatialCore#25
     constexpr ItdCase kItdTable[] = {
         { 1, 44100.0, 0.0f, 0.0f, 75.000f, 79.000f, 86, 90 },
         { 1, 44100.0, 90.0f, 0.0f, 71.000f, 93.000f, 78, 100 },

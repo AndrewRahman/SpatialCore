@@ -16,19 +16,26 @@ using Catch::Matchers::WithinAbs;
 // ============================================================================
 // Perceived level of each built-in profile (D-14: measure now, change later).
 //
-// This file RECORDS how loud each profile is, K-weighted per ITU-R BS.1770, and asserts
-// only sanity: every value finite, every direction louder than -70 LKFS, the spread among
-// profiles 1-5 below 20 LU, and the BS.1770 known answer for the meter itself.
+// This file records how loud each profile is, K-weighted per ITU-R BS.1770, asserts
+// sanity (every value finite, every direction louder than -70 LKFS) and the BS.1770
+// known answer for the meter itself, and pins each of profiles 1-5 to its measured mean
+// loudness within 0.5 LU, with the spread among them at most 2.98 LU.
 //
-// D-14: the pass/fail tolerance is set after the user approves one (Plan 03-11). No
-// built-in level is changed in Phase 3, and no assertion here compares a profile's
-// loudness with a fixed LKFS target.
+// D-14: tolerance approved by the user on 2026-10-04 from the Phase 3 measurement (D-14).
+// No built-in level is changed in Phase 3; the bounds only fail a later change that makes
+// a profile louder, quieter or further from the others than measured today. Simple
+// (profile 0) is excluded: it folds its own distance gain in, so it is not comparable.
 // ============================================================================
 
 namespace
 {
     constexpr double kRate = 48000.0;
     constexpr const char* kProfileNames[] = { "Simple", "SADIE", "CIPIC", "HUTUBS", "Bernschuetz", "KEMAR" };
+
+    // Measured mean LKFS per profile on 2026-10-04 (Phase 3, D-14). Index 0 (Simple) is not pinned.
+    constexpr double kMeasuredMeanLKFS[6] = { 0.0, -20.83, -19.80, -20.16, -19.34, -18.34 };
+    constexpr double kLoudnessToleranceLU = 0.5;
+    constexpr double kMaxSpreadLU = 2.98;   // measured 2.48 plus 0.5
 
     // 12 directions: 8 azimuths at ear level, two above, two below.
     constexpr Direction kDirections[12] = {
@@ -121,6 +128,11 @@ TEST_CASE ("Loudness: perceived level of each built-in profile, recorded for the
         INFO ("profile " << profile << " " << kProfileNames[profile]);
         CHECK (results[profile].allFinite);
         CHECK (results[profile].aboveFloor);
+
+        // D-14: tolerance approved by the user on 2026-10-04 from the Phase 3 measurement (D-14).
+        if (profile >= 1)
+            CHECK_THAT (results[profile].overall,
+                        WithinAbs (kMeasuredMeanLKFS[profile], kLoudnessToleranceLU));
     }
 
     // Spread among the five built-ins. Simple is printed above but excluded here: it folds
@@ -139,5 +151,5 @@ TEST_CASE ("Loudness: perceived level of each built-in profile, recorded for the
     WARN (spreadLine);
 
     CHECK (std::isfinite (spread));
-    CHECK (spread < 20.0);
+    CHECK (spread <= kMaxSpreadLU);
 }

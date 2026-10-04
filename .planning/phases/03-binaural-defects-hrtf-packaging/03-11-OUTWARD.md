@@ -187,3 +187,55 @@ Alternative: keep the test record-only, with a comment saying so by the user's d
    "fixed" before the code is on `main`.
 5. Item D: loudness for Simple reads -29.91 here (it was -29.37 in the Plan 03-01 summary, before
    later plans changed the Simple path).
+
+## Decision (2026-10-04, from the user, per item)
+
+| Item | Decision | Effect |
+|---|---|---|
+| A (comment on Spatial-Media-Lab/OpenSpatialDelay#234) | Approved as written, **posting deferred** | Not posted. Post only after Phase 3 is pushed to `main`. |
+| B (new SpatialCore issue, label `bug`, ITD wrap) | Approved as written | Filed now: AndrewRahman/SpatialCore#25. |
+| C (close AndrewRahman/SpatialCore#15 with a comment) | Approved as written, **posting deferred** | Not posted, not closed. Post and close only after Phase 3 is pushed to `main`. |
+| D (loudness tolerance) | Approved as written | Bounds added to `tests/Binaural/ProfileLoudnessTests.cpp`. |
+
+D-13 and D-03 closure are therefore "approved, posting deferred to push" (this resolves difference 4
+above: the comments say "fixed" only once the code is on `main`). D-16's issue half and D-14's
+tolerance half are done.
+
+## Pending after push
+
+Run these only after Phase 3 is pushed to `main`. Texts are the fenced blocks of sections A and C
+above, extracted to temporary files (no edits). Run from the repository root.
+
+```bash
+F=.planning/phases/03-binaural-defects-hrtf-packaging/03-11-OUTWARD.md
+python3 - "$F" <<'PY'
+import re, sys
+t = open(sys.argv[1], encoding='utf-8').read()
+a = t.split("## A. Comment")[1].split("## B. New issue")[0]
+c = t.split("## C. Close")[1].split("## D. Loudness")[0]
+open('/tmp/03-11-A-body.md', 'w').write(re.findall(r"````text\n(.*?)\n````", a, re.S)[0] + "\n")
+open('/tmp/03-11-C-body.md', 'w').write(re.findall(r"````text\n(.*?)\n````", c, re.S)[0] + "\n")
+PY
+
+# A: comment on OpenSpatialDelay#234 (do NOT close it; D-13)
+gh issue comment 234 --repo Spatial-Media-Lab/OpenSpatialDelay --body-file /tmp/03-11-A-body.md
+gh issue view 234 --repo Spatial-Media-Lab/OpenSpatialDelay --json state     # expect OPEN
+
+# C: comment and close SpatialCore#15 (D-03)
+gh issue close 15 --repo AndrewRahman/SpatialCore --comment "$(cat /tmp/03-11-C-body.md)"
+gh issue view 15 --repo AndrewRahman/SpatialCore --json state                # expect CLOSED
+```
+
+After running, append the comment URL and the closed state to the "Done" section below.
+
+## Done
+
+- **B filed:** https://github.com/AndrewRahman/SpatialCore/issues/25 (label `bug`, title and body
+  exactly as in section B). Cited in the `[renderer][itd-characterisation]` table comment in
+  `tests/Binaural/BinauralRendererTests.cpp` as "Tracked by AndrewRahman/SpatialCore#25".
+- **D applied:** profiles 1-5 pinned to -20.83, -19.80, -20.16, -19.34, -18.34 LKFS within 0.5 LU;
+  spread among profiles 1-5 at most 2.98 LU; Simple excluded; WARN table kept; comment "tolerance
+  approved by the user on 2026-10-04 from the Phase 3 measurement (D-14)".
+- **A: deferred, not posted.** Spatial-Media-Lab/OpenSpatialDelay#234 untouched (still open).
+- **C: deferred, not posted.** AndrewRahman/SpatialCore#15 untouched (not closed).
+- Nothing was sent to any repository other than AndrewRahman/SpatialCore (issue #25 only).
