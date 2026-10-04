@@ -204,7 +204,14 @@ namespace
     /** Write `bytes` into `folder` as the probe profile's file. */
     void dropBytesAsProbe (const juce::File& folder, const juce::MemoryBlock& bytes)
     {
-        REQUIRE (folder.getChildFile (probeFileName()).replaceWithData (bytes.getData(), bytes.getSize()));
+        // replaceWithData() deletes the file for a zero-length payload, so create it explicitly.
+        const juce::File target = folder.getChildFile (probeFileName());
+        if (bytes.getSize() == 0)
+            REQUIRE (target.create().wasOk());
+        else
+            REQUIRE (target.replaceWithData (bytes.getData(), bytes.getSize()));
+        REQUIRE (target.existsAsFile());
+        CHECK (target.getSize() == static_cast<juce::int64> (bytes.getSize()));
     }
 
     juce::MemoryBlock realFileBytes (int profile)
@@ -460,7 +467,7 @@ TEST_CASE ("HRTF resolve: same-name matching follows the filesystem's own case r
     const bool caseInsensitive = folder.dir.getChildFile ("caseprobe.tmp").existsAsFile();
     REQUIRE (folder.dir.getChildFile ("CaseProbe.tmp").deleteFile());
 
-    const juce::String upper = juce::File (probeFileName()).getFileNameWithoutExtension().toUpperCase() + ".sofa";
+    const juce::String upper = probeFileName().upToLastOccurrenceOf (".", false, false).toUpperCase() + ".sofa";
     REQUIRE (upper != probeFileName());
     dropDonorInto (folder.dir, upper);
 
