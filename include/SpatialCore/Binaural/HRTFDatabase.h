@@ -36,6 +36,12 @@ public:
         Never allocates; the pointer is valid for the life of the program. */
     static const char* getEmbeddedProfileData (int profileIndex, int& sizeInBytes);
 
+    /** Load the compiled-in copy of profile 1..5 through the same parse body as
+        loadFromMemory. Returns false and leaves the database unloaded when the profile is
+        not embedded or the index is invalid. Allocates and parses (up to tens of MB):
+        never call from the audio thread. */
+    bool loadFromBinaryData (int profileIndex, float targetSampleRate);
+
     /** Get interpolated HRIR pair for a direction (our convention: radians).
         Writes irLength samples to irL and irR buffers (must be pre-allocated). */
     void getInterpolatedHRIR (float azimuthRad, float elevationRad,

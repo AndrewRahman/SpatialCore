@@ -23,6 +23,11 @@ bool HRTFDatabase::loadFromMemory (const void* data, int dataSize, float targetS
     return loadFromBytes (data, dataSize, targetSampleRate);
 }
 
+bool HRTFDatabase::loadFromBinaryData (int /*profileIndex*/, float /*targetSampleRate*/)
+{
+    return false; // RED stub: replaced by the real body in the GREEN commit
+}
+
 bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleRate)
 {
     // Read the LFS-tracked raw .sofa bytes from disk. A checkout that returned
