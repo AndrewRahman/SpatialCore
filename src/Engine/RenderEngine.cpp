@@ -209,7 +209,12 @@ private:
             return true;
         }
 
-        // Get a renderer to write: our own result (taken back above) or a free one.
+        // Get a renderer to write: our own result (taken back above) or a free one. Only the
+        // audio thread frees one (and it must never signal this thread), so poll, backing off
+        // from 2 ms to 50 ms: a host that has stopped calling the audio callback no longer
+        // costs about 500 wakeups a second. wait() also returns at once on notify(), so a newer
+        // request or shutdown is not delayed by the backoff.
+        int pollMs = 2;
         while (heldIdx < 0)
         {
             if (threadShouldExit() || owner.requestSerial_.load (std::memory_order_acquire) != serial)
@@ -226,7 +231,10 @@ private:
             }
 
             if (heldIdx < 0)
-                sleep (2);
+            {
+                wait (pollMs);
+                pollMs = std::min (pollMs * 2, 50);
+            }
         }
 
         if (heldProfile != target)
