@@ -64,7 +64,7 @@ enum class OnSpeakerLaw
 enum class MirrorRule
 {
     Everywhere,           // flat layouts and height layouts at el 20 / 45
-    TieFilteredOnHeight,  // flat layouts; height layouts only off coplanar ties (F5, #22)
+    TieFilteredOnHeight,  // flat layouts; height layouts only off coplanar ties (F5, AndrewRahman/SpatialCore#22)
     FlatOnly,             // flat layouts only
     KnnTieFiltered,       // all layouts, only where the 3rd/4th nearest do not tie
     NotApplicable
@@ -874,7 +874,7 @@ TEST_CASE ("Panning laws: textbook values from the published formulas (D-13, D-1
     checkGains (g, kDbap_Quad_az30_dist05, 1e-5f);
 
     // 3D VBAP on the engine-built 7.1.4 context. The generator proved each pin
-    // lies in a unique minimum-sum triplet, so no coplanar tie (F5, #22) applies.
+    // lies in a unique minimum-sum triplet, so no coplanar tie (F5, AndrewRahman/SpatialCore#22) applies.
     const Rig s714 ({ OutputFormat::Surround7_1_4, "7.1.4" }, true);
     REQUIRE (s714.numSpeakers() == 11);
     for (const auto& pin : kVbap3D_S7_1_4)
