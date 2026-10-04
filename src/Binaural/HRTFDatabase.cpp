@@ -23,9 +23,17 @@ bool HRTFDatabase::loadFromMemory (const void* data, int dataSize, float targetS
     return loadFromBytes (data, dataSize, targetSampleRate);
 }
 
-bool HRTFDatabase::loadFromBinaryData (int /*profileIndex*/, float /*targetSampleRate*/)
+bool HRTFDatabase::loadFromBinaryData (int profileIndex, float targetSampleRate)
 {
-    return false; // RED stub: replaced by the real body in the GREEN commit
+    unload();
+
+    int size = 0;
+    const char* data = getEmbeddedProfileData (profileIndex, size);
+
+    if (data == nullptr || size <= 0)
+        return false;
+
+    return loadFromBytes (data, size, targetSampleRate);
 }
 
 bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleRate)
