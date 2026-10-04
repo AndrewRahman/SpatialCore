@@ -354,6 +354,21 @@ no longer sounds the same as one in front. Ear-level sources in the front half a
 plugin has regression recordings of the Simple path, expect them to differ for sources outside the
 front half at ear level, and say so in your release notes.
 
+**Fades and warm-up are timed in samples, for every consumer.** Two more behaviours changed without any
+opt-in flag, and both only lengthen a transition at small block sizes (they never shorten one):
+
+- The renderer crossfade of a profile swap lasts `max (8 blocks, kMinRendererXfadeSamples = 4096)`
+  samples, fixed when the fade starts. At blocks of 512 samples and above it is the old 8-block fade;
+  at 256 and below it is longer (at least 85 ms at 48 kHz).
+- A convolver's warm-up before a new IR is faded in now also waits until the new slot has convolved at
+  least one IR length of samples. A 558-sample KEMAR IR at 512-sample calls therefore warms for two
+  calls where it used to warm for one, and the convolver crossfade is never shorter than
+  `PartitionedConvolver::kMinCrossfadeSamples` (2048).
+
+Steady-state output is unchanged by these two; a recording that captures a profile swap will differ
+during the transition. Treat the Simple-path change above and these two as one release-note item, and
+bump the minor version when you ship them.
+
 ## What to Keep vs Replace
 
 | Keep from SpatialCore | Replace with Your DSP |

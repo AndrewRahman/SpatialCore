@@ -208,9 +208,12 @@ struct RenderBlockContext
     // objChannelGains stay yours unless you also set engineComputesGains.
     // Only a binaural, non-stereo-variant block is affected; every other format renders as it
     // always did. Defaults false so every existing caller -- including OpenSpatialDelay's
-    // derive-useHRTF-itself flow -- sees byte-for-byte unchanged behaviour (apart from the
-    // sample-based renderer crossfade, kMinRendererXfadeSamples); this is additive, not a
-    // major bump.
+    // derive-useHRTF-itself flow -- sees unchanged behaviour from this flag. It is NOT
+    // byte-for-byte unchanged against the pre-Phase-3 engine: three changes apply to every
+    // consumer regardless of any flag, namely the Simple path's rear/up/down cue bank (BUG-01),
+    // the sample-based renderer crossfade (kMinRendererXfadeSamples) and the convolver warm-up
+    // that now waits for one IR length of samples (see docs/integration-guide.md, "Fades and
+    // warm-up are timed in samples"). The flag itself is additive, not a major bump.
     bool engineSelectsHRTF = false;
 };
 
