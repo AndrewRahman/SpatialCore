@@ -6,13 +6,17 @@
 #include <SpatialCore/Binaural/HRTFProfile.h>
 #include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <future>
 #include <limits>
 #include <vector>
 
 #if JUCE_MAC || JUCE_LINUX
+ #include <fcntl.h>
  #include <sys/stat.h>
+ #include <unistd.h>
 #endif
 
 using namespace spatialcore;
@@ -788,11 +792,13 @@ TEST_CASE ("HRTF resolve: a FIFO or a symlink to a device behind the profile nam
 {
     const TempFolder folder ("special");
     const juce::File probe = folder.dir.getChildFile (kHRTFProfiles[kProbeProfile].fileName);
+    bool isFifo = false;
 
     SECTION ("a FIFO")
     {
         // Opening a FIFO for reading blocks until a writer appears, so an unguarded read hangs here.
         REQUIRE (::mkfifo (probe.getFullPathName().toRawUTF8(), 0600) == 0);
+        isFifo = true;
     }
     SECTION ("a symlink to /dev/zero")
     {
@@ -800,8 +806,30 @@ TEST_CASE ("HRTF resolve: a FIFO or a symlink to a device behind the profile nam
         REQUIRE (juce::File ("/dev/zero").createSymbolicLink (probe, true));
     }
 
-    HRTFDatabase db;
-    const HRTFResolveResult r = resolveHRTFProfile (kProbeProfile, db, 48000.0f, folder.dir);
+    // Run the resolve on a helper thread under a watchdog, so a regression of the guard fails
+    // this test with a message instead of hanging the whole suite. Catch assertions are made
+    // on this thread only.
+    auto pending = std::async (std::launch::async, [&]
+    {
+        HRTFDatabase db;
+        return resolveHRTFProfile (kProbeProfile, db, 48000.0f, folder.dir);
+    });
+
+    const bool finished = pending.wait_for (std::chrono::seconds (20)) == std::future_status::ready;
+
+    if (! finished && isFifo)
+    {
+        // Release the blocked open (a read-write open of a FIFO never blocks) so the helper can
+        // finish and the future can be joined; the test still fails below.
+        const int fd = ::open (probe.getFullPathName().toRawUTF8(), O_RDWR | O_NONBLOCK);
+        if (fd >= 0)
+            ::close (fd);
+    }
+
+    INFO ("the resolve must return promptly; a hang here means the special-file guard regressed");
+    REQUIRE (finished);
+
+    const HRTFResolveResult r = pending.get();
 
     CHECK (r.loaded);
     CHECK (r.source == HRTFProfileSource::Embedded);

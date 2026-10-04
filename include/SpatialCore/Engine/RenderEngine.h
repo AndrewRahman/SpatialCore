@@ -245,9 +245,10 @@ public:
     // running. Once a profile has been requested, prepare() stops the engine's HRTF
     // loader thread and starts a new one, so it BLOCKS until a load already in
     // flight finishes (a built-in file is up to 36 MB, a shared-folder file up to
-    // kMaxSharedHRTFFileBytes, 256 MB; the wait gives up after 15 s). It then re-issues the current request; an unclaimed result from
-    // before the call is discarded. An engine that never had a profile requested
-    // starts no thread and never blocks.
+    // kMaxSharedHRTFFileBytes, 256 MB; the wait gives up after 15 s). It then
+    // re-issues the current request; an unclaimed result from before the call is
+    // discarded. An engine that never had a profile requested starts no thread
+    // and never blocks.
     //--------------------------------------------------------------------------
     void prepare (double sampleRate, int maxBlockSize);
 
@@ -408,10 +409,13 @@ public:
         and shared by the whole machine). Message thread, before or between requests. */
     void setSharedHRTFFolderForTesting (const juce::File& folder);
 
-    /** While enabled, the worker throws std::bad_alloc where a profile load would start, so a
-        test can exercise the failure path that an out-of-memory load takes: the request settles
-        as Failed / HRTFProfileProblem::LoadFailed and the current profile keeps playing. Any
-        thread; the default is off. */
+    /** TEST-ONLY. Not part of the consumer API: a plugin must never call it. While enabled,
+        the worker throws std::bad_alloc where a profile load would start, so a test can
+        exercise the failure path that an out-of-memory load takes: the request settles as
+        Failed / HRTFProfileProblem::LoadFailed and the current profile keeps playing. Any
+        thread; the default is off. It is declared unconditionally, like
+        setSharedHRTFFolderForTesting(), because a compile guard would change the class layout
+        between SpatialCore's own build and a consumer's, which is an ODR hazard. */
     void setLoaderFailureForTesting (bool enabled);
 
 private:
@@ -547,7 +551,7 @@ private:
     std::atomic<uint32_t> loaderStatusWord_ { 0u };
     std::atomic<bool>     loaderBusy_ { false };
     std::atomic<bool>     forceReload_ { false };
-    std::atomic<bool>     loaderThrowForTesting_ { false };   // test hook, see setLoaderFailureForTesting()
+    std::atomic<bool>     loaderThrowForTesting_ { false };   // TEST-ONLY hook, see setLoaderFailureForTesting()
     double preparedSampleRate_ = 0.0;
     int    preparedMaxBlock_ = 0;
     bool   hrtfEverRequested_ = false;               // message thread only
