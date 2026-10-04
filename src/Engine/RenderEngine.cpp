@@ -1,6 +1,7 @@
 #include <SpatialCore/Engine/RenderEngine.h>
 #include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/Core/SpatialMath.h>
+#include <SpatialCore/Core/SimpleBinauralCues.h>
 
 #include <cstdlib>
 #include <cstring>
@@ -74,8 +75,68 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     wetBufL_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
     wetBufR_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
 
+    // BUG-01: Simple-path cue bank for the actual sample rate.
+    designSimpleCueBank (sampleRate);
+    resetSimpleCueState();
+    simplePathRanLastBlock_ = false;
+
     // D-06(a): a fresh prepare forgets every held position.
     resetLastGoodPositions();
+}
+
+//==============================================================================
+// Simple-path cue bank design (BUG-01, SpatialCore#15, D-01). Runs in prepare()
+// only; the audio thread reads the resulting fixed-size coefficient members.
+//==============================================================================
+namespace
+{
+    template <size_t N, typename Biquad>
+    void designCueBranch (const SimpleCueStage (&stages)[N], Biquad (&out)[N], double sampleRate)
+    {
+        for (size_t i = 0; i < N; ++i)
+        {
+            const auto& st = stages[i];
+            // Design frequencies are capped at 0.45 x the sample rate so a low
+            // host rate (e.g. 22.05 kHz) never asks for a shelf above Nyquist.
+            const float freq = static_cast<float> (std::min (static_cast<double> (st.frequencyHz),
+                                                              0.45 * sampleRate));
+            const float gain = juce::Decibels::decibelsToGain (st.gainDb);
+            const auto coeffs = (st.kind == SimpleCueStage::Kind::HighShelf)
+                ? juce::dsp::IIR::Coefficients<float>::makeHighShelf (sampleRate, freq, st.q, gain)
+                : juce::dsp::IIR::Coefficients<float>::makePeakFilter (sampleRate, freq, st.q, gain);
+
+            // JUCE stores [b0, b1, b2, a1, a2] already divided by a0.
+            out[i].b0 = coeffs->coefficients[0];
+            out[i].b1 = coeffs->coefficients[1];
+            out[i].b2 = coeffs->coefficients[2];
+            out[i].a1 = coeffs->coefficients[3];
+            out[i].a2 = coeffs->coefficients[4];
+        }
+    }
+
+    // One transposed-direct-form-II biquad step.
+    template <typename Biquad>
+    inline float cueBiquadStep (const Biquad& c, float (&z)[2], float x)
+    {
+        const float y = c.b0 * x + z[0];
+        z[0] = c.b1 * x - c.a1 * y + z[1];
+        z[1] = c.b2 * x - c.a2 * y;
+        return y;
+    }
+}
+
+void RenderEngine::designSimpleCueBank (double sampleRate)
+{
+    designCueBranch (kSimpleCueRearStages, cueRear_, sampleRate);
+    designCueBranch (kSimpleCueUpStages, cueUp_, sampleRate);
+    designCueBranch (kSimpleCueDownStages, cueDown_, sampleRate);
+}
+
+void RenderEngine::resetSimpleCueState()
+{
+    std::memset (cueStateRear_, 0, sizeof (cueStateRear_));
+    std::memset (cueStateUp_, 0, sizeof (cueStateUp_));
+    std::memset (cueStateDown_, 0, sizeof (cueStateDown_));
 }
 
 //==============================================================================
@@ -384,7 +445,13 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
 }
 
 //==============================================================================
-// renderSimpleBinauralWoodworth — verbatim-transplanted.
+// renderSimpleBinauralWoodworth -- the Woodworth pan gains, preceded by the
+// position-blended rear/up/down cue bank (BUG-01, SpatialCore#15, D-01):
+//     y = x + wRear (R(x) - x) + wUp (U(x) - x) + wDown (D(x) - x)
+// with the weights from the sanitised sources.objects position, interpolated
+// per sample across the block like the pan gains. At ear level in the front
+// half every weight is exactly 0, so y == x and the output is bit-identical
+// to the pre-change engine.
 //==============================================================================
 void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
                                                     const RenderBlockContext& blockCtx,
@@ -392,6 +459,16 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
 {
     const int numSamples = sources.numSamples;
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
+
+    // Block-rate target cue weights from the sanitised positions (finite by
+    // construction: sanitizeSources replaced any non-finite value).
+    SimpleCueWeights targetWeights[MAX_SOURCES];
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        targetWeights[t] = computeSimpleCueWeights (
+            juce::degreesToRadians (sources.objects[t].azimuthDeg),
+            juce::degreesToRadians (sources.objects[t].elevationDeg));
+    }
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -402,6 +479,24 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
         {
             float tapFade = (sources.tapFadeGainPerSample[t] != nullptr) ? sources.tapFadeGainPerSample[t][s] : 0.0f;
             float objMono = (sources.monoBuffers[t] != nullptr) ? sources.monoBuffers[t][s] : 0.0f;
+
+            // Run the cue filters for every slot that has a signal, before the
+            // tapFade early-out, so the state never goes stale while a tap is
+            // faded out. A non-finite input sample reaches the output exactly
+            // as before but is fed to the filters as 0, so one bad sample can
+            // never poison the recursive state for good.
+            if (sources.monoBuffers[t] != nullptr)
+            {
+                const float xf = std::isfinite (objMono) ? objMono : 0.0f;
+                float r = xf;
+                for (int k = 0; k < 3; ++k)
+                    r = cueBiquadStep (cueRear_[k], cueStateRear_[t][k], r);
+
+                const float wRear = prevCueWeights_[t].rear
+                                  + frac * (targetWeights[t].rear - prevCueWeights_[t].rear);
+                objMono = objMono + wRear * (r - objMono);
+            }
+
             if (tapFade <= 0.0f) continue;
 
             // Interpolate between previous and current block gains
@@ -417,7 +512,10 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
 
     // Store current gains as previous for next block
     for (int t = 0; t < MAX_SOURCES; ++t)
+    {
         prevBinauralGains[t] = blockCtx.objGains[t];
+        prevCueWeights_[t] = targetWeights[t];
+    }
 }
 
 //==============================================================================

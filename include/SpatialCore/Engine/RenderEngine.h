@@ -8,6 +8,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <SpatialCore/Core/Types.h>
+#include <SpatialCore/Core/SimpleBinauralCues.h>
 #include <SpatialCore/Engine/TripleBufferIndex.h>
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
@@ -403,6 +404,30 @@ private:
     std::vector<float> sourceAccumStorage_;
     float* sourceAccumBufPtrs[MAX_SOURCES] = {};
     std::vector<float> wetBufL_, wetBufR_;
+
+    // --- Simple-path cue bank (BUG-01, SpatialCore#15, D-01). Three fixed
+    //     filter branches (rear / up / down, tables in SimpleBinauralCues.h)
+    //     designed in prepare() for the actual sample rate and run on the mono
+    //     source before the Woodworth pan gains. Fixed-size members only: no
+    //     allocation, lock or logging on the audio thread (DR-1). Biquads are
+    //     transposed direct form II, state per source slot. Default
+    //     coefficients are identity so an unprepared engine passes the signal
+    //     through. ---
+    struct CueBiquad { float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f; };
+    CueBiquad cueRear_[3];
+    CueBiquad cueUp_[3];
+    CueBiquad cueDown_[2];
+    float cueStateRear_[MAX_SOURCES][3][2] = {};
+    float cueStateUp_[MAX_SOURCES][3][2] = {};
+    float cueStateDown_[MAX_SOURCES][2][2] = {};
+    SimpleCueWeights prevCueWeights_[MAX_SOURCES] = {};
+    // True when the previous block ran renderSimpleBinauralWoodworth. When it
+    // did not, the cue state is stale (minutes-old audio possibly), so the
+    // Simple path zeroes it and starts the weights at their targets on resume.
+    bool simplePathRanLastBlock_ = false;
+
+    void designSimpleCueBank (double sampleRate);
+    void resetSimpleCueState();
 
     // --- Gain-interpolation carry-forward state (per render path) ---
     // THE highest-risk field in this entire engine: dropping this

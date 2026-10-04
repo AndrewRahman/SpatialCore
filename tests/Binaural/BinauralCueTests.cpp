@@ -57,3 +57,30 @@ TEST_CASE ("BUG-01: the HRTF path separates front, back and overhead on every bu
         CHECK (frontVsUp.maxDb >= kMinMaxDb);
     }
 }
+
+// ============================================================================
+// BUG-01, Simple half (D-01, D-03, SpatialCore#15): the Simple (Woodworth) path used to
+// be two broadband gains driven by the lateral angle alone, so a source behind, in front,
+// overhead and underfoot all sounded identical (0.00 dB measured). RenderEngine now runs a
+// position-blended rear/up/down filter bank (Core/SimpleBinauralCues.h) before the pan
+// gains. Same bounds as the HRTF half; the oracle is again the engine impulse response.
+// ============================================================================
+
+TEST_CASE ("BUG-01: the Simple path separates front from back and overhead", "[bug01][simple]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, 512);
+    engine.setOutputFormat (OutputFormat::Binaural);
+
+    const auto front = engineImpulseResponse (engine, BinauralPath::Simple, { 0.0f, 0.0f }, kSampleRate);
+
+    SECTION ("front vs back")
+    {
+        const auto back = engineImpulseResponse (engine, BinauralPath::Simple, { 180.0f, 0.0f }, kSampleRate);
+        REQUIRE (signalIsFinite (back));
+        const auto d = bandDifference (front, back, kSampleRate);
+        WARN ("Simple front vs back: rms " << d.rmsDb << " dB, max " << d.maxDb << " dB");
+        CHECK (d.rmsDb >= kMinRmsDb);
+        CHECK (d.maxDb >= kMinMaxDb);
+    }
+}
