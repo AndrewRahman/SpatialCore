@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
 status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-10-04T15:03:08.144Z"
+stopped_at: Completed 03-08-PLAN.md
+last_updated: "2026-10-04T15:42:41.869Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 03 execution started
-state_head: 1b343f6ebc8eec150d705282b20ebcc92b36f877
+state_head: 85c867fd6547e615e89d30c722ba146d5be444ce
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 22
+  completed_plans: 23
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 ## Current Position
 
 Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
-Plan: 8 of 11
+Plan: 9 of 11
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 03 execution started
 
@@ -98,6 +98,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 03 P05 | 12min | 3 tasks | 8 files |
 | Phase 03 P06 | 36 min | 2 tasks | 4 files |
 | Phase 03 P07 | 31 min | 2 tasks | 1 files |
+| Phase 03 P08 | 39 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: 03-06: crossfade abort and prepare() crossfade reset only run after the first setHRTFProfile call — Keeps legacy escape-hatch consumers byte-for-byte unchanged
 - [Phase 03]: 03-07: [hrtf-switch][churn] added because the prescribed [threads] scenario lets only the last switch reach the audio thread; churn makes all 16 switches complete under a paced render thread
 - [Phase 03]: 03-07: ThreadSanitizer found no Phase 3 race; the Phase 5 TSAN gate must build with optimization (RelWithDebInfo) because an -O0 instrumented SADIE load exceeds the engine's 15 s stopThread
+- [Phase 03]: 03-08: user chose keep-upgrade (2026-10-04); SpatialCore pins libmysofa v1.3.5, 0 of 140 pinned values moved, nothing re-baselined (D-17)
+- [Phase 03]: 03-08: mysofa_export.h include folder taken from mysofa-static BINARY_DIR; OSD still pins its own libmysofa v1.3.2 (follow-up in OSD repo)
 
 ### Pending Todos
 
@@ -171,7 +174,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T15:03:08.092Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-10-04T15:42:41.821Z
+Stopped at: Completed 03-08-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
