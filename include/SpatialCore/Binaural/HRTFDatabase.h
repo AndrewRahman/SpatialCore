@@ -63,15 +63,30 @@ public:
                          float* irL, float* irR,
                          float& delayL, float& delayR) const;
 
-    /** Sanity bounds on a decoded SOFA database, applied to every load path. A file within
-        the shared-folder byte cap can still declare a huge filter length or a very low sample
-        rate (which libmysofa resamples up); BinauralRenderer::setProfile then sizes 24
-        convolvers from the IR length, which is how a file under the cap could ask for
-        gigabytes (T-03-09). A database outside these bounds is rejected like an unreadable
-        file. The largest shipped profile is 558 samples at its native rate and 16020
-        positions; at 192 kHz the longest shipped IR is about 2.4k samples. */
+    /** Sanity bounds on a decoded SOFA database, applied to every load path. The byte cap on a
+        shared file bounds the file, NOT what libmysofa allocates from it: mysofa_resample
+        mallocs ceil (N * target / declaredRate) * R * M floats with no check, so a small file
+        declaring a low (or zero) sample rate would drive an allocation of any size. loadFromBytes
+        therefore parses the file first (no resampling) and refuses it through
+        declaredShapeWithinBounds() before mysofa_open_data runs, then re-checks the decoded
+        result. BinauralRenderer::setProfile sizes 24 convolvers from the IR length, which is the
+        other reason for the cap (T-03-09). A database outside these bounds is rejected like an
+        unreadable file. The largest shipped profile is 558 samples at its native rate and 16020
+        positions; at 192 kHz the longest shipped IR is about 2.4k samples.
+        kMaxDecodedSamples bounds the resampled float count (R * M * newN), 512 MiB of floats;
+        the largest shipped profile at 192 kHz is under 80 million. */
     static constexpr int kMaxIRLength   = 16384;
     static constexpr int kMaxPositions  = 65536;
+    static constexpr double kMaxDecodedSamples = 134217728.0;   // 2^27 floats
+
+    /** True when a file declaring this sample rate and shape, resampled to targetSampleRate,
+        stays within the bounds above: declared and target rate in [8000, 768000] Hz, R == 2,
+        1 <= M <= kMaxPositions, N >= 1, resampled length ceil (N * target / declared) <=
+        kMaxIRLength, and R * M * that length <= kMaxDecodedSamples. Pure arithmetic, no
+        allocation, in double so it cannot wrap. Public so the bound can be tested without
+        building an HDF5 file. */
+    static bool declaredShapeWithinBounds (double declaredRate, unsigned R, unsigned M, unsigned N,
+                                           float targetSampleRate);
 
     int  getIRLength() const { return irLength; }
     int  getNumPositions() const { return numPositions; }

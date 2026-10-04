@@ -7,6 +7,9 @@
 #include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
 #include <cstdint>
+#include <cstring>
+#include <limits>
+#include <vector>
 
 #if JUCE_MAC || JUCE_LINUX
  #include <sys/stat.h>
@@ -616,6 +619,139 @@ TEST_CASE ("HRTF database: a decoded IR longer than the bound is refused and lea
         CHECK_FALSE (db.isLoaded());
         CHECK (db.getIRLength() == 0);
         CHECK (db.getNumPositions() == 0);
+    }
+}
+
+// ============================================================================
+// The file's own declarations are validated BEFORE libmysofa resamples (T-03-09, review WR-01
+// iteration 2). mysofa_resample mallocs ceil (N * target / declaredRate) * R * M floats with no
+// check, so a small file declaring a low sample rate would drive an allocation of any size.
+// The pure bound is tested directly; the end-to-end case patches the DataSamplingRate bytes of
+// a real SOFA file (SADIE II, profile 1, stores it as one little-endian double of 48000).
+// ============================================================================
+TEST_CASE ("HRTF database: the declared shape bound is pure arithmetic and refuses what would over-allocate",
+           "[hrtf-resolve][ir-bound][declared-bound]")
+{
+    using DB = HRTFDatabase;
+
+    // Shipped-like shapes pass: 44.1 kHz source at 48 kHz, and the longest shipped IR at 192 kHz.
+    CHECK (DB::declaredShapeWithinBounds (44100.0, 2, 440, 256, 48000.0f));
+    CHECK (DB::declaredShapeWithinBounds (44100.0, 2, 16020, 558, 192000.0f));
+    CHECK (DB::declaredShapeWithinBounds (48000.0, 2, 1550, 256, 48000.0f));
+
+    // A low or absent declared rate would scale N far past the bound.
+    CHECK_FALSE (DB::declaredShapeWithinBounds (100.0, 2, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (7999.0, 2, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (0.0, 2, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (-48000.0, 2, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (std::numeric_limits<double>::quiet_NaN(), 2, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (std::numeric_limits<double>::infinity(), 2, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (768001.0, 2, 1550, 256, 48000.0f));
+
+    // The target rate is bound too (libmysofa itself refuses below 8 kHz).
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 1550, 256, 0.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 1550, 256, 7999.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 1550, 256, 3000000.0f));
+
+    // Shape: two receivers, 1..kMaxPositions positions, at least one sample.
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 1, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 3, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 0, 1550, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 0, 256, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, HRTFDatabase::kMaxPositions + 1, 1, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 1550, 0, 48000.0f));
+    CHECK     (DB::declaredShapeWithinBounds (48000.0, 2, HRTFDatabase::kMaxPositions, 1, 48000.0f));
+
+    // The IR-length bound, and the 32-bit wrap case: N * target / declared fits 32 bits as a
+    // length but R * M * newN does not stay under the float budget.
+    CHECK     (DB::declaredShapeWithinBounds (48000.0, 2, 1, HRTFDatabase::kMaxIRLength, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 1, HRTFDatabase::kMaxIRLength + 1, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, HRTFDatabase::kMaxPositions,
+                                                HRTFDatabase::kMaxIRLength, 48000.0f));
+    CHECK_FALSE (DB::declaredShapeWithinBounds (48000.0, 2, 4000000000u, 4000000000u, 48000.0f));
+}
+
+TEST_CASE ("HRTF database: a file that declares a low sample rate is refused before libmysofa resamples it",
+           "[hrtf-resolve][ir-bound][declared-bound]")
+{
+    juce::MemoryBlock bytes;
+    REQUIRE (getSofaFile (testProfileFile (1)).loadFileAsData (bytes));   // SADIE II KU100
+
+    // Locate the one little-endian double 48000.0 that is the file's DataSamplingRate.
+    const double nativeRate = 48000.0;
+    unsigned char needle[sizeof (double)];
+    std::memcpy (needle, &nativeRate, sizeof (double));
+
+    const auto* base = static_cast<const unsigned char*> (bytes.getData());
+    std::vector<size_t> hits;
+    for (size_t i = 0; i + sizeof (double) <= bytes.getSize(); ++i)
+        if (std::memcmp (base + i, needle, sizeof (double)) == 0)
+            hits.push_back (i);
+    REQUIRE (hits.size() == 1);   // the fixture assumption; a re-encoded file fails here, not silently
+
+    // The double sits in a zlib stream's single stored block, so the 4 bytes after it are the
+    // big-endian Adler-32 of the data and libmysofa's gunzip rejects a patch that leaves it stale.
+    auto adler32 = [] (const unsigned char* p, size_t n)
+    {
+        std::uint32_t a = 1, b = 0;
+        for (size_t i = 0; i < n; ++i) { a = (a + p[i]) % 65521u; b = (b + a) % 65521u; }
+        return (b << 16) | a;
+    };
+    auto storeBE32 = [] (unsigned char* p, std::uint32_t v)
+    {
+        p[0] = static_cast<unsigned char> (v >> 24);  p[1] = static_cast<unsigned char> (v >> 16);
+        p[2] = static_cast<unsigned char> (v >> 8);   p[3] = static_cast<unsigned char> (v);
+    };
+
+    {
+        unsigned char expected[4];
+        storeBE32 (expected, adler32 (needle, sizeof (double)));
+        REQUIRE (hits[0] + sizeof (double) + 4 <= bytes.getSize());
+        REQUIRE (std::memcmp (base + hits[0] + sizeof (double), expected, 4) == 0);   // fixture layout
+    }
+
+    auto withRate = [&] (double rate)
+    {
+        juce::MemoryBlock copy (bytes);
+        auto* out = static_cast<unsigned char*> (copy.getData()) + hits[0];
+        std::memcpy (out, &rate, sizeof (double));
+        storeBE32 (out + sizeof (double), adler32 (out, sizeof (double)));
+        return copy;
+    };
+
+    HRTFDatabase db;
+
+    // Control: the unpatched bytes and a patch to a legal rate both load, so the patch lands
+    // where the file's rate is read and a refusal below is the bound, not a broken file.
+    REQUIRE (db.loadFromMemory (bytes.getData(), static_cast<int> (bytes.getSize()), 48000.0f));
+    const int nativeLength = db.getIRLength();
+    REQUIRE (nativeLength > 1);
+
+    {
+        const juce::MemoryBlock halfRate = withRate (96000.0);   // declares twice the rate: IR halves
+        REQUIRE (db.loadFromMemory (halfRate.getData(), static_cast<int> (halfRate.getSize()), 48000.0f));
+        CHECK (db.getIRLength() >= nativeLength / 2 - 1);
+        CHECK (db.getIRLength() <= nativeLength / 2 + 1);
+    }
+
+    const double badRates[] = { 100.0, 1.0, 0.0, -48000.0, 7999.0, 768001.0,
+                                std::numeric_limits<double>::quiet_NaN(),
+                                std::numeric_limits<double>::infinity() };
+
+    for (const double rate : badRates)
+    {
+        INFO ("declared rate " << rate);
+        const juce::MemoryBlock patched = withRate (rate);
+
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        CHECK_FALSE (db.loadFromMemory (patched.getData(), static_cast<int> (patched.getSize()), 48000.0f));
+        CHECK_FALSE (db.isLoaded());
+        CHECK (db.getIRLength() == 0);
+        CHECK (db.getNumPositions() == 0);
+
+        // The refusal is the pre-parse bound, not a multi-hundred-megabyte resample that happens
+        // to be refused afterwards; parsing the 37 MB file takes well under this.
+        CHECK (juce::Time::getMillisecondCounterHiRes() - start < 10000.0);
     }
 }
 

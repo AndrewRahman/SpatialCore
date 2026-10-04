@@ -5,6 +5,8 @@ extern "C" {
 #include "mysofa.h"
 }
 
+#include <cmath>
+#include <cstdint>
 #include <limits>
 
 #if ! JUCE_WINDOWS
@@ -98,12 +100,75 @@ bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleR
     return loadFromBytes (fileBytes.getData(), static_cast<int> (fileBytes.getSize()), targetSampleRate);
 }
 
+bool HRTFDatabase::declaredShapeWithinBounds (double declaredRate, unsigned R, unsigned M, unsigned N,
+                                              float targetSampleRate)
+{
+    // The range test is written so a NaN fails it (every comparison with NaN is false).
+    constexpr double kMinRate = 8000.0, kMaxRate = 768000.0;
+
+    if (! (declaredRate >= kMinRate && declaredRate <= kMaxRate)
+        || ! (static_cast<double> (targetSampleRate) >= kMinRate
+              && static_cast<double> (targetSampleRate) <= kMaxRate))
+        return false;
+
+    // Receivers: a binaural HRTF has exactly two (left, right ear).
+    if (R != 2 || M < 1 || M > static_cast<unsigned> (kMaxPositions) || N < 1)
+        return false;
+
+    // The length libmysofa will resample to: ceil (N * target / declared), the same formula as
+    // mysofa_resample, evaluated in double so it cannot wrap the way its 32-bit product can.
+    const double newN = std::ceil (static_cast<double> (N) * static_cast<double> (targetSampleRate)
+                                   / declaredRate);
+
+    if (! (newN >= 1.0 && newN <= static_cast<double> (kMaxIRLength)))
+        return false;
+
+    // The allocation libmysofa makes is newN * R * M floats; bound it directly.
+    return newN * static_cast<double> (R) * static_cast<double> (M)
+               <= static_cast<double> (kMaxDecodedSamples);
+}
+
 bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSampleRate)
 {
     unload();
 
     int filterLength = 0;
     int err = 0;
+
+    // T-03-09 / WR-01: validate what the file itself declares BEFORE mysofa_open_data. Inside
+    // it, mysofa_resample mallocs newN * R * M floats with newN = ceil (N * target / declaredRate)
+    // and no check on any of them, so a small file declaring a low (or zero) sample rate would
+    // drive an allocation of any size, or wrap the 32-bit product and overflow the heap. The
+    // byte cap on a shared file bounds the file, not that allocation. mysofa_load_data only
+    // parses (the file's own dimensions, which the bytes bound); it does no resampling.
+    {
+        MYSOFA_HRTF* declared = mysofa_load_data (static_cast<const char*> (data),
+                                                  static_cast<size_t> (dataSize), &err);
+
+        if (declared == nullptr)
+        {
+            DBG ("HRTFDatabase: Failed to parse SOFA data, error code: " + juce::String (err));
+            loaded = false;
+            return false;
+        }
+
+        const bool withinBounds =
+               declared->DataSamplingRate.elements == 1
+            && declared->DataSamplingRate.values != nullptr
+            && static_cast<std::uint64_t> (declared->DataIR.elements)
+                   == static_cast<std::uint64_t> (declared->R) * declared->M * declared->N
+            && declaredShapeWithinBounds (static_cast<double> (declared->DataSamplingRate.values[0]),
+                                          declared->R, declared->M, declared->N, targetSampleRate);
+
+        mysofa_free (declared);
+
+        if (! withinBounds)
+        {
+            DBG ("HRTFDatabase: SOFA file declares a sample rate or shape outside the supported bounds");
+            loaded = false;
+            return false;
+        }
+    }
 
     easyHandle = mysofa_open_data (static_cast<const char*> (data),
                                    static_cast<long> (dataSize),
@@ -119,10 +184,8 @@ bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSa
         return false;
     }
 
-    // T-03-09: bound the decoded size before anything sizes buffers from it. The byte cap on
-    // a shared file does not bound the filter length (libmysofa has no ceiling on N and
-    // scales it by targetSampleRate / fileSampleRate), so an out-of-range database is
-    // refused here, which the resolver reports as an unreadable file.
+    // Defence in depth: the pre-parse bound above is the one that protects the allocation; this
+    // re-checks what libmysofa actually produced before anything sizes buffers from it.
     if (filterLength < 1 || filterLength > kMaxIRLength
         || easyHandle->hrtf == nullptr
         || easyHandle->hrtf->M < 1 || easyHandle->hrtf->M > static_cast<unsigned> (kMaxPositions))
