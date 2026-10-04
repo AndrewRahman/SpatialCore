@@ -203,8 +203,12 @@ target_link_libraries(SpatialCore
 # library's own build directory and is not published on its include path. Ask the target
 # where it was built, so this also works when a consumer supplies its own mysofa-static.
 # Harmless on v1.3.2 (the same generated header exists there).
+# An IMPORTED mysofa-static has no BINARY_DIR (the property reads <var>-NOTFOUND), so add the
+# path only when it is real; otherwise the compile fails on the missing header, not on a bogus path.
 get_target_property(_sc_mysofa_bindir mysofa-static BINARY_DIR)
-target_include_directories(SpatialCore PRIVATE "${_sc_mysofa_bindir}")
+if(_sc_mysofa_bindir)
+    target_include_directories(SpatialCore PRIVATE "${_sc_mysofa_bindir}")
+endif()
 
 # 1 when all five profiles are compiled in, 0 when only KEMAR is (SPATIALCORE_EMBED_ALL_HRTF).
 # PUBLIC so consumers and tests can tell which build they linked.

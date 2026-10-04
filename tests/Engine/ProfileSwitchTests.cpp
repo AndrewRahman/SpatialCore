@@ -104,8 +104,10 @@ TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-fre
 namespace
 {
     /** SPATIALCORE_TEST_TIMEOUT_SCALE: an integer of at least 1 (default 1; anything else counts
-        as 1). It stretches watchdogs, idle waits and polls only. The 50 ms call bound, the 4.0
-        sample bound and the 15 s shutdown bound are never scaled. */
+        as 1). It stretches watchdogs, idle waits and polls, and the 50 ms bound on a
+        setHRTFProfile() call (a wall-clock check that can flake on a loaded machine; at the default
+        scale of 1 it is exactly 50 ms, and a load takes far longer than any sensible scale of it).
+        The 4.0 sample bound and the 15 s shutdown bound are never scaled. */
     int timeoutScale()
     {
         const char* text = std::getenv ("SPATIALCORE_TEST_TIMEOUT_SCALE");
@@ -845,7 +847,7 @@ TEST_CASE ("Profile switch: switching while another thread renders never deadloc
     CHECK (result.nonFinite == 0);
     CHECK (result.largestSample < 4.0f);
     CHECK (result.blocksRendered > 0);
-    CHECK (result.slowestCallMs < 50.0);
+    CHECK (result.slowestCallMs < 50.0 * timeoutScale());
 }
 
 TEST_CASE ("Profile switch: every switch completes while a paced render thread runs, claims and frees included",
@@ -948,7 +950,7 @@ TEST_CASE ("Profile switch: every switch completes while a paced render thread r
     CHECK (result.switchesDone == result.switchesWanted);
     CHECK (result.nonFinite == 0);
     CHECK (result.largestSample < 4.0f);
-    CHECK (result.slowestCallMs < 50.0);
+    CHECK (result.slowestCallMs < 50.0 * timeoutScale());
     for (int profile = 1; profile <= 5; ++profile)
         if (std::find (kEmbeddedProfiles.begin(), kEmbeddedProfiles.end(), profile) != kEmbeddedProfiles.end())
         {

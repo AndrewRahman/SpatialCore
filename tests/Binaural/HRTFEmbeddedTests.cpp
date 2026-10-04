@@ -193,6 +193,11 @@ namespace
 #else
         kAlwaysEmbeddedHRTFProfile;
 #endif
+    // The probe must have a built-in copy to fall back to in either embedding mode, so the
+    // fallback assertions below always run (an `if (profileIsEmbedded (...))` around them could
+    // silently assert nothing). The OFF-build "no built-in copy" outcome is asserted by the
+    // [kemar-only] case.
+    static_assert (profileIsEmbedded (kProbeProfile), "the probe profile must be embedded in every build");
 
     /** The profile whose file stands in as the "custom" content dropped into the folder. */
     constexpr int kDonorProfile = 2;   // CIPIC, IR 218
@@ -429,13 +434,10 @@ TEST_CASE ("HRTF resolve: an unusable same-name shared file falls back to the em
     HRTFDatabase db;
     const HRTFResolveResult r = resolveHRTFProfile (kProbeProfile, db, 48000.0f, folder.dir, cap);
 
-    if (profileIsEmbedded (kProbeProfile))
-    {
-        CHECK (r.loaded);
-        CHECK (r.source == HRTFProfileSource::Embedded);
-        CHECK (r.problem == HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn);
-        CHECK (db.getIRLength() == kExpectedIRLength[kProbeProfile]);
-    }
+    CHECK (r.loaded);
+    CHECK (r.source == HRTFProfileSource::Embedded);
+    CHECK (r.problem == HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn);
+    CHECK (db.getIRLength() == kExpectedIRLength[kProbeProfile]);
 }
 
 TEST_CASE ("HRTF resolve: the folder is checked on every call, nothing is cached (D-11)",
@@ -665,11 +667,8 @@ TEST_CASE ("HRTF resolve: a FIFO or a symlink to a device behind the profile nam
     HRTFDatabase db;
     const HRTFResolveResult r = resolveHRTFProfile (kProbeProfile, db, 48000.0f, folder.dir);
 
-    if (profileIsEmbedded (kProbeProfile))
-    {
-        CHECK (r.loaded);
-        CHECK (r.source == HRTFProfileSource::Embedded);
-        CHECK (r.problem == HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn);
-    }
+    CHECK (r.loaded);
+    CHECK (r.source == HRTFProfileSource::Embedded);
+    CHECK (r.problem == HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn);
 }
 #endif
