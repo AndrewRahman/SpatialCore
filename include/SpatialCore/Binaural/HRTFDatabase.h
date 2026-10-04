@@ -71,10 +71,11 @@ public:
         declaredShapeWithinBounds() before mysofa_open_data runs, then re-checks the decoded
         result. BinauralRenderer::setProfile sizes 24 convolvers from the IR length, which is the
         other reason for the cap (T-03-09). A database outside these bounds is rejected like an
-        unreadable file. The largest shipped profile is 558 samples at its native rate and 16020
-        positions; at 192 kHz the longest shipped IR is about 2.4k samples.
-        kMaxDecodedSamples bounds the resampled float count (R * M * newN), 512 MiB of floats;
-        the largest shipped profile at 192 kHz is under 80 million. */
+        unreadable file. KEMAR (profile 5) has the longest shipped IR: 512 samples at its native
+        44.1 kHz, 558 at 48 kHz and about 2.2k at 192 kHz. Bernschuetz has the most positions,
+        16020. kMaxDecodedSamples bounds the resampled float count (R * M * newN), 512 MiB of
+        floats; the largest shipped decoded size at 192 kHz is about 18 million (SADIE II, 8802
+        positions, 1024 samples), and Bernschuetz is about 16 million. */
     static constexpr int kMaxIRLength   = 16384;
     static constexpr int kMaxPositions  = 65536;
     static constexpr double kMaxDecodedSamples = 134217728.0;   // 2^27 floats

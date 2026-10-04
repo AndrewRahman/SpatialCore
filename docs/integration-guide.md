@@ -336,10 +336,15 @@ to the built-in copy silently. A file that is there but unusable (empty, half-co
 not a SOFA file, larger than 256 MB, or outside the supported shape) falls back to the built-in copy
 and the status says "unreadable, used built-in". The supported shape is: a sample rate declared
 between 8 kHz and 768 kHz, two receivers (left and right ear), at most 65536 measurement positions,
-and an impulse response that, resampled to the host rate, is at most 16384 samples long. The shipped
-profiles are far inside these limits (the longest is 558 samples). A custom file outside them gets the
-same "unreadable, used built-in" status; there is no separate message for the reason. Until a dedicated custom-file feature exists, this is also how to try your
-own HRTF: name your file like the profile it should replace.
+and an impulse response that, resampled to the host rate, is at most 16384 samples long. These are
+not independent: positions x resampled length x 2 may not exceed 134 million floats, so 65536
+positions allow an impulse response of at most 1024 samples at the host rate, and a 16384-sample
+impulse response allows at most 4096 positions. The shipped profiles are far inside these limits (the
+longest impulse response is KEMAR's, 512 samples at its native 44.1 kHz, 558 at 48 kHz and about 2.2k
+at 192 kHz; the largest decoded size is about 18 million floats at 192 kHz). A custom file outside them
+gets the same "unreadable, used built-in" status; there is no separate message for the reason. Until a
+dedicated custom-file feature exists, this is also how to try your own HRTF: name your file like the
+profile it should replace.
 
 **Git LFS.** The `.sofa` files in `HRTF/` are Git LFS objects. A checkout without them cannot build:
 CMake stops at configure time with "is not a real SOFA/HDF5 file (a Git LFS pointer?). Run: git lfs
