@@ -381,7 +381,8 @@ public:
     //     (see prepare() above); nothing here is guarded by a lock, by design, so the
     //     message thread is never made to wait on a join.
     //   - getHRTFProfileStatus(): any thread, lock-free.
-    //   - The SOFA load (up to 36 MB) runs on the worker only. setHRTFProfile()
+    //   - The SOFA load (up to 36 MB built in, up to 256 MB
+    //     from the shared folder) runs on the worker only. setHRTFProfile()
     //     returns at once. The worker is started by the first request after
     //     prepare(); an engine that never gets a request starts no thread.
     //   - Profile numbering is HRTFProfile.h's: 0 Simple, 1..5 the SOFA profiles.
