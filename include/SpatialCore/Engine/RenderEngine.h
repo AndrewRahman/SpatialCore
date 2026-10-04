@@ -61,6 +61,13 @@ namespace spatialcore
 // precomputes these fields sees unchanged behaviour. Stereo-variant gains
 // (objGainL/objGainR) remain consumer-side always — that math is not a
 // SpatializationAlgorithm (D-06).
+//
+// Simple (Woodworth) binaural path (BUG-01, SpatialCore#15): the engine applies
+// a position-blended rear/up/down cue bank (SimpleBinauralCues.h) to each mono
+// source before the Woodworth pan gains, so sources behind, above and below the
+// listener no longer sound identical to sources in front. The front half at
+// ear level is bit-identical to the pre-change output, and there is no switch
+// back to the flat sound (D-02).
 //==============================================================================
 
 //------------------------------------------------------------------------------
@@ -316,6 +323,10 @@ private:
     // shape where these were private OpenSpatialDelayProcessor members.
     //--------------------------------------------------------------------------
     void renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh);
+    // Simple binaural path: applies the position-blended rear/up/down cue bank
+    // from SimpleBinauralCues.h before the Woodworth pan gains (BUG-01); the
+    // front half at ear level is unchanged. Cue filter state is engine-owned
+    // and zeroed when this path resumes after another one.
     void renderSimpleBinauralWoodworth (const RenderSources& sources, const RenderBlockContext& blockCtx,
                                          float* outL, float* outR, int numOutCh);
     void renderStereoVariant (const RenderSources& sources, const RenderBlockContext& blockCtx,

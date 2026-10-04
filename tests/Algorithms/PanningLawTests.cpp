@@ -737,9 +737,15 @@ TEST_CASE ("Panning laws: 360-degree continuity where the algorithm is continuou
 TEST_CASE ("DirectBinaural: property checks at the horizon (Discretion)", "[panning-law][directbinaural]")
 {
     // Property checks only: left/right mirror, ILD and ITD sign, monotonic
-    // magnitude versus |azimuth| at the horizon, and the distance gain law. No
-    // elevation or front/back assertion -- BUG-01 changes those in Phase 3
-    // (RESEARCH Pitfall 6).
+    // magnitude versus |azimuth| at the horizon, and the distance gain law.
+    //
+    // The algorithm is deliberately left/right-only (it works from the lateral
+    // angle). Elevation and front/back cues for the Simple path live in
+    // RenderEngine's cue bank, because they need filter state and
+    // SpatializationAlgorithm is frozen (DR-7). They are asserted by the
+    // [bug01] cases in tests/Binaural/BinauralCueTests.cpp (SpatialCore#15,
+    // D-03); the "elevation and front/back are engine-side" section below pins
+    // the division of labour.
     DirectBinauralAlgorithm algo;
     const BinauralContext bctx { 1, 48000.0, kDefaultBinauralProfiles };
 
@@ -793,6 +799,26 @@ TEST_CASE ("DirectBinaural: property checks at the horizon (Discretion)", "[pann
             CHECK (cur.rightGain <= prev.rightGain);
             prev = cur;
         }
+    }
+
+    SECTION ("elevation and front/back are engine-side")
+    {
+        // Front, behind and overhead get the same gains from the algorithm. The cue
+        // that tells them apart is RenderEngine's (BUG-01); if a future change moved
+        // it into the algorithm this section would fail and force that decision.
+        auto gainsAt = [&] (float azDeg, float elDeg)
+        {
+            return algo.computeBinauralGains ({ juce::degreesToRadians (azDeg), juce::degreesToRadians (elDeg), 0.5f }, bctx);
+        };
+
+        const BinauralGains front = gainsAt (0.0f, 0.0f);
+        const BinauralGains back = gainsAt (180.0f, 0.0f);
+        const BinauralGains up = gainsAt (0.0f, 90.0f);
+
+        CHECK_THAT (back.leftGain,  WithinAbs (front.leftGain,  1e-6f));
+        CHECK_THAT (back.rightGain, WithinAbs (front.rightGain, 1e-6f));
+        CHECK_THAT (up.leftGain,    WithinAbs (front.leftGain,  1e-6f));
+        CHECK_THAT (up.rightGain,   WithinAbs (front.rightGain, 1e-6f));
     }
 
     SECTION ("distance gain law at azimuth 0")
