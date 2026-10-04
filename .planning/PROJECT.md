@@ -94,12 +94,16 @@ be planned here.
 |----|----------------------|-----------|
 | REQ-osd-consume-spatialcore-submodule | Refactor OpenSpatialDelay to consume SpatialCore as a submodule instead of inline framework code | Yes |
 | OSD Phase 2 follow-ups | Release notes for the audible Phase 2 changes (wider VBIP, EAR below-horizon panning, corrected 4OA-6OA levels, non-finite positions held or silenced); four OSD docs still describing VBIP as squared gains; delete OSD's local `evalSH` / VBAP copies at migration. List in `02-09-SUMMARY.md` | Yes — ships with the migration |
-| REQ-osd-custom-sofa-import | Let users load their own HRTF files | No — OSD v1.0 backlog |
+| OSD Phase 3 follow-ups | (1) An OSD release note for the audible Phase 3 changes: Simple (profile 0) now has rear head-shadow and up/down pinna cues, so sources behind, above or below sound different (ear-level front half unchanged, D-02), and a profile switch now fades for at least 4096 samples. (2) At migration delete OSD's HRTF loading glue (load / swap / timer / `useHRTF` derivation) in favour of `RenderEngine::setHRTFProfile` with `engineSelectsHRTF` + `engineComputesGains`. (3) At migration delete OSD's own HRTF BinaryData (`HRTFData`). (4) Check OSD's own delay line and pitch shifter at 32-128-sample blocks (the rest of OSD#234; SpatialCore's convolver half is done, BUG-02). (5) Note the duplicate-embedding size (about 2 x 58 MB) while both OSD and SpatialCore embed the profiles. Also bump OSD's own libmysofa pin from v1.3.2 to v1.3.5: OSD's pin makes SpatialCore's guard skip its fetch, so OSD otherwise ships the old parser. List in `03-10-SUMMARY.md` | Yes — ships with the migration |
+| OSP Phase 3 follow-up | After OpenSpatialPanner bumps its SpatialCore submodule, invert (not delete) the `[binaural][sc12]` assertions in its `Tests/DevFormatTests.cpp`: they pin the old front/back and elevation defect that BUG-01 fixed | No — v2 |
+| REQ-osd-custom-sofa-import | Let users load their own HRTF files. Interim path (D-08): name a file like a built-in profile and place it in the system shared HRTF folder (`/Library/Application Support/Spatial Media Lab/HRTF/`); it overrides that built-in at the next switch | No — OSD v1.0 backlog |
 | REQ-osd-adm-osc-settings-ui | In-plugin UI for OSC port configuration | No — OSD v1.0 backlog |
 | REQ-osd-aax-format | Pro Tools AAX format support | No — OSD v1.0 backlog |
 | REQ-osd-code-signing | macOS notarization for distribution | No — OSD v1.0 backlog |
 | REQ-osd-github-migration | Move OpenSpatialDelay to the Spatial-Media-Lab org | No — v3 |
 | REQ-osd-repoint-submodule-to-org | Point the OSD submodule at the public org repo | No — v3 |
+
+Rows marked "ships with the migration" (Phase 2 and Phase 3) must reach OSD's release note or its migration commit; nothing in SpatialCore replaces that release note.
 
 ## Context
 

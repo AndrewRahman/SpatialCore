@@ -286,9 +286,9 @@ Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one wi
 New category. These are real bugs in code SpatialCore now owns.
 
 - [ ] **BUG-01**: DirectBinaural produces no elevation cue and cannot distinguish front from rear
-  - `src/Algorithms/DirectBinauralAlgorithm.cpp:26` — `lateral = sinAz * cosEl` collapses to 0 at
-    elevation ±90° *and* at azimuth 0°/180°. Both the Woodworth ITD (line 30) and the ILD
-    (line 34) derive from this single value, so neither carries elevation.
+  - `src/Algorithms/DirectBinauralAlgorithm.cpp:34` — `lateral = sinAz * cosEl` collapses to 0 at
+    elevation ±90° *and* at azimuth 0°/180°. Both the Woodworth ITD (line 37) and the ILD
+    (line 42) derive from this single value, so neither carries elevation.
 
   - Tracked by **SpatialCore#15**. The issue states this code was extracted verbatim, so
     **OpenSpatialDelay carries the identical defect** — fixing it here fixes both.

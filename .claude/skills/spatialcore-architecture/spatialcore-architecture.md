@@ -41,7 +41,7 @@ SpatialCore is a C++ static library extracted from OpenSpatialDelay. It contains
 |-----------|-------------|
 | 8 Spatialization Algorithms | ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics (HOA), DirectBinaural (Woodworth) |
 | HRTF Binaural Rendering | HRTFDatabase, PartitionedConvolver, BinauralRenderer (12 per-source convolvers) |
-| HRTF Profiles | 5 SOFA HRTF profiles ship; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles |
+| HRTF Profiles | 5 SOFA HRTF profiles ship embedded as BinaryData (`SpatialCoreHRTFData`), overridable by a same-named file in the system shared folder; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles; one engine call, `setHRTFProfile`, switches |
 | 23 Output Formats | 1 Binaural + 1 Stereo (5 modes) + 15 Surround (Quad–9.1.6) + 6 Ambisonics (FOA–6OA) |
 | 15 Speaker Layouts | ITU-R BS.775/BS.2051, SMPTE channel ordering |
 | Bus Negotiation | Automatic format detection from DAW track I/O |
@@ -88,7 +88,7 @@ Every SML plugin dispatches to one of these based on output format:
 | Path | Output | Method |
 |------|--------|--------|
 | `renderDirectBinauralHRTF` | 2ch (HRTF profiles 1–5) | Per-source HRTF convolution |
-| `renderSimpleBinauralWoodworth` | 2ch (profile 0) | Woodworth ITD+ILD, no convolution |
+| `renderSimpleBinauralWoodworth` | 2ch (profile 0) | Woodworth ITD+ILD, no convolution, behind a position-blended rear / up / down cue bank (`Core/SimpleBinauralCues.h`) |
 | `renderStereoVariant` | 2ch (stereo mode) | 5 mic simulation sub-modes |
 | `renderAmbisonicsOutput` | 4–49ch | SH encoding per object |
 | `renderDiscreteSurround` | 4–16ch | Algorithm speaker gains + LFE |
@@ -134,5 +134,5 @@ SpatialCore uses semantic versioning. Plugins pin to a version via git submodule
 - `processBlock` is **lock-free** — no malloc, locks, or logging
 - Algorithms are **stateless** — all state in context structs
 - Layout changes use **double-buffered atomic swap** for thread safety
-- HRTF profile loading is **background threaded** (60Hz timer)
+- HRTF profile loading is an **engine-owned background loader** via `RenderEngine::setHRTFProfile`, status via `getHRTFProfileStatus` (the audio thread only claims the loaded renderer from an atomic mailbox and crossfades)
 - Position updates are **smoothed** (LinearSmoothedValue, 10ms ramp)

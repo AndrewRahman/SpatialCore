@@ -140,7 +140,7 @@ where r = head radius (0.0875–0.0920m per profile), c = 343 m/s.
 ildDb = ildScale * 8 * |lateral|
 farEarGain = dBtoLinear(-ildDb)
 ```
-Broadband — no spectral coloring from pinnae. No elevation cues.
+The Woodworth gains themselves are broadband. Ahead of them the engine applies a position-blended cue bank (`Core/SimpleBinauralCues.h`, BUG-01): three fixed filter branches — a rear head-shadow cut (high shelves at 2.5 kHz and 10 kHz plus a small 1.2 kHz lift), an up pinna peak (about +10 dB at 8 kHz with a 3 kHz dip and a high shelf) and a down dip (about -5.5 dB at 5.5 kHz) — with values taken from the measured median-plane differences of the five shipped profiles. `computeSimpleCueWeights()` blends them by position (rear weight `max(0, -cos az cos el)`); the filter state lives in `RenderEngine`. The ear-level front half is bit-identical to the old behaviour, so only sources behind, above or below sound different.
 
 **Distance attenuation:** `distGain = 1 / max(0.1, distance * 4 + 0.25)`
 
@@ -175,7 +175,7 @@ For each sample:
     3. Apply to mono signal → accumulate into L/R
 ```
 
-Per-sample computation, no convolution. Lowest CPU. No spectral coloring → poor elevation cues.
+Per-sample computation, no convolution. Lowest CPU. Each sample first passes the position-blended rear / up / down cue bank (see 1.8), then the Woodworth gains and delays, so front, back, overhead and underfoot are told apart (measured third-octave difference against front: back 4.5 dB RMS, overhead 2.6 dB RMS). It is still a cue bank, not an HRTF: use the SOFA profiles for accurate elevation.
 
 ### Path C: Discrete Surround (>2ch output)
 
@@ -219,9 +219,9 @@ Per block:
 
 Uses `juce::dsp::FFT` for transforms. Work buffers: `inputAccum`, `fftWorkBuf`, `overlapBuf`, `irFreqDomain`.
 
-### 3.2 SOFA Database Loading (libmysofa v1.3.2)
+### 3.2 SOFA Database Loading (libmysofa v1.3.5)
 
-- `mysofa_open_data()` for in-memory SOFA parsing (binary resource embedded)
+- `mysofa_open_data()` for in-memory SOFA parsing (`HRTFDatabase::loadFromBinaryData` reads the profiles embedded in `SpatialCoreHRTFData`; a same-named file in the system shared folder overrides a built-in, resolved by `HRTFProfileResolver`)
 - Automatic resampling to session sample rate
 - `mysofa_getfilter_float()` for nearest-neighbor HRIR lookup via internal KD-tree
 - `mysofa_loudness()` normalizes frontal HRIR to sumOfSquares=2.0 (off-axis relative energy preserved)
@@ -256,12 +256,14 @@ SH_IR[c][n] = (2l+1)/M * Σ_m { Y_c^SN3D(dir_m) * HRIR_m[n] }
 
 | Index | Name | Source | License | Character |
 |-------|------|--------|---------|-----------|
-| 0 | Simple (Low CPU) | Woodworth model | N/A | No spectral coloring |
-| 1 | Studio Reference | MIT KEMAR Large Pinna | MIT-style | Neutral, clinical |
-| 2 | Immersive | SADIE II D2 KU100 | Apache 2.0 | Warm, enveloping |
-| 3 | Natural | CIPIC Subject003 | Public Domain | Organic, natural |
-| 4 | Precise | HUTUBS PP2 | CC BY 4.0 | Detailed, analytical |
-| 5 | Spatial | Bernschuetz KU100 2° | CC BY 3.0 | Wide, spacious |
+| 0 | Simple (Low CPU) | Woodworth model plus rear / up / down cue bank | N/A | Position-blended pinna cues, no HRTF |
+| 1 | Immersive | SADIE II D2 KU100 | Apache 2.0 | Warm, enveloping |
+| 2 | Natural | CIPIC Subject003 | Public Domain | Organic, natural |
+| 3 | Precise | HUTUBS PP2 | CC BY 4.0 | Detailed, analytical |
+| 4 | Spatial | Bernschuetz KU100 2° | CC BY 3.0 | Wide, spacious |
+| 5 | Studio Reference | MIT KEMAR Large Pinna | MIT-style | Neutral, clinical (always embedded) |
+
+The numbering is `kHRTFProfiles` in `Binaural/HRTFProfile.h`; consumers persist it, so it is never renumbered. Switch with one call, `RenderEngine::setHRTFProfile (index)` (message thread, background load, crossfade, status via `getHRTFProfileStatus()`); set `engineSelectsHRTF` and `engineComputesGains` so the engine chooses the path itself.
 
 ---
 
@@ -526,8 +528,8 @@ Speaker layout changes (output format switch) use atomic double-buffer:
 - Framework: JUCE 9.0.0 (git submodule at `JUCE/`)
 - Language: C++17
 - Build: CMake 3.22+
-- Dependencies: libmysofa v1.3.2 (FetchContent), zlib (system macOS, vcpkg Windows)
-- HRTF data: 5 SOFA files in `HRTF/` loaded at runtime via `HRTFDatabase::loadFromFile` (Git LFS tracked)
+- Dependencies: libmysofa v1.3.5 (FetchContent), zlib (system macOS, vcpkg Windows)
+- HRTF data: 5 SOFA files in `HRTF/` (Git LFS tracked), embedded as BinaryData `SpatialCoreHRTFData` (`SPATIALCORE_EMBED_ALL_HRTF`, default ON); a same-named file in `/Library/Application Support/Spatial Media Lab/HRTF/` (macOS) or `%ProgramData%\Spatial Media Lab\HRTF\` (Windows) overrides a built-in
 
 ### 9.2 macOS Build
 
