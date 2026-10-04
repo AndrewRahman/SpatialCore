@@ -4,10 +4,10 @@ milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
 status: verifying
-stopped_at: Completed 03-11-PLAN.md
+stopped_at: Phase 03 verified; awaiting UAT go-ahead on held GitHub posts
 last_updated: "2026-10-04T17:26:20.097Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 03 execution started
+last_activity_desc: Phase 03 verified (human_needed — held GitHub posts)
 state_head: bb8b3d1ae453213d187e967d29f6b4e771b3b7fc
 progress:
   total_phases: 6
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 
 ## Current Position
 
-Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
+Phase: 03 (Binaural Defects & HRTF Packaging) — VERIFIED, AWAITING UAT
 Plan: 11 of 11
-Status: Phase complete — ready for verification
-Last activity: 2026-10-04 — Phase 03 execution started
+Status: Verified 5/5 (03-VERIFICATION.md, human_needed). One UAT item: go-ahead to post the two held GitHub comments (OSD#234, close SpatialCore#15). Run `/gsd-verify-work 3`.
+Last activity: 2026-10-04 — Phase 03 verified; regression gate 260/260 Debug + Release; pushed to main
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04

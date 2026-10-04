@@ -140,7 +140,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     (`jassertfalse` → nearest-speaker heuristic in VBAP/VBIP/MDAP) is either eliminated or fails
     loudly rather than silently degrading.
 
-- [ ] **EXTR-02**: Binaural rendering produces measured-correct output
+- [x] **EXTR-02**: Binaural rendering produces measured-correct output
   - Acceptance: already covered by binaural tests running against all 5 real SOFA profiles plus
     the Woodworth fallback. Remaining gap: `PartitionedConvolver.cpp` and `BinauralRenderer.cpp`
     have **no dedicated test files** — they are only exercised indirectly.
@@ -163,7 +163,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
 
 ### Packaging and Consumability
 
-- [ ] **DATA-01**: HRTF data resolves through a lookup chain, with an embedded set that cannot fail
+- [x] **DATA-01**: HRTF data resolves through a lookup chain, with an embedded set that cannot fail
   - **OQ-6 RESOLVED 2026-08-10 (final): build the shared-folder lookup chain now, ship v1 with
     the embedded set active, flip the default when a signed installer exists.**
 
@@ -426,8 +426,8 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Complete |
 | EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
 | EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
-| EXTR-02 | REQ-extract-binaural-rendering | 3 | Largely verified by tests |
-| DATA-01 | REQ-embed-hrtf-binarydata | 3 | OQ-6 resolved: lookup chain + embedded default |
+| EXTR-02 | REQ-extract-binaural-rendering | 3 | Complete |
+| DATA-01 | REQ-embed-hrtf-binarydata | 3 | Complete (lookup chain + embedded default) |
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Largely verified by tests |
 | EXTR-05 | REQ-extract-ui-rendering | 4 | Pending |
 | DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Verified done |
