@@ -1,10 +1,11 @@
 ---
 phase: 02-algorithm-format-verification
-verified: 2026-10-03T22:30:00Z
-status: human_needed
-score: 88/88 must-haves verified
+verified: 2026-10-04T00:50:10Z
+status: gaps_found
+score: 88/93 must-haves verified
 covered_files:
   - .claude/skills/spatial-audio-dsp/SKILL.md
+  - .gitattributes
   - .gitignore
   - .planning/phases/02-algorithm-format-verification/02-01-PLAN.md
   - .planning/phases/02-algorithm-format-verification/02-01-SUMMARY.md
@@ -26,6 +27,7 @@ covered_files:
   - .planning/phases/02-algorithm-format-verification/02-09-SUMMARY.md
   - .planning/phases/02-algorithm-format-verification/02-10-PLAN.md
   - .planning/phases/02-algorithm-format-verification/02-10-SUMMARY.md
+  - CMakeLists.txt
   - README.md
   - docs/integration-guide.md
   - include/SpatialCore/Algorithms/DBAPAlgorithm.h
@@ -35,15 +37,20 @@ covered_files:
   - include/SpatialCore/Engine/RenderEngine.h
   - include/SpatialCore/IO/AmbisonicsCodec.h
   - include/SpatialCore/IO/SpeakerLayout.h
+  - src/Algorithms/AmbisonicsAlgorithm.cpp
+  - src/Algorithms/ConstantPowerAlgorithm.cpp
+  - src/Algorithms/DBAPAlgorithm.cpp
   - src/Algorithms/DirectBinauralAlgorithm.cpp
   - src/Algorithms/KNNAlgorithm.cpp
   - src/Algorithms/MDAPAlgorithm.cpp
   - src/Algorithms/VBAPAlgorithm.cpp
   - src/Algorithms/VBIPAlgorithm.cpp
+  - src/Core/FloatSemanticsGuard.h
   - src/Core/SpatialMath.cpp
   - src/Engine/RenderEngine.cpp
   - src/IO/AmbisonicsCodec.cpp
   - src/IO/SpeakerLayout.cpp
+  - src/OSC/ADMOSCReceiver.cpp
   - tests/Algorithms/PanningLawTests.cpp
   - tests/Algorithms/SpatializationAlgorithmTests.cpp
   - tests/CMakeLists.txt
@@ -51,6 +58,7 @@ covered_files:
   - tests/Engine/RenderEngineTests.cpp
   - tests/IO/AmbisonicsCodecTests.cpp
   - tests/IO/SpeakerLayoutTests.cpp
+  - tests/TestNumerics.h
   - tests/reference/.gitignore
   - tests/reference/EarReference.h
   - tests/reference/PanningReference.h
@@ -60,142 +68,166 @@ covered_files:
   - tests/reference/gen_panning_reference.py
   - tests/reference/gen_sh_reference.py
   - tests/reference/layouts_from_cpp.py
-covered_digest: "v2:sha256:8d6a2060632fb63607523029d71a5d6efdaad9ad4f3abc64159c4b032fbbff45"
+covered_digest: "v2:sha256:03dae1ac058c7cda2e5cd3c81f0add794726da6fddcb1e02e3938cf141c559c5"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+overrides:
+  - must_have: "RenderEngine has no private SH decoder: activateLayout fills ambiDecodeMatrix through AmbisonicsCodec::getDecodeMatrix at order 3, and each of the 15 speaker layouts gets a decode within 1e-6 of the pre-change private function (02-06)"
+    reason: "The 1e-6 bound was never achievable on arm64 Release (G-02-10). Plan 02-10 replaced it with the derived 2.5e-5 bound plus a double-precision anchor. The user accepted the 2.5e-5 bound in place of 1e-6 in UAT test 11."
+    accepted_by: "Andrew Rahman (02-UAT.md test 11, answer: yes)"
+    accepted_at: "2026-10-04T00:45:00Z"
 re_verification:
   previous_status: human_needed
-  previous_score: 77/78
+  previous_score: 88/88
   gaps_closed:
-    - "G-02-10: [ambi-pin] failed in Release on Apple Silicon (UAT test 10, severity major): now passes in Release (build-release/) and Debug (build/); Release ctest 193/193"
-    - "02-01 backstop truth (D-02a Release abort): previously present-but-behavior-unverified, now carries observed-behavior evidence from UAT test 8 (SIGABRT exit 134 in a scratch Release build, control exit 0)"
+    - "Both human items from the previous report are resolved in 02-UAT.md (status complete): the 2.5e-5 [ambi-pin] bound was accepted (test 11, 'yes') and the four 02-10 judgment-tier prohibitions were accepted (test 12, 'accept')"
+    - "WR-06 (advisory last time): [ambi-pin] now fails on non-finite decode entries (accumulateWorstFinite in tests/TestNumerics.h)"
+    - "WR-04 coincidental-reliance (advisory last time): the no-fast-math precondition is now enforced. src/Core/FloatSemanticsGuard.h raises #error under -ffast-math or -ffinite-math-only (checked by the verifier), and every src/ file with an isfinite/isnan test includes it"
   gaps_remaining: []
-  regressions: []
-coincidental_reliance_items:
-  - truth: "Finite inputs are untouched by every guard and every std::isfinite check lives in a .cpp, so OpenSpatialDelay's -ffast-math build cannot fold it away (02-04)"
-    reason: undeclared-precondition
-    harden: "The guards hold only because the SpatialCore target itself is compiled without -ffast-math / -ffinite-math-only. Turn it into a compile-time #error on __FAST_MATH__ / __FINITE_MATH_ONLY__ in the guarded TUs (review WR-04). Unchanged by this round."
+  regressions:
+    - "02-01: 'a hand-built LayoutContext with empty triplets on a height layout trips a Debug-only assert'. The assert was removed by IN-14 (8ae2eed)"
+    - "02-04: 'a Debug-only assert marks the [no-enclosing-triplet] path'. The assert was removed by WR-03 (8899bcf), and a nearest-speaker snap was added for the case where the D-06b candidate clamps to zero"
+    - "02-07: 'no doc describes a nearest-speaker fallback'. The integration guide and the skill now describe the WR-03 nearest-speaker snap, accurately"
+    - "02-08: 'VBAPTriplet ... unchanged: the SpeakerLayout.h diff is comment lines only'. WR-02 (2ae900c) added the public enum VBAPTriplet::Kind and the member function kind()"
+    - "02-09: 'README.md, docs/integration-guide.md and SKILL.md keep CRLF on every line'. The guide and the skill are now LF (0 of 306 and 0 of 583 lines are CRLF), and IN-13 (52a2cb5) pinned them to LF in .gitattributes"
+gaps:
+  - truth: "02-01: No VBAP, VBIP or MDAP source file contains a nearest-speaker branch; a hand-built LayoutContext with empty triplets on a height layout trips a Debug-only assert (D-01)"
+    status: failed
+    reason: "IN-14 (8ae2eed) deliberately removed the jassert from all three computeGains functions, because JUCE's assert path logs and allocates on the audio thread. A hand-built empty-triplet context on a height layout now pans by 2D VBAP and gives no diagnostic in any build. Nothing failed in function. The pinned contract changed and no human decision on it is recorded. The first clause still holds: grep finds no nearest-speaker code in the three files."
+    artifacts:
+      - path: "src/Algorithms/VBAPAlgorithm.cpp"
+        issue: "lines 13-19: comment explains why there is no assert; the jassert is gone (same in VBIPAlgorithm.cpp and MDAPAlgorithm.cpp)"
+      - path: "tests/Core/VBAPTripletSelectionTests.cpp"
+        issue: "line 821: [robust] IN-14 test pins the new assert-free 2D-pan behaviour"
+    missing:
+      - "A recorded human decision: accept the assert removal (add the suggested override) or restore the Debug-only assert"
+  - truth: "02-04: When no triplet contains a finite direction, computeVBAPGains3D uses the triplet with the largest minimum gain, clamps negatives to 0 and renormalises; an empty triplet list returns silence; a Debug-only assert marks the path (D-06b, D-06c)"
+    status: failed
+    reason: "WR-03 (8899bcf) removed the jassertfalse (D-06c), and when the D-06b candidate clamps to all zeros it now gives unity on the nearest speaker. That is the pre-Phase-2 snap D-06(b) says to 'replace', and the fixer's own report says 'This changes behaviour, so it needs a human to confirm it'. No confirmation is recorded: the 2026-10-04 UAT deferred listening checks for WR-05 and WR-08 only (ROADMAP 999.2), not WR-03. The snap is unreachable through RenderEngine ([ear][coverage]: every sampled finite direction is enclosed by the engine-built list). It is reachable with a hand-built partial list: per the WR-03 test, 27,885 of 64,800 below-horizon directions on regular-only lists now snap to one speaker, where before they gave silence plus a Debug assert."
+    artifacts:
+      - path: "src/Core/SpatialMath.cpp"
+        issue: "lines 338-348 (assert removed, comment), 407-437 (new nearest-speaker block, stack-only, no assert)"
+      - path: ".planning/phases/02-algorithm-format-verification/02-CONTEXT.md"
+        issue: "D-06(b) 'Replace the snap', D-06(c) 'jassertfalse in Debug only' and the DR-1 note ('the one diagnostic permitted') still describe the old design"
+    missing:
+      - "A recorded human decision on WR-03: accept the nearest-speaker snap and the assert removal for hand-built lists (add the suggested override and amend D-06(b)/(c) in CONTEXT), or revert to the D-06b clamp plus a diagnostic"
+  - truth: "02-07: The docs describe below-horizon panning on height layouts as the ITU-R BS.2127 (EAR) lower-hemisphere construction, the no-triplet case as the largest-minimum-gain triplet, and non-finite positions as silence (algorithm layer) or last-good (engine); no doc describes a nearest-speaker fallback (D-01, D-04, D-06, D-19)"
+    status: failed
+    reason: "This follows from the WR-03 change. docs/integration-guide.md:231-233 and .claude/skills/spatial-audio-dsp/SKILL.md:48 now say 'if that clamps to all zeros, the nearest speaker gets unity'. The docs match the code, so the 'docs must not describe code differently' prohibition holds. The must-have's 'no nearest-speaker fallback' clause does not. It resolves together with the 02-04 gap."
+    artifacts:
+      - path: "docs/integration-guide.md"
+        issue: "lines 231-233"
+      - path: ".claude/skills/spatial-audio-dsp/SKILL.md"
+        issue: "line 48"
+    missing:
+      - "Same decision as the 02-04 gap: an override if WR-03 is accepted, or a doc revert if it is reverted"
+  - truth: "02-08: VBAPTriplet, LayoutContext, SpatializationAlgorithm and every signature OpenSpatialDelay compiles against are unchanged: the SpeakerLayout.h diff is comment lines only and [consumer-surface] passes (DR-3)"
+    status: failed
+    reason: "WR-02 (2ae900c) added a public nested enum VBAPTriplet::Kind and a public const member function kind(). IN-03 (b87eac0) changed AmbisonicsCodec::getDecodeMatrix's return type from void to bool, and the fixer's report says 'The public return type changed, so it needs a human to confirm it'. Both changes are additive and source-compatible for call sites. The intent of DR-3 holds: no data member changed, field-by-field construction still works, [consumer-surface] passes (16 assertions, both builds), and OSD 30391cd's OpenSpatialDelay and OpenSpatialDelayTests targets build against HEAD (exit 0, OSD repo status clean). The literal 'unchanged' clause, and 02-08's prohibition on adding a public member function, no longer hold at HEAD."
+    artifacts:
+      - path: "include/SpatialCore/IO/SpeakerLayout.h"
+        issue: "lines 52-63: enum class Kind and kind()"
+      - path: "include/SpatialCore/IO/AmbisonicsCodec.h"
+        issue: "getDecodeMatrix now returns bool"
+    missing:
+      - "A recorded human decision: accept the additive API changes (override; consider whether CLAUDE.md's versioning rule wants a minor bump at release), or revert"
+  - truth: "02-09: README.md, docs/integration-guide.md and SKILL.md keep CRLF on every line"
+    status: failed
+    reason: "8899bcf (WR-03) converted the guide and SKILL.md from CRLF to LF as a side effect of the editing tool. IN-13 (52a2cb5) then chose to keep LF and pinned it in .gitattributes (text eol=lf) rather than restore CRLF. Measured now: README 144/144 CRLF, guide 0/306, SKILL.md 0/583 (include/SpatialCore/IO/AmbisonicsCodec.h, also flipped, 0/50). Cosmetic, and deliberate per IN-13. The must-have no longer holds."
+    artifacts:
+      - path: ".gitattributes"
+        issue: "lines 2-7 pin LF for the guide, SKILL.md and AmbisonicsCodec.h"
+    missing:
+      - "A recorded human decision: accept LF (override) or restore CRLF and drop the .gitattributes rule"
 advisory:
-  - finding: "WR-06 (02-REVIEW.md): the std::max reductions in [ambi-pin] drop NaN, so a NaN decode passes the pin and the new double-precision anchor vacuously"
+  - finding: "WR-08: DBAP now clamps finite distances to [-1000, 1000]. That is a guard acting on a finite value, against the wording of the 02-04 prohibition 'MUST NOT change the output for any finite position'"
     category: other
-    reason: "Reproduced by the verifier: with every library decode entry forced to NaN, [ambi-pin] still passed (110 assertions, Release). The codec's own [io][ambisonics] tests do catch it (2 of 7 cases failed under the same mutation), so a NaN decode is not undetected suite-wide. Two-line fix (REQUIRE isfinite per entry) is in the review."
-    evidence_status: "reproduced by verifier (temporary mutation of src/IO/AmbisonicsCodec.cpp, reverted, git status clean)"
-  - finding: "Phase 1 criterion 4 mechanical check drifted from 0 to 11 matches (3 sites are not in the Owner/Repo#N form)"
+    reason: "This only changes DBAP output for |distance| > 1000, which is outside the normalised 0..1 range. Above about 1e18 such distances used to give silence. By the 1/d^2 weight analysis the shift is about 2/d relative (about 0.002 at d = 1000), which is inaudible. The user has seen WR-08 (UAT deferred follow-up 999.2(b)). It is recorded so the 02-04 wording can be amended."
+    evidence_status: "code read (src/Algorithms/DBAPAlgorithm.cpp:21-45); no test asserts the >1000 regime against the old output"
+  - finding: "Phase 1 criterion 4 drift: three issue references are still not in Owner/Repo#N form"
     category: other
-    reason: "See 'Cross-phase regression check' below. 9 of 11 are fully qualified AndrewRahman/SpatialCore#N; the 3 unqualified sites are tests/Algorithms/PanningLawTests.cpp:65, :836 (bare #22) and tests/IO/AmbisonicsCodecTests.cpp:170 (SpatialCore#11, no owner). Cosmetic: all name SpatialCore's own tracker."
-    evidence_status: "reproduced by verifier (grep, line list below); live issue resolution not re-run because gh returns HTTP 401"
-human_verification:
-  - test: "Accept the 2.5e-5 (25 parts per million) bound for the [ambi-pin] decode check, in place of the old 1e-6 (one part per million). 02-10's one plain-English yes/no question, harvested here, not answered."
-    expected: "Answer yes or no. Yes: accept it (recommended). The decoder in the library is unchanged, so nothing you hear changes. The old limit came from a debug-build measurement and was never derived; the new limit is derived from the matrix conditioning, re-checked against a double-precision solve on every run, and I reproduced that it still fails for a deliberate +0.1% change to the decoder in both Release and Debug. No: keep 1e-6 and force identical rounding with a compiler flag on the whole library, which slows the audio code and means re-checking OpenSpatialDelay's sound; that needs a new decision before any change."
-    why_human: "Loosening a test's limit is a trust judgment. The numbers are checked, the acceptance is the user's. Nothing else is blocked on the answer."
-  - test: "Judgment-tier prohibitions from plan 02-10 (4). I recorded a NON-AUTHORITATIVE judgment for each; all 4 hold. See the Prohibitions table."
-    expected: "Accept or reject. unverified-prohibition: human review recommended."
-    why_human: "Judgment-tier items are never silently absorbed into a pass. The 25 earlier prohibitions were already accepted in UAT tests 5 and 9."
+    reason: "Carried over unchanged. tests/Algorithms/PanningLawTests.cpp:67 and :877 (bare #22) and tests/IO/AmbisonicsCodecTests.cpp:172 (SpatialCore#11, owner missing). All three name SpatialCore's own tracker. The fix is three one-token comment edits."
+    evidence_status: "reproduced by verifier (grep returns 3)"
+  - finding: "Debug runs print 'Leaked objects detected: 1 instance(s) of class FFT' at exit"
+    category: other
+    reason: "This is the process-global SharedFFTCache singleton. It is printed even when every test passes (exit 0 with HUTUBS excluded). No Binaural or FFT file changed in Phase 2. The iteration-2 fix report noted it as 'printed as before'. Not a Phase 2 item."
+    evidence_status: "observed in verifier's Debug runs"
+human_verification: []
 ---
 
 # Phase 2: Algorithm & Format Verification Verification Report
 
 **Phase Goal:** Every algorithm and every advertised format is confirmed correct by a test, and the Ambisonics convention is written down.
-**Verified:** 2026-10-03T22:30:00Z
-**Status:** human_needed
-**Re-verification:** Yes, after gap closure (plan 02-10, UAT gap G-02-10); the G-02-2 round that preceded it is kept below for the record
+**Verified:** 2026-10-04T00:50:10Z (HEAD 6134e57)
+**Status:** gaps_found
+**Re-verification:** Yes. The previous report (2026-10-03T22:30Z, human_needed, 88/88) went stale when the four code-review fix rounds changed library code.
 
-## Summary
+## Summary in plain English
 
-Gap G-02-10 is closed. `[ambi-pin]` and the full suite now pass in a Release build on Apple Silicon (`build-release/`, `CMAKE_BUILD_TYPE=Release`) as well as in Debug (`build/`). All four ROADMAP success criteria still hold, nothing regressed, and there are no blockers. Status is `human_needed` rather than `passed` for one reason: plan 02-10 asks the user a yes/no question (accept a 25-parts-per-million limit for the decode check instead of one part per million) and its four judgment-tier prohibitions are flagged for human review. Two warnings are recorded and neither blocks: WR-06 (the check's `std::max` reductions drop NaN) and a cosmetic drift in the Phase 1 issue-reference grep.
+Nothing broke. Every test passes in both build types, apart from the one known Phase 3 failure. The sound through RenderEngine is unchanged on every shipped layout. The four ROADMAP success criteria hold.
 
-**Test run (my own, this pass):**
+But the review fixes changed five things that the phase's own plans had promised. Each change was made on purpose and each is documented. None was signed off by you:
+
+1. **The engine's "safety net" behaviour for hand-built setups changed (WR-03, IN-14).** If a programmer bypasses RenderEngine and hands VBAP an incomplete set of speaker triangles, some directions now snap to the single nearest speaker, and nothing warns in any build. Before, that case was silent but a debug-build warning fired. The plans and the locked decision D-06 said "no nearest-speaker snap" and "a debug-only warning marks this path". The fixer itself wrote that this "needs a human to confirm it", and I found no record that anyone did. This cannot happen through RenderEngine, which is how OpenSpatialDelay uses the library.
+2. **The docs now describe that nearest-speaker snap.** They describe it accurately, but a plan promised no doc would.
+3. **Two small additions to the public programming interface (WR-02, IN-03).** OpenSpatialDelay still builds against it; I checked.
+4. **Two doc files switched line-ending style** (CRLF to LF). This is cosmetic, and a review fix chose to keep it.
+
+To close the phase, you decide for each one: **accept it** (I have written the five "override" entries below, ready to paste in) or **undo it**. My recommendation is to accept all five. The behaviour is better than before in every case: a sound is never silent where it used to be. But accepting overturns a decision you locked in CONTEXT (D-06), so it should be your call, not the fixer's.
+
+## Test runs (my own, this pass, at HEAD 6134e57)
 
 | Run | Result |
 |---|---|
-| `cmake --build build` and `build-release` (`SpatialCoreTests`) | both up to date, exit 0; `CMAKE_BUILD_TYPE` confirmed Debug and Release in the two caches |
-| Debug, `./build/tests/SpatialCoreTests` (full, no exclusion) | **193 cases, 192 passed, 1 failed; 304,868 assertions, 1 failed.** The one failure is `tests/Binaural/HutubsPP2Tests.cpp:47` (golden checksum, got `0x7a35c1f848c2a410`, expected `0x9e3c2875eeade4b7`). Matches the orchestrator's 192/193. |
-| Debug, with that case excluded | All passed (304,865 assertions in 192 test cases) |
-| Release, `./build-release/tests/SpatialCoreTests` (full, no exclusion) | All passed (304,868 assertions in 193 test cases); HUTUBS PP2 passes in Release |
-| Release, `ctest --test-dir build-release/tests` | 100% passed, 193 of 193. Matches the orchestrator's figure. |
-| `[ambi-pin]` alone, Release and Debug | both: All tests passed (110 assertions in 2 test cases) |
-| Ten Phase 2 tags (`[g02-2]`, `[band]`, `[vbap3d-identity]`, `[consumer-surface]`, `[ear]`, `[io][layout]`, `[panning-law]`, `[sn3d]`, `[roundtrip]`, `[tracer]`), each alone in both trees | all 20 runs pass, identical assertion totals in both builds (203, 828, 262,104, 13, 19,215, 19,119, 7,191, 153, 6, 114) |
+| `cmake --build build --target SpatialCoreTests -j8` and the same for `build-release` | exit 0, both up to date. Caches confirmed `CMAKE_BUILD_TYPE` Debug and Release. No file under `src`, `include`, `tests` or `CMakeLists.txt` is newer than either binary. |
+| **Debug**, `build/tests/SpatialCoreTests` (full) | **201 test cases: 200 passed, 1 failed. 307,474 assertions: 307,473 passed, 1 failed.** The only failure is `tests/Binaural/HutubsPP2Tests.cpp:47` (got `0x7a35c1f848c2a410`, expected `0x9e3c2875eeade4b7`). That is pre-existing Phase 3 debt, Debug only. Exit 42 (Catch2's failure code). |
+| Debug, HUTUBS case excluded | All tests passed (307,471 assertions in 200 test cases), exit 0 |
+| **Release**, `build-release/tests/SpatialCoreTests` (full) | **All tests passed (307,474 assertions in 201 test cases)**, exit 0 |
+| Release, `ctest --test-dir build-release/tests` | 100% passed, 201 of 201 |
+| After the mutation check below (rebuild from the reverted source) | Release full: 201/201 again. Debug full: 200/201 again (HUTUBS only). |
 
-The HUTUBS PP2 Debug failure is pre-existing (introduced with the golden in 2d6dc08, plan 08-04), is recorded in `deferred-items.md`, and belongs to EXTR-02 (Phase 3), not to any Phase 2 truth. The source diff since the last verification pass (`git diff a322673 HEAD -- . ':!.planning' ':!.gsd'`) is two files: `.gitignore` (+1 line) and `tests/Engine/RenderEngineTests.cpp`. So everything verified in the earlier round could only have regressed through that test file, and the tag sweep above passes.
+These match the orchestrator's figures (Debug 200/201, Release 201/201). The baseline grew from 193 to 201 cases because the review rounds added tests.
 
-## G-02-10 closure (the focus of this re-verification)
+### Phase 2 tag sweep (each run alone, both trees)
 
-**The gap, per 02-UAT.md test 10:** the full test suite must pass in a Release build, the build type CI uses; `[ambi-pin]` failed there (RenderEngineTests.cpp:700, decode matrix differing from the test's reference decoder by up to 5.3e-6 against a 1e-6 bound on 10 of 15 layouts).
+Every tag passed in both builds with identical assertion counts:
 
-**Code evidence (read, not taken from SUMMARY):**
+| Tag | Assertions / cases |
+|---|---|
+| `[g02-2]` | 203 / 1 |
+| `[band]` | 828 / 3 |
+| `[vbap3d-identity]` | 262,104 / 1 |
+| `[consumer-surface]` | 16 / 1 |
+| `[ear]` | 19,431 / 12 |
+| `[io][layout]` | 19,290 / 7 |
+| `[panning-law]` | 8,117 / 10 |
+| `[sn3d]` | 208 / 3 |
+| `[roundtrip]` | 12 / 1 |
+| `[tracer]` | 114 / 3 |
+| `[ambi-pin]` | 411 / 3 |
+| `[format-resolve]` | 695 / 1 |
+| `[robust]` | 6,340 / 8 |
+| `[sanitize]` | 27 / 6 |
+| `[gap]` | 45 / 1 |
+| `[decode-guard]` | 51 / 2 |
+| `[coverage]` | 32 / 1 |
+| `[textbook]` | 90 / 2 |
 
-- `tests/Engine/RenderEngineTests.cpp:708-709`: `kAmbiPinTolerance = 2.5e-5f`, `kAmbiFloatVsDoubleTolerance = 4.0e-5`. The `[ambi-pin]` test (line 785) applies `CHECK (worstHere <= kAmbiPinTolerance)` per layout and again over all 15 (line 832), plus two double-precision anchor checks per layout (lines 825-826), and `layoutsChecked == 15` is asserted.
-- `doublePrecisionAmbiDecode` (lines 715-782) is a real double-precision replica of the decoder (same Tikhonov term, Gauss-Jordan with partial pivoting, same `D = E^T inv` product) fed the same float SH values, and is compared against `active.ambiDecodeMatrix`, the array `RenderEngine::activateLayout` fills through `AmbisonicsCodec::getDecodeMatrix`. It is not tautological.
-- The derivation comment (lines 673-707) matches the debug session's numbers (cond 501 to 1786, spread 0 Debug / 5.3e-6 Release, 1.0e-5 worst variant, 1.4e-5 / 1.7e-5 / 1.8e-5 float-vs-double). Stale wording is gone: the header comment at lines 562-572 now says "within float rounding, not exact", and the test title no longer says "equals". Minor: the comment says the bound is "2.5x below" the +0.1% change while the real ratio is 5.8e-5 / 2.5e-5 = 2.3x (review IN-09).
-- `git diff 1ac244a HEAD -- src include CMakeLists.txt tests/CMakeLists.txt .github` is empty (0 lines). No floating-point flag was added. The 85-line `referenceAmbiDecode` (old lines 574-658, now 576-660) is byte-identical to `1ac244a` (`diff` of the two ranges is empty).
-- `.gitignore` is CRLF throughout and its last line is `build-release/\r\n`; `git check-ignore -v build-release` reports `.gitignore:7`. `git status` shows only the three pre-existing untracked entries (`.gsd/`, `.planning/milestone.lock`, `.planning/state.json`).
-- Recurrence guard: `02-VALIDATION.md` carries the Release suite command (line 27) and the Release tree configure recipe (line 28) and requires the Release suite before `/gsd-verify-work` (line 41); `.planning/codebase/TESTING.md` states the both-build-types rule and why. `deferred-items.md` lists the four 02-10 deferred entries (tight test-local tolerances, no arm64/FMA CI leg, HUTUBS PP2 Debug-only, CI ctest step runs zero tests).
+`[golden]` passes in Release (1,233 / 18). In Debug it is 17 of 18, and the one failure is the HUTUBS case.
 
-**My own mutation proof (independent of the SUMMARY's, run in this worktree and reverted).** `float epsilon = 0.01f` to `0.01001f` at `src/IO/AmbisonicsCodec.cpp:75` (+0.1%), rebuilt, `[ambi-pin]` run:
+## The specific regression checks requested
 
-| Build | Result with the mutation | After `git checkout` of the file and rebuild |
+| Check | Method | Result |
 |---|---|---|
-| Release | **FAILED**: 11 assertions failed (5 per-layout pin checks at :824, 5 anchor checks at :825, the all-layout check at :832); worst `abs(new - old)` 6.28e-05 against 2.5e-5; library vs double solve 5.79e-05 to 6.29e-05 against 4.0e-05 | 110 assertions pass |
-| Debug | **FAILED**: 11 of 110 assertions failed, same shape | 110 assertions pass (Release ctest 193/193 re-confirmed after the revert) |
-
-So the bound is loose enough to pass the real Release spread (about 5.3e-6) and tight enough to catch a +0.1% decoder change, in both build types, with two independent checks tripping. `git status --short src` was clean afterwards.
-
-**Verdict: G-02-10 is CLOSED.**
-
-### WR-06 reproduced (warning, not a blocker)
-
-The review's one warning is real. `std::max (acc, std::abs (x - y))` returns `acc` when `y` is NaN, so NaN entries are dropped. I proved it two ways: a compiled snippet (`std::max (0.0f, std::abs (NaN - 1.0f))` gives 0, so `0 <= 2.5e-5` passes), and a temporary mutation forcing every library decode entry (`AmbisonicsCodec.cpp:130`) to quiet NaN: `[ambi-pin]` still reported **All tests passed (110 assertions in 2 test cases)**. The mutation was reverted. Impact is bounded: under the same mutation the codec's own `[io][ambisonics]` cases failed (2 of 7, `AmbisonicsCodecTests.cpp:112` `REQUIRE (std::isfinite (v))`), so a NaN decode out of `getDecodeMatrix` is still caught by the suite. What is overstated is the pin's own guarantee for the new anchor ("independent"). The fix is the two-line `REQUIRE (std::isfinite (...))` in 02-REVIEW.md. It is also the only open finding that touches this plan's artifact, so it is worth doing before the phase is closed, but nothing in a must-have depends on it. The disposition ledger records it as `open`.
-
-## G-02-2 closure (previous round, kept for the record)
-
-**The gap, per 02-UAT.md:** on height layouts a source between 0 and -30 degrees elevation must pan as EAR does: the horizon pan holds (7.1.4 az 60 stays 0.7071 / 0.7071 on M+030 / M+090), no lean, no side flip.
-
-**Code evidence (read, not taken from SUMMARY):**
-
-- `src/IO/SpeakerLayout.cpp` `appendLowerHemisphereTriplets`: the four overlapping trapezoid triangles are no longer emitted (the loop `continue`s on any facet without the nadir vertex). For each nadir-cap facet it records the neighbouring ear-level pair (`capPairs`) and then pushes one pair-pan wedge per pair: the two real speakers plus the virtual nadir, `nadirVertex = 2`, `nadirMask = 0`, `nadirGain = 0`. That is 2n lower-hemisphere triplets for n ear-level speakers.
-- `src/Core/SpatialMath.cpp` `computeVBAPGains3D`: `selectionTier` (integer tests only) classifies regular, cap and wedge. The loop is `for (pass = 0; pass < 3 && bestTri < 0; ++pass)`, so regular triplets run first with the original loop body, then caps, then wedges. Tolerance is still `-1e-6f` (one occurrence at line 312). No allocation, lock or logging was added. The output mapping for a zero-share wedge gives the pair's 2D pan, power-normalised.
-- Public surface: `git diff 306b025 HEAD -- include/` contains comment lines only (the single non-comment `+` line is blank). `VBAPTriplet`, `LayoutContext` and the `SpatializationAlgorithm` interface are unchanged. `[consumer-surface]` passes.
-- `src/Engine/` has no diff since 306b025, so the `activateLayout` guard and abort are untouched.
-
-**My own probe (independent of the Catch2 tests).** A standalone program, compiled against this branch and `build/libSpatialCore.a`, drove `RenderEngine::setOutputFormat` then `VBAPAlgorithm::computeGains`. The probe was in `/tmp/g022probe`, outside the repo. Results:
-
-| Format | Azimuth | Elevations 0, -5, -15, -25, -30 | Gains |
-|---|---|---|---|
-| 7.1.4 | 60 | identical at every elevation | speaker 0 = 0.7071, speaker 3 = 0.7071, all others below 1e-4 |
-| 7.1.4 | -60 | identical | speakers 1 and 4 = 0.7071 |
-| 7.1.4 | 45 | identical | 0.9391 / 0.3437 |
-| 5.1.4 | 60 | identical | 0.8374 / 0.5466 (matches the pinned ear value for el -15) |
-| 5.1.4 | -60, 45 | identical | mirror / 0.9616 / 0.2746 |
-
-Before the fix the earlier verifier measured 0.7210 / 0.6929 at el -5, 0.7472 / 0.6646 at -15 and 0.6768 / 0.7361 at -25. No lean, no side flip, no height speaker used.
-
-**Oracle evidence:**
-
-- `tests/reference/EarReference.h` gained 17 `kEarBand*` entries (26 band cases) produced by `gen_ear_reference.py` from PyPI ear 2.1.0. The regenerate-diff is empty. The only lines removed from the header are the old "band deliberately NOT pinned" comment. The 13 nadir-cap pins are unchanged.
-- 5.1.4's band pins stop at |az| 100 (the generator carves out beyond 110). The header's 5.1.4 cases are (60,-15), (-70,-25) and (-100,-20).
-- `[ear][golden][band]` matches ear within 1e-5 (measured max 1.79e-7). `[ear][band]` checks an independent double-precision pair pan at 720 x 9 directions on all 8 layouts, plus exactly one enclosing wedge and no regular or cap enclosure. The band continuity bound in `PanningLawTests.cpp` is now 0.01 for the band (-5, -15, -25) and a new band/cap seam scope (-35, -40). It was 0.12.
-- `[vbap3d-identity]` (262,104 assertions) is bit-identical to `d43cb15` above the horizon, so issue #22's above-horizon tie is untouched, as intended.
-
-**Docs match code:** the guide, README and skill state the pair-region band, the PyPI ear 2.1.0 match, the 5.1.4 exception and #22 above the horizon only. I confirmed the phrases are present (`one pan region` once in the guide and twice in the skill, `PyPI ear 2.1.0` likewise, `except behind the listener on 5.1.4` in README, `above the horizon on height layouts` in the skill) and that CRLF is intact on every line (guide 282/282, README 144/144, skill 583/583). The guide's "about -59 degrees" depth is a derivation, not a measurement. 02-09-SUMMARY states that openly and I re-derived it: tan(el) = tan(-30)/cos(70) gives -59.3 for a 140-degree pair.
-
-**Verdict: G-02-2 is CLOSED.**
-
-## UAT carry-forward
-
-`02-UAT.md` is `status: diagnosed`: 10 tests, 8 passed, 1 issue (test 10, G-02-10), 1 skipped (test 7). G-02-2 inside it is already `resolved`; G-02-10 is still `failed` because the file has not been updated since the 02-10 closure. The orchestrator should move test 10 to pass (evidence above) and G-02-10 to `resolved`.
-
-| UAT test | UAT result | Status now |
-|---|---|---|
-| 1 DR-3 cross-repo build | pass | Carried. `src`, `include` and CMake are untouched since 02-09, so the OSD build result still applies. |
-| 2 Below-horizon band | pass (G-02-2 resolved by 02-08, 02-09) | Re-checked: `[g02-2]`, `[band]`, `[ear]`, `[vbap3d-identity]`, `[consumer-surface]` pass in both builds. |
-| 3 WR-03 hand-built contexts | pass (accepted under D-01) | Carried. |
-| 4 Process gates | pass | Carried. `gh` returns HTTP 401 this session, so `gh issue view 22` was not re-run. |
-| 5 Judgment prohibitions (17) | pass | Carried. |
-| 6 5.1.4 rear gap | pass (user: "yes, leave it as it is") | Carried. This closes the human item the previous report listed. |
-| 7 Listening check | skipped (deferred follow-up for the next round of listening reviews) | Carried as a deferred follow-up, not a gate. |
-| 8 D-02a Release abort | pass (SIGABRT exit 134, control exit 0) | Carried; see the 02-01 row below. `src/Engine` is unchanged. |
-| 9 Judgment prohibitions (25) | pass | Carried. |
-| 10 Release suite | issue (G-02-10) | **Now passes**, as shown above. Needs the UAT file updated. |
+| **15 shipped layouts bit-identical** (WR-05 gap bridge) | Standalone probe in `/tmp/p02v_bitid`, outside the repo. It compiles `src/IO/SpeakerLayout.cpp` and `include/` from f6ddd2d (the last verified tree) and from HEAD, and dumps every triplet (indices, the raw bytes of the `inv` matrix, `lowerHemisphere`, `nadirVertex`, `nadirMask`, the raw bytes of `nadirGain`) for all 15 layouts after `buildVBAPTripletsForLayout` + `appendLowerHemisphereTriplets`. | **`cmp`: BIT-IDENTICAL** (1,357 lines each). The 6 flat and 1 octaphonic layouts give 0 triplets. The height layouts give 7.1.4 118 + 14, 9.1.6 355 + 18, and so on, unchanged. |
+| **EAR band pins** | `[ear]` (includes `[ear][golden][band]`), `[band]`, `[g02-2]` in both builds; regenerate-diff of all three reference generators via `.context/venv` | All pass. `gen_sh`, `gen_ear` and `gen_panning` all regenerate **byte-identical** headers (`cmp`). ShReference.h changed only in a comment (IN-02), and its generator changed in the same way. |
+| **Above-horizon unchanged** | `[vbap3d-identity]` | 262,104 assertions pass in both builds. |
+| **[ambi-pin]** | Both builds, plus my own mutation check: Tikhonov `epsilon 0.01f` changed to `0.01001f` (+0.1%) at `src/IO/AmbisonicsCodec.cpp:78`, rebuild, run, `git checkout`, rebuild, rerun | Mutated: **11 of 411 assertions fail in both Debug and Release** (5 at RenderEngineTests.cpp:893, 5 at :894, 1 at :901: the per-layout pin, the double-precision anchor, and the all-layout check). Reverted: 411 pass in both. `git status` clean afterwards. The pin still discriminates after the WR-06 and IN-07 to IN-11 test edits. |
+| **Panning-law suite** | `[panning-law]` both builds | 8,117 assertions pass. IN-12 makes every Ambisonics law fail on a silent decode (per the fix report; the suite passes). |
+| **D-02a abort** | Code read | The only `std::abort()` in `src/` is `RenderEngine.cpp:732`, inside `activateLayout`, which is called only from `setOutputFormat` (line 628). `renderBlock` (121-176) contains no `setOutputFormat`, `activateLayout` or `abort`. The guard lines are unchanged since UAT test 8 observed the SIGABRT. The only edit to `activateLayout` is the getDecodeMatrix bool check, which is placed before the guard. The line moved from 729 to 732. |
+| **Docs match code** | grep and read | The guide, README and skill all keep the convention (Condon-Shortley, ACN, SN3D, +Y left), DAFx-98, SpatialCore#20, WASPAA 1999, 12.04, BS.2127, "one pan region" and "PyPI ear 2.1.0". No VBIP text says "squares" or "tighter"; SKILL.md:562 lists squaring only as an anti-pattern. The new WR-03, WR-05 and WR-08 text matches the code: guide 231-236, skill 48, `DBAPAlgorithm.h`. See gap 02-07 for the one clause that now fails. |
+| **DR-3: OSD still builds** | `cmake --build /tmp/osd-dr3-check/build --target OpenSpatialDelay OpenSpatialDelayTests` (OSD 30391cd via git archive, SpatialCore symlinked to this worktree) | exit 0. Up to date: its `libSpatialCore.a` was built at 01:48:58, after the last source change at 01:48:15. `git -C ~/conductor/repos/openspatialdelay-v1 status --porcelain` is empty. |
+| **Fast-math guard (WR-04)** | `clang++ -ffast-math` / `-ffinite-math-only` on a TU that includes `FloatSemanticsGuard.h` | `#error` fires under both flags, and compiles cleanly without them. All 8 `src/` files that test isfinite/isnan include the guard. |
 
 ## Goal Achievement
 
@@ -203,141 +235,134 @@ Before the fix the earlier verifier measured 0.7210 / 0.6929 at el -5, 0.7472 / 
 
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
-| 1 | AmbisonicsCodec channel order and normalisation confirmed ACN/SN3D or FuMa, stated in code and docs (SpatialCore#11) | ✓ VERIFIED | Unchanged by 02-08 and 02-09 (no diff to `AmbisonicsCodec.*` or `[sn3d]` tests since the first verification). Convention docblocks in `SpatialMath.h`, `AmbisonicsCodec.h` and the guide. `[sn3d]` runs the 49 scipy literals within 1e-5, the addition theorem at orders 1-6, and negative-elevation parity. The scipy reference regenerates byte-identically. |
-| 2 | The 3D triplet fallback in VBAP/VBIP/MDAP either no longer exists or fails loudly | ✓ VERIFIED | Both nearest-speaker paths stay deleted: `grep -rn nearestSpeaker3DFallback src/` is empty. The engine abort sits at `RenderEngine.cpp:729`. The no-enclosing-triplet case still hits Debug `jassertfalse` plus the largest-min-gain triplet (`SpatialMath.cpp`). The new pair wedges make coverage better, not worse: `[ear][coverage]` still passes (0 uncovered finite directions on all 8 height layouts). |
-| 3 | All 23 OutputFormat entries resolve; all 15 layouts return populated channel indices and LFE placement | ✓ VERIFIED | `[io][golden]`, `[format-resolve]`, `[io][layout]` (19,119 assertions / 7 cases this run) all pass. The layout test now asserts the exact 2n extras structure. |
-| 4 | Ambisonics encode/decode round-trips within tolerance at every order up to 6 | ✓ VERIFIED | `[roundtrip]` passes, with the previously noted limit: the order-6 decode half is test-local (D-11/D-12, shipped decoder capped at order 3 / 16 speakers). |
+| 1 | AmbisonicsCodec channel order and normalisation confirmed ACN/SN3D or FuMa, stated in code and docs (SpatialCore#11) | ✓ VERIFIED | `[sn3d]` (208 assertions, 49 scipy literals, addition theorem, parity) passes in both builds, and ShReference.h regenerates byte-identically. The convention is stated on `evalSH`, in `SpatialMath.cpp:12-16`, on `AmbisonicsCodec.h` and in the guide, README and skill. IN-02 reworded "+Y (left)" to "the listener's left (AmbiX +Y; SpatialCore's internal +x)". The meaning is unchanged and clearer. |
+| 2 | The 3D triplet fallback in VBAP/VBIP/MDAP either no longer exists or fails loudly instead of silently degrading to nearest-speaker | ✓ VERIFIED (consumer path), with the caveat in gap 02-04 | `grep -rn nearestSpeaker src` is empty. The empty-triplet nearest-speaker branches (D-01) stay deleted. For an engine-built layout the empty case aborts in every build (D-02a, `RenderEngine.cpp:732`, loud), and `[ear][coverage]` shows no finite direction reaches the 3D fallback. **Caveat:** off the facade (a hand-built partial triplet list, which CLAUDE.md SC-13 and UAT test 3 put outside the guarantee), WR-03 reintroduced a silent snap to the nearest speaker for directions whose D-06b candidate clamps to zero. I count SC2 as met because the project scopes it to the consumer path, as the previous verification and UAT test 3 did. The reversal of D-06(b)/(c) itself is gap 02-04. |
+| 3 | All 23 OutputFormat entries resolve; all 15 layouts return populated channel indices and LFE placement | ✓ VERIFIED | `[format-resolve]` (695), `[io][layout]` (19,290) and `[golden]` pass. The 15 layouts' triplets are bit-identical to the last verified tree (probe above). |
+| 4 | Ambisonics encode/decode round-trips within tolerance at every order up to 6 | ✓ VERIFIED | `[roundtrip]` passes in both builds. The limit is unchanged: the order-6 decode half is test-local (D-11/D-12). |
 
-### Plan must-have truths
+### Plan must-have truths (89)
 
-**02-01 to 02-07 (60 truths, unchanged scope).** I re-ran the tags that back them (`[tracer]`, `[vbap3d-identity]`, `[consumer-surface]`, `[ear]`, `[panning-law]`, `[io][layout]` and the full suite) and re-ran all three reference generators. Everything that was VERIFIED before is still VERIFIED, with these changes:
+Status of every truth against HEAD. Truths that passed in the previous report and whose code and tests did not change in a way that touches them were re-checked through the tag sweep, the full suites and the generator diffs above. Rows below are the ones the review fixes touched, plus every non-VERIFIED row.
 
-| Truth | Before | Now | Why |
+| Plan | Truth (short) | Status | Evidence |
 |---|---|---|---|
-| 02-07: docs describe below-horizon as EAR, with no nearest-speaker (accuracy caveat) | ✓ VERIFIED (as worded) | ✓ VERIFIED | The 0 to -30 band is now EAR-exact, so the caveat is gone |
-| 02-04: below-horizon VBAP matches ear 2.1.0 (as scoped to the nadir cap) | ✓ VERIFIED (as scoped) | ✓ VERIFIED | The band is now pinned too |
-| 02-02: numpy/scipy/ear only after human verification | ? UNCERTAIN | ✓ VERIFIED | UAT test 4: the user's own delegation is quoted in 02-02-SUMMARY |
-| 02-03: nothing filed until a human approved the text | ? UNCERTAIN | ✓ VERIFIED | UAT test 4: filed issue body identical to the approved draft `02-03-ISSUE-BODY.md` |
-| 02-01: D-02a abort, every build type, not reachable from renderBlock | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED (backstop) | ✓ VERIFIED | UAT test 8 observed the behavior: a Release build with the triplet builder sabotaged aborted in `setOutputFormat(Surround7_1_4)` (SIGABRT, exit 134, the "returned" line never printed) and returned normally with the sabotage reverted (exit 0). Placement re-confirmed: one `std::abort()` at `src/Engine/RenderEngine.cpp:729`, none in `renderBlock`. It is a one-off scratch experiment, not a regression test (no Catch2 test can survive an abort), so it stays a manual backstop. |
-| 02-04: finite inputs untouched, isfinite only in .cpp | ✓ VERIFIED (coincidental-reliance) | ✓ VERIFIED (coincidental-reliance) | Unchanged advisory (WR-04). |
+| 02-01 | EAR nadir 1/sqrt(7) at el -90 on 7.1.4; meridian gain 1 | ✓ VERIFIED | `[tracer]` 114 |
+| 02-01 | Regular first, bit-identical above the horizon | ✓ VERIFIED | `[vbap3d-identity]`. `kind() == regular` is equivalent to the old `!lowerHemisphere` (`SpeakerLayout.h:56-63`). |
+| 02-01 | Lower triplets built by `appendLowerHemisphereTriplets`, virtual vertices never in a real slot | ✓ VERIFIED | Builder read. WR-05 bridge vertices are virtual and downmix onto real targets. |
+| 02-01 | One shared 0.0175 rad threshold | ✓ VERIFIED | `SpeakerLayout.cpp:96` |
+| **02-01** | **No nearest-speaker branch in VBAP/VBIP/MDAP; a hand-built empty context trips a Debug-only assert (D-01)** | **✗ FAILED** | First clause holds. Second clause: the asserts were removed by IN-14 (8ae2eed). See gaps. |
+| 02-01 | D-02a abort, every build type, not reachable from renderBlock (backstop) | ✓ VERIFIED | UAT test 8 observed it. Guard lines unchanged since then. Placement re-read: line 732, `setOutputFormat` only. |
+| 02-01 | `setOutputFormat` void; OSD-facing symbols compile | ✓ VERIFIED | `[consumer-surface]`, OSD build exit 0 |
+| 02-01 | Tolerance -1e-6f | ✓ VERIFIED | `SpatialMath.cpp` |
+| 02-01 | `kLayoutExpectations` tied to `NUM_LAYOUT_DEFS` | ✓ VERIFIED | `[io][layout]` |
+| 02-01 | Binaural/Ambisonics never call computeVBAPGains | ✓ VERIFIED | grep |
+| 02-02 | 8 oracle truths | ✓ VERIFIED | All three generators regenerate byte-identically. The headers compile in the suite. |
+| 02-03 | 3 truths (#22 filed after approval) | ✓ VERIFIED | Carried (UAT test 4). Not touched by the review. |
+| 02-04 | Non-finite / huge inputs: finite gains, power 0 or 1, under the watchdog | ✓ VERIFIED | `[robust]` 6,340. DBAP is now never silent (WR-08), which still satisfies "0 or 1". |
+| 02-04 | VBAP 2D/3D silence for non-finite; bounded wrap | ✓ VERIFIED | `SpatialMath.cpp:141`, `:273` guards. `[robust]` |
+| 02-04 | KNN and DirectBinaural silence for non-finite | ✓ VERIFIED | Unchanged. Guards in place. |
+| **02-04** | **No enclosing triplet: largest-min-gain, clamp, renormalise; empty is silent; a Debug-only assert marks the path (D-06b, D-06c)** | **✗ FAILED** | The assert was removed and a nearest-speaker snap was added when the clamp gives zero (WR-03, 8899bcf). Largest-min-gain and empty-is-silent still hold (test at `VBAPTripletSelectionTests.cpp:928`). See gaps. |
+| 02-04 | Engine hold-last-good per object | ✓ VERIFIED | `[sanitize]` 27 |
+| 02-04 | NaN distance never reaches the NFC-HOA state | ✓ VERIFIED | `[sanitize]` |
+| 02-04 | Finite inputs untouched by guards; isfinite only in .cpp, safe from OSD's fast-math | ✓ VERIFIED | **Upgraded from coincidental-reliance.** The precondition is now enforced by `FloatSemanticsGuard.h`'s `#error` (checked). One wording exception, DBAP's finite clamp above 1000, is recorded under advisory. |
+| 02-04 | Nadir-cap ear pins; meridian | ✓ VERIFIED | `[ear]` |
+| 02-04 | Horizon continuity at most 0.01 | ✓ VERIFIED | `[ear]` |
+| 02-04 | Coverage: every finite direction contained, no elevated leak below | ✓ VERIFIED | `[coverage]`, `[ear]`. This is what keeps WR-03's snap off the engine path. |
+| 02-04 | Tolerance -1e-6f | ✓ VERIFIED | |
+| 02-05 | 10 panning-law truths (textbook VBIP, laws for all 8, unity, continuity, textbook pins, height coverage, DBAP doc 12.04, MDAP WASPAA 1999, DirectBinaural properties) | ✓ VERIFIED | `[panning-law]` 8,117, `[textbook]` 90. VBIP and MDAP lost only the jassert (IN-14, comment only otherwise). DBAP's docblock still states 12.04 dB, no blur, 0.001 clamp, and adds the WR-08 rules. |
+| 02-06 | evalSH single implementation; 49 literals; addition theorem; parity; round trip; convention stated | ✓ VERIFIED | `[sn3d]`, `[roundtrip]` |
+| 02-06 | Order-3 decode via getDecodeMatrix, within 1e-6 of the pre-change function | PASSED (override) | Override: superseded by 02-10's derived 2.5e-5 bound. Accepted by the user in UAT test 11 on 2026-10-04. `[ambi-pin]` passes at 2.5e-5. |
+| 02-06 | getDecodeMatrix writes nothing for >16 or 0 speakers, writes a finite decode for 16 | ✓ VERIFIED | `[decode-guard]` 51. IN-03 now also returns `false` for >16 or a bad order, and `true` with no write for 0. The "writes nothing" behaviour is unchanged. |
+| 02-06 | 23 formats resolve; row and channel order pinned | ✓ VERIFIED | `[format-resolve]`, `[ambi-pin]` |
+| 02-07 | Docs state the convention; textbook VBIP; DBAP/MDAP citations; nearestSpeaker3DFallback comment-deprecated; tie-break min-sum cites the issue | ✓ VERIFIED | grep table above. `SpatialMath.h:37-45` keeps the deprecated inline helper. |
+| **02-07** | **Docs describe below-horizon as EAR … no doc describes a nearest-speaker fallback** | **✗ FAILED** | `docs/integration-guide.md:231-233` and `SKILL.md:48` describe the WR-03 snap, accurately. See gaps. |
+| 02-07 | OSD 30391cd compiles and links (DR-3) | ✓ VERIFIED | Rebuilt this pass, exit 0 |
+| 02-07 | Full suite passes except HUTUBS; every Phase 2 tag runs | ✓ VERIFIED | Above |
+| 02-07 | Cross-repo follow-ups recorded, not performed | ✓ VERIFIED | Carried |
+| 02-08 | 7.1.4 az ±60 hold 0.7071/0.7071 from 0 to -30 | ✓ VERIFIED | `[g02-2]` 203 |
+| 02-08 | Exactly 2n lower triplets, no trapezoid triangle | ✓ VERIFIED (shipped layouts) | `[io][layout][ear]`. The probe shows the counts unchanged. A consumer layout with a gap of 179 degrees or more now gets 2(n + 2g), documented in the header and pinned by `[gap]`. Before WR-05 it got fewer than 2n (holes), so this extends the truth and does not break it. |
+| 02-08 | Regular, then cap, then wedge; exactly one wedge per band direction | ✓ VERIFIED | `selectionTier` via `kind()`. `[band]` |
+| 02-08 | Band equals the double-precision pair pan on all 8 layouts | ✓ VERIFIED | `[band]` 828 |
+| 02-08 | 26 band pins vs ear 2.1.0, regenerate-diff empty, 13 cap pins unchanged | ✓ VERIFIED | Regenerated this pass, identical |
+| 02-08 | Band and seam continuity at most 0.01 | ✓ VERIFIED | `[panning-law]` |
+| 02-08 | Above horizon bit-identical (#22 untouched) | ✓ VERIFIED | `[vbap3d-identity]` |
+| 02-08 | Tolerance -1e-6f every pass | ✓ VERIFIED | |
+| **02-08** | **VBAPTriplet / LayoutContext / SpatializationAlgorithm / OSD signatures unchanged; SpeakerLayout.h diff comment-only (DR-3)** | **✗ FAILED (literal; DR-3 intent holds)** | WR-02 added `VBAPTriplet::Kind` and `kind()`. IN-03 changed getDecodeMatrix void to bool. No data member changed, `[consumer-surface]` passes and OSD builds. See gaps. |
+| 02-09 | Guide, README and skill state the band, the 5.1.4 exception and #22 above the horizon only | ✓ VERIFIED | grep: "one pan region", "PyPI ear 2.1.0", "above the horizon", SpatialCore#22 |
+| **02-09** | **README, guide and SKILL.md keep CRLF on every line** | **✗ FAILED** | Guide 0/306 and SKILL.md 0/583 lines are CRLF; README 144/144 is. IN-13 pinned LF. See gaps. |
+| 02-09 | WR-01 fixed in the disposition ledger | ✓ VERIFIED | The ledger now reads 0 open of 25. WR-01 is `fixed`. |
+| 02-09 | Phase gate; DR-3; follow-ups; one yes/no question | ✓ VERIFIED | Above / carried |
+| 02-10 | `[ambi-pin]` passes in Release and Debug within 2.5e-5 | ✓ VERIFIED | 411 / 3 in both builds |
+| 02-10 | Bound derived, comment records the derivation | ✓ VERIFIED | IN-09 tidied the comment, and IN-07 names the 5 resolving layouts |
+| 02-10 | Float vs double anchor within 4.0e-5 | ✓ VERIFIED | Passes. It tripped under my mutation (:894). |
+| 02-10 | +0.1% epsilon fails in both builds and passes when reverted | ✓ VERIFIED | **Re-proved this pass:** 11 failed in each build, 411 pass after the revert |
+| 02-10 | Library decoder and verbatim reference unchanged as of 02-10 | ✓ VERIFIED | Scoped to 02-10's commits (accepted in UAT test 12). After 02-10, IN-03 touched `AmbisonicsCodec.cpp` (bool return, order guard, and `if (M > MAX_AMBI_CHANNELS)` replaced by `order > MAX_AMBI_ORDER`, which is equivalent). The numeric body is unchanged, and `[ambi-pin]` and the mutation check confirm it. |
+| 02-10 | Phase gate both build types; recurrence guard; deferred items; yes/no question | ✓ VERIFIED | Above / carried |
 
-**02-08: below-horizon band matches EAR (9 truths)**
+**Score:** 88/93 must-haves verified: 4 ROADMAP criteria plus 89 plan truths, including 1 PASSED (override). 5 FAILED. 0 present-but-behavior-unverified.
 
-| Truth | Status | Evidence |
-|---|---|---|
-| 7.1.4 az 60 holds 0.7071 / 0.7071 from 0 to -30; az -60 mirrors on speakers 1 and 4; no lean, no side flip | ✓ VERIFIED | `[g02-2]` passes (203 assertions). My own probe reproduces it through `RenderEngine::setOutputFormat` and `VBAPAlgorithm::computeGains`. |
-| Exactly 2n lower triplets (n caps with every ear-level bit and `1/sqrt(n)`, n wedges with `nadirMask = 0`, `nadirGain = 0`), no trapezoid triangle remains | ✓ VERIFIED | Builder code read. `[io][layout][ear]` asserts extras == 2n, n caps, n wedges and matching pair sets. |
-| Selection order: regular, then cap, then wedge; no min-sum tie below the horizon | ✓ VERIFIED | `selectionTier` plus `pass < 3`. `[ear][band]` asserts exactly one enclosing wedge and no regular or cap enclosure per band direction. |
-| Band gains equal an independent double-precision 2D pair pan (within 1e-5) on all 8 layouts, 0.5-degree azimuth, 9 elevations, including 5.1.4's rear gap | ✓ VERIFIED | `[band]` passes (828 assertions). The summary reports max 2.98e-7. |
-| 26 band directions pinned against ear 2.1.0 within 1e-5, regenerate-diff empty, no 5.1.4 pin beyond 110 degrees, 13 cap pins unchanged | ✓ VERIFIED | I ran the regenerate-diff myself (identical). The header's removed lines are comments only. 5.1.4 pins are at az 60, -70 and -100. |
-| Band and band/cap seam continuity at most 0.01 per 0.1 degree; the old bound was 0.12 | ✓ VERIFIED | `PanningLawTests.cpp:966-967` scopes `-30..0 band` and `band/cap seam` at 0.01f. `[panning-law]` passes. |
-| Above the horizon nothing changes (bit-identical to d43cb15; #22 untouched) | ✓ VERIFIED | `[vbap3d-identity]` passes (262,104 assertions). Pass-0 loop body unchanged. |
-| Tolerance stays -1e-6f in every pass | ✓ VERIFIED | One `g0 >= -1e-6f` site (`SpatialMath.cpp:312`) serves all passes. |
-| Public surface unchanged (comment-only header diff, `[consumer-surface]` passes) | ✓ VERIFIED | Header diff is comments only; `[consumer-surface]` passes; the OSD build compiles. |
-
-**02-09: docs, gate, DR-3 (9 truths)**
-
-| Truth | Status | Evidence |
-|---|---|---|
-| Integration guide states the pair region, 0.7071 / 0.7071, EAR match except 5.1.4 behind the listener (U+135 / U-135), #22 above the horizon only | ✓ VERIFIED | Text read in the diff; required phrases present. |
-| README VBAP bullet states the EAR match except behind the listener on 5.1.4 | ✓ VERIFIED | `grep` confirms. |
-| Skill states the same in both below-horizon paragraphs and scopes step 4's tie | ✓ VERIFIED | `one pan region` x2, `PyPI ear 2.1.0` x2, `above the horizon on height layouts` x1. |
-| All three docs keep CRLF on every line | ✓ VERIFIED | 282/282, 144/144, 583/583. |
-| WR-01 recorded as fixed in 02-REVIEW-DISPOSITION.md | ✓ VERIFIED | Frontmatter and table row both say `fixed`. The count now reads `open: 10, total: 11` because the later review (ec957c1) added WR-05, IN-05 and IN-06 and dropped nothing else, so the "open count 7" in the plan was correct at the time of 02-09 and has since moved. |
-| Phase gate: full suite minus HUTUBS passes; every Phase 2 tag including `[band]` and `[g02-2]` passes | ✓ VERIFIED | My run reproduces 304,835 assertions / 192 cases; the tag sweep above passes. |
-| DR-3: OSD 30391cd compiles and links against this branch, OSD repo status unchanged, nothing installed | ✓ VERIFIED | Build log evidence above; `git -C ~/conductor/repos/openspatialdelay-v1 status --porcelain` is empty. I did not rebuild OSD (instructions). |
-| 02-09-SUMMARY carries the superseding cross-repo follow-ups (4 files, five audible changes, #22 comment suggested but not posted) | ✓ VERIFIED | Section present with all three. |
-| The user gets one plain-English yes/no question and Claude runs the checks | ✓ VERIFIED | Question present in 02-09-SUMMARY, harvested as a human item below. |
-
-**02-10: honest [ambi-pin] bound (9 truths)**
-
-| Truth | Status | Evidence |
-|---|---|---|
-| `[ambi-pin]` passes in Release (arm64, `build-release/`) and Debug within `kAmbiPinTolerance = 2.5e-5` on all 15 layouts | ✓ VERIFIED | Both builds: 110 assertions in 2 test cases pass. Release ctest 193/193. This supersedes plan 02-06's "within 1e-6" truth, which the debug session showed was never achievable on arm64 Release. |
-| The bound is derived, and the comment records the derivation and no longer says the pin is exact | ✓ VERIFIED | Comment lines 673-707 read and cross-checked against the debug session; header comment and test title now say "within float rounding". The 2.5x vs 2.3x wording slip is IN-09. |
-| Each float decoder is within `kAmbiFloatVsDoubleTolerance = 4.0e-5` of a double-precision decode on all 15 layouts in both build types | ✓ VERIFIED | Checks at :825-826 pass in both builds. They tripped under my +0.1% mutation (5.79e-05 to 6.29e-05), so they are live. |
-| +0.1% Tikhonov change fails the pin in both builds (at least 3 per-layout checks plus the all-layout check) and the tree passes again once reverted | ✓ VERIFIED | Reproduced by me: 11 failed assertions in each build (5 per-layout, 5 anchor, 1 all-layout), 110 pass after revert. |
-| Library decoder and verbatim reference unchanged; no FP flag | ✓ VERIFIED | `git diff 1ac244a HEAD -- src include CMakeLists.txt tests/CMakeLists.txt .github` is empty; `referenceAmbiDecode` byte-identical. |
-| Phase gate in both build types: Debug full suite except HUTUBS; Release under ctest with no exclusion; Phase 2 tags in both | ✓ VERIFIED | My runs: Debug 192/193 (HUTUBS only), Release 193/193; ten tags each in both builds pass. The SUMMARY's 17-tag sweep was not repeated in full; the ten above include every tag that backs the ROADMAP criteria. |
-| Recurrence guard: Release command in VALIDATION, build-type rule in TESTING.md, `build-release/` gitignored | ✓ VERIFIED | Files read; `git check-ignore` confirms. The `ctest` directory caveat the executor found (`build-release/tests`, not the build root) is recorded in both files and is correct. |
-| Out-of-scope items recorded, not fixed (tight tolerances, no arm64/FMA CI leg, HUTUBS Debug-only) | ✓ VERIFIED | Four `02-10:` entries in `deferred-items.md` (the fourth, CI's ctest step running zero tests, was found during execution). `.github/` diff is empty. |
-| The user gets one plain-English yes/no question and Claude runs every build and test | ✓ VERIFIED | Question present in 02-10-SUMMARY, harvested as a human item below. |
-
-**Score:** 88/88 truths verified (78 from the earlier rounds, 9 new for 02-10, with the 02-01 backstop truth moved from present-but-behavior-unverified to verified on UAT test 8's observed abort; 0 present-but-behavior-unverified).
+The previous report's 88 used a different denominator, which deduplicated and superseded some items. Here every plan truth is counted once and the ROADMAP criteria are counted separately.
 
 ### Deferred Items
 
-Items not met inside Phase 2 and addressed (or owned) later. Informational only, they do not affect the status.
+None of the five gaps is covered by a later phase. Phase 5 (realtime safety) concerns audio-path allocation, not whether these contract changes are accepted. The carried items are the same as last time:
 
 | # | Item | Addressed In | Evidence |
 |---|------|-------------|----------|
-| 1 | CI has no arm64/FMA leg, and CI's `ctest` step runs zero tests (build-root `ctest` finds none; `.github/workflows/ci.yml`) | Phase 6 | ROADMAP Phase 6 success criterion 3: "A green macOS CI run builds against JUCE 9.0.0 and runs the Catch2 suite. (SpatialCore#9)". Clear match for both. |
-| 2 | HUTUBS PP2 golden checksum fails in Debug only (`HutubsPP2Tests.cpp:47`) | Phase 3 (per `deferred-items.md` and EXTR-02), not named in ROADMAP text | Phase 3 lists EXTR-02 and "dedicated test files" for `PartitionedConvolver` and `BinauralRenderer`, but no ROADMAP sentence names the golden checksum. Treated as a pre-existing out-of-scope failure, not as matched-and-deferred. It does not touch a Phase 2 truth. |
+| 1 | CI has no arm64/FMA leg; CI's ctest step runs zero tests | Phase 6 | ROADMAP Phase 6 criterion 3 |
+| 2 | HUTUBS PP2 golden checksum fails in Debug only | Phase 3 (EXTR-02, deferred-items.md) | Not a Phase 2 truth |
+| 3 | Listening checks: test 7 (band) and post-review (WR-05 gap, WR-08 DBAP) | Backlog 999.1, 999.2 | User deferred in UAT |
 
-### Prohibitions (judgment-tier, non-authoritative LLM judgments; human review recommended)
+### Advisory (New Scope, Unevidenced)
 
-The first 25 are carried from earlier rounds (UAT tests 5 and 9 accepted them). The previously partly-failing 02-07 item holds. Four new items from 02-10 are at the bottom of the table and are not yet accepted:
-
-| Plan | Prohibition (short) | Verifier judgment |
-|---|---|---|
-| 02-07 | Docs must not describe code differently from what it computes | **Now holds.** The band is EAR-exact and the tie scope is accurate. Residual minor wording items IN-01 and IN-04 are unchanged and not covered by this prohibition's core. |
-| 02-08 | No output change above the horizon; #22 stays separate | Holds: `[vbap3d-identity]` |
-| 02-08 | No alloc, lock or log in `computeVBAPGains3D`; wedges built on the layout-build thread | Holds: only integer tests and stack floats added; wedges built in `appendLowerHemisphereTriplets` |
-| 02-08 | No public member added, removed or retyped; no change to `SpatializationAlgorithm` or the 4-member `LayoutContext` | Holds: header diff is comments only |
-| 02-08 | No special case for 5.1.4's rear gap in code | Holds: the builder has no layout-specific branch; the gap gets the same wedge |
-| 02-08 | No hand-edited `EarReference.h`, no value derived from SpatialCore code | Holds: byte-identical regeneration from ear 2.1.0 |
-| 02-09 | Docs must not describe behaviour the code lacks | Holds, with the "about -59 degrees" figure a stated derivation I re-checked |
-| 02-09 | OSD repo not modified; no installing targets built; no GitHub post; CONTEXT unchanged | Holds: OSD status empty; no `gh` write; I did not touch OSD |
-| 02-09 | No change outside the named bullets and paragraphs | Holds: guide +24/-12 in two bullets, README one line, skill three lines |
-| 02-10 | No change under `src/` or `include/`; no edit to any line of `referenceAmbiDecode` | Holds: `git diff 1ac244a HEAD -- src include` is empty; the function text is byte-identical |
-| 02-10 | No `-ffp-contract` or other FP flag in `CMakeLists.txt` or `tests/CMakeLists.txt` | Holds: diff of both is empty |
-| 02-10 | Do not tune a tolerance to make a measurement pass; stop and report if a stop rule breaks | Holds on the evidence: the number is derived from measured conditioning and spread, the SUMMARY records the stop rules (Release worst 5.28e-6 vs limit 1.25e-5; worst float-vs-exact 1.68e-5 vs limit 2.0e-5) as not broken, and my mutation shows the bound still discriminates. The limit did move from 1e-6 to 2.5e-5, which is the user's yes/no decision below. |
-| 02-10 | Do not commit the mutation or anything from the disposable worktree; do not touch HUTUBS PP2, other tolerances, `ci.yml` or `/tmp/sc-backstop` | Holds: `git log -p 1ac244a..HEAD -- src` is empty, `.github/` diff is empty, the only test file changed is `RenderEngineTests.cpp`, `/tmp/sc-backstop` still exists |
+| # | Finding | Category | Why Advisory |
+|---|---------|----------|--------------|
+| 1 | DBAP clamps finite distance to ±1000 (WR-08), against the 02-04 "finite inputs untouched" wording | other | Only |d| > 1000, outside 0..1. The shift is about 2/d relative and inaudible. The user has seen WR-08. |
+| 2 | Three unqualified issue references (Phase 1 criterion 4) | other | Carried, cosmetic |
+| 3 | Debug FFT leak-detector line at exit | other | Pre-existing singleton, not Phase 2 |
 
 ### Required Artifacts
 
+`gsd-tools verify.artifacts`: 31 of 32 pass. The one miss is mechanical. 02-01 expects `src/Core/SpatialMath.cpp` to contain `lowerHemisphere`, and WR-02 moved that read into `VBAPTriplet::kind()` (`SpeakerLayout.h:56-63`), which `SpatialMath.cpp:255` and `:362` call. The logic is substantive and wired: `[vbap3d-identity]`, `[tracer]` and `[band]` pass. I count it as ✓ VERIFIED with the pattern relocated. It is part of the WR-02 change already listed under gap 02-08.
+
 | Artifact | Status | Details |
 |---|---|---|
-| `src/IO/SpeakerLayout.cpp` | ✓ VERIFIED | Cap and wedge emission, shared `setInverse`, banner rewritten; WIRED via `RenderEngine.cpp:735` |
-| `src/Core/SpatialMath.cpp` | ✓ VERIFIED | `selectionTier` and three-pass selection; WIRED (read by VBAP/VBIP/MDAP through `computeVBAPGains3D`) |
-| `include/SpatialCore/IO/SpeakerLayout.h` | ✓ VERIFIED | Comment-only change |
-| `tests/IO/SpeakerLayoutTests.cpp`, `tests/Core/VBAPTripletSelectionTests.cpp`, `tests/Algorithms/PanningLawTests.cpp` | ✓ VERIFIED | All registered and run; the three new test groups pass |
-| `tests/reference/gen_ear_reference.py`, `EarReference.h`, `README.md` | ✓ VERIFIED | Regenerate byte-identically |
-| `docs/integration-guide.md`, `README.md`, `.claude/skills/spatial-audio-dsp/SKILL.md` | ✓ VERIFIED | New text present, CRLF intact |
-| `02-REVIEW-DISPOSITION.md`, `02-VALIDATION.md` | ✓ VERIFIED | WR-01 fixed; the four new validation rows exist (still marked pending, a bookkeeping item, not a goal gap) |
-| `tests/Engine/RenderEngineTests.cpp` (`[ambi-pin]`, `doublePrecisionAmbiDecode`, two derived constants) | ✓ VERIFIED | Substantive (real double-precision solve, not a stub), wired (reads `RenderEngine::getActiveLayout().ambiDecodeMatrix`), registered in `tests/CMakeLists.txt` and run in both builds. See WR-06 for the NaN blind spot. |
-| `.gitignore`, `02-VALIDATION.md`, `.planning/codebase/TESTING.md`, `deferred-items.md` | ✓ VERIFIED | `build-release/` ignored; Release gate and ctest-directory caveat present; four 02-10 deferred entries present. The `02-VALIDATION.md` rows for 02-08, 02-09 and 02-10 still read pending (bookkeeping, not a goal gap). |
-| Earlier plans' artifacts (02-01 to 02-07) | ✓ VERIFIED | No regressions; tests above pass |
+| `src/IO/SpeakerLayout.cpp` | ✓ VERIFIED | Gap bridge added; shipped output bit-identical (probe) |
+| `src/Core/SpatialMath.cpp` | ✓ VERIFIED | `kind()`-based tiers; WR-03 nearest block (gap 02-04) |
+| `src/Core/FloatSemanticsGuard.h` | ✓ VERIFIED (new) | `#error` fires under fast-math; included by all 8 guarded TUs plus ADMOSCReceiver |
+| `src/Algorithms/DBAPAlgorithm.cpp`, `ConstantPowerAlgorithm.cpp`, `AmbisonicsAlgorithm.cpp` | ✓ VERIFIED | Explicit non-finite rules; `[robust]` |
+| `src/IO/AmbisonicsCodec.cpp` / `.h` | ✓ VERIFIED | bool return; `[decode-guard]`, `[ambi-pin]` |
+| `tests/TestNumerics.h` | ✓ VERIFIED (new) | `accumulateWorstFinite`, shared by the ambi-pin and codec tests (WR-06, WR-07) |
+| `tests/Core/VBAPTripletSelectionTests.cpp` | ✓ VERIFIED | New WR-03, IN-14 and WR-05/IN-15 cases (lines 821, 985, 1597) |
+| Every other 02-01 to 02-10 artifact | ✓ VERIFIED | verify.artifacts pass |
 
 ### Key Link Verification
 
+`gsd-tools verify.key-links`: 24 of 24 links verified across the 10 plans. Additionally:
+
 | From | To | Status | Details |
 |---|---|---|---|
-| `RenderEngine::activateLayout` | `appendLowerHemisphereTriplets` | ✓ WIRED | Called after the guard, before the swap (`RenderEngine.cpp:735`) |
-| `computeVBAPGains3D` | wedge and cap fields | ✓ WIRED | `selectionTier` reads `lowerHemisphere`, `nadirVertex`, `nadirMask`; the output mapping reads `nadirGain` |
-| Docs | tests | ✓ WIRED | The guide's 0.7071 / 0.7071 example and the PyPI ear 2.1.0 claim are `[g02-2]` and the `[ear][golden][band]` pins |
-| `EarReference.h` | `gen_ear_reference.py` | ✓ WIRED | Regenerate-diff empty (generators and reference headers unchanged since the last pass: `git diff a322673 HEAD -- tests/reference` is empty) |
-| `[ambi-pin]` | `AmbisonicsCodec::getDecodeMatrix` via `RenderEngine::setOutputFormat` then `activateLayout` | ✓ WIRED | My mutation of the codec's epsilon (and of its output to NaN) changed `[ambi-pin]`'s outcome, which could not happen unless the test reads the library's matrix |
-| `[ambi-pin]` derivation comment | `.planning/debug/ambi-pin-release-tolerance.md` | ✓ WIRED | Cites G-02-10 and the path; figures match |
-| `02-VALIDATION.md` Release command | `build-release/` | ✓ WIRED | Command runs 193 tests; `build-release/` is gitignored |
+| `[ambi-pin]` | `AmbisonicsCodec::getDecodeMatrix` via `activateLayout` | ✓ WIRED | The mutation of the library's epsilon changed the test outcome |
+| `RenderEngine::activateLayout` | `getDecodeMatrix` return value | ✓ WIRED | `RenderEngine.cpp:713-716`: a false return gives a Debug jassert on the message thread, and the memset leaves a silent decode |
+| Guarded TUs | `FloatSemanticsGuard.h` | ✓ WIRED | All 8 isfinite/isnan files include it |
 
 ### Data-Flow Trace (Level 4)
 
-Not applicable to UI. The equivalent trace is `setOutputFormat` then `activateLayout` then `vbapTriplets` then `computeGains` then output gains. My probe exercises the whole chain with real engine-built triplets, not test-built ones, and the gains are non-trivial (0.7071, 0.9391, 0.8374). Status: ✓ FLOWING.
+Not a UI phase. The chain is `setOutputFormat`, then `activateLayout`, then `vbapTriplets` and `ambiDecodeMatrix`, then `computeGains` and the decode. `[g02-2]` and `[ambi-pin]` drive it through RenderEngine with engine-built data, and the mutation proved the decode reaches the test. Status: ✓ FLOWING.
 
 ### Behavioral Spot-Checks
 
 | Behaviour | Command | Result | Status |
 |---|---|---|---|
-| Suite builds, both trees | `cmake --build build` and `cmake --build build-release` (`--target SpatialCoreTests`) | exit 0, up to date | ✓ PASS |
-| Release suite as CI would run it | `ctest --test-dir build-release/tests --output-on-failure` | 100% passed, 193 of 193 | ✓ PASS |
-| G-02-10 gap itself | `./build-release/tests/SpatialCoreTests "[ambi-pin]"` and the same in `build/` | 110 assertions pass in each | ✓ PASS |
-| The pin can still fail | temporary +0.1% epsilon mutation, both trees, then revert | 11 failed assertions in each; 110 pass after revert | ✓ PASS |
-| Debug suite passes except the deferred HUTUBS case | `./build/tests/SpatialCoreTests "~HUTUBS PP2 — golden HRIR checksum at az=90deg (own control)"` | 192 cases / 304,865 assertions pass | ✓ PASS |
-| G-02-2 end to end | own probe (7.1.4, 5.1.4) | 0.7071 / 0.7071 at 0, -5, -15, -25, -30; mirrors at -60 | ✓ PASS |
-| Reference headers are generated, not typed | three `gen_*_reference.py` vs checked-in headers | 3/3 identical | ✓ PASS |
-| Ten Phase 2 tags | per-tag runs in `build` and `build-release` | all 20 runs pass | ✓ PASS |
-| Issue #22 still open | `gh issue view 22` | **SKIPPED**: `gh` returns HTTP 401 this session. UAT already recorded the match. | ? SKIP (no decision rides on it) |
+| Debug full suite | `build/tests/SpatialCoreTests` | 200/201, HUTUBS :47 only | ✓ PASS (allowed failure) |
+| Release full suite | `build-release/tests/SpatialCoreTests`; `ctest --test-dir build-release/tests` | 201/201; 100% | ✓ PASS |
+| 18 Phase 2 tags x 2 builds | per-tag runs | all pass, identical counts | ✓ PASS |
+| Shipped triplets unchanged | old-vs-new probe, `cmp` | bit-identical | ✓ PASS |
+| Reference headers generated, not typed | three generators vs headers | 3/3 identical | ✓ PASS |
+| Pin still discriminates | +0.1% epsilon mutation, both builds, reverted | 11 fail per build; 411 pass after revert | ✓ PASS |
+| OSD builds (DR-3) | OSD scratch build, two targets | exit 0, OSD repo clean | ✓ PASS |
+| Fast-math refused | clang++ -ffast-math / -ffinite-math-only | `#error` | ✓ PASS |
+| No audio-thread assert output | `[robust]` in Debug | 0 "JUCE Assertion" lines | ✓ PASS |
 
 ### Probe Execution
 
@@ -347,100 +372,83 @@ No `scripts/*/tests/probe-*.sh` exist and no plan declares one. Step 7c: N/A.
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |---|---|---|---|---|
-| EXTR-01 | 02-01, 02-02, 02-03, 02-04, 02-05, 02-07, 02-08, 02-09 | Every public algorithm computes correct gains; the 3D triplet fallback is eliminated or fails loudly | ✓ SATISFIED | Algorithm tests pass in both builds; `[panning-law]` covers all 8; the nearest-speaker fallback has no caller in `src/` (only the deprecated public inline definition at `include/SpatialCore/Core/SpatialMath.h:45` remains, kept for the major-version rule, per D-01); below-horizon VBAP pinned to ear 2.1.0 including the band |
-| EXTR-03 | 02-02, 02-06, 02-07, 02-10 | Layouts, format registry and Ambisonics codec return real data; 23 formats, 15 layouts, encode/decode to order 6 | ✓ SATISFIED | SC3 and SC4 evidence; the decode pin (`[ambi-pin]`) now holds on the shipping build type as well |
-| VERIFY-01 | 02-02, 02-06, 02-07, 02-10 | Ambisonics channel-order and normalisation convention stated (SpatialCore#11) | ✓ SATISFIED | SC1. REQUIREMENTS.md already shows `[x]` and "Complete". #11 itself was never closed on GitHub (only by commit-message reference). |
+| EXTR-01 | 02-01, 02-02, 02-03, 02-04, 02-05, 02-07, 02-08, 02-09 | Every public algorithm computes correct gains; the 3D triplet fallback is eliminated or fails loudly | ✓ SATISFIED (consumer path), with the 02-04 decision gap open | All algorithm tests pass in both builds. The off-facade WR-03 snap is the open decision. |
+| EXTR-03 | 02-02, 02-06, 02-07, 02-10 | Layouts, format registry and codec return real data | ✓ SATISFIED | SC3, SC4, `[ambi-pin]` |
+| VERIFY-01 | 02-02, 02-06, 02-07, 02-10 | Ambisonics convention stated (SpatialCore#11) | ✓ SATISFIED | SC1 |
 
-All three phase requirement IDs (EXTR-01, EXTR-03, VERIFY-01) appear in plan frontmatter and are accounted for. No orphaned requirements: REQUIREMENTS.md maps only EXTR-01, EXTR-03 and VERIFY-01 to Phase 2 (traceability rows 427, 428, 442) and ROADMAP.md lists the same three. 02-08 and 02-09 declare only EXTR-01; 02-10 declares VERIFY-01 and EXTR-03.
+No orphaned requirements. Tracking note carried from the last report: REQUIREMENTS.md still shows EXTR-01 and EXTR-03 as `[ ]` / "Largely verified by tests" (lines 138, 148, 427, 428). The `mark-complete` tool cannot flip that status text, so set it by hand once the gaps are closed.
 
-**Tracking defect: the 02-10 SUMMARY's "`requirements mark-complete` found no `EXTR-03` entry" is wrong about the cause, and it is the same defect the previous pass found for EXTR-01.** Resolved against REQUIREMENTS.md explicitly:
+### Decision Coverage
 
-- The entry exists. Line 148 is `- [ ] **EXTR-03**: Layouts, format registry, and Ambisonics codec return real data`, in the same form as the `[x]` entries (line 138 is the matching `- [ ] **EXTR-01**`). The traceability row exists too: line 428, `| EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |`.
-- I read the tool (`~/.claude/gsd-core/bin/lib/milestone.cjs`, the `mark-complete` path, around lines 160-215). It flips the checkbox, then updates the traceability row only if the row's Status cell is `Pending` or `Gaps Found`. `Largely verified by tests` is neither, so the row write is rejected and, by design (#2788), the checkbox flip is rolled back. The tool then reports no hit, which reads as "no entry" but means "entry found, status text not flippable".
-- Current state: both EXTR-01 and EXTR-03 are still `[ ]` with status "Largely verified by tests", although the evidence satisfies both. I did not edit REQUIREMENTS.md (the orchestrator owns tracking). Suggested edit: set both checkboxes to `[x]` and both traceability Status cells to `Complete` by hand, since the tool will not do it.
+`check.decision-coverage-verify`: 20 of 20 trackable CONTEXT decisions "honored". This gate is a substring heuristic and did not detect the reversal of D-06(b) ("replace the snap") and D-06(c) ("jassertfalse in Debug only"), nor D-01's Debug assert, by WR-03 and IN-14. Read those against gaps 02-01 and 02-04, not this count.
+
+### Test Quality Audit
+
+| Test File | Linked Req | Skipped | Circular | Assertion Level | Verdict |
+|---|---|---|---|---|---|
+| `tests/Core/VBAPTripletSelectionTests.cpp` | EXTR-01 | 0 | No (ear oracle, double pair pan) | Value | OK |
+| `tests/Algorithms/PanningLawTests.cpp` | EXTR-01 | 0 | No (PanningReference.h; MDAP labelled cross-check) | Value / behavioural | OK |
+| `tests/IO/AmbisonicsCodecTests.cpp` | VERIFY-01, EXTR-03 | 0 | No (scipy literals) | Value | OK |
+| `tests/Engine/RenderEngineTests.cpp` (`[ambi-pin]`) | EXTR-03 | 0 | Pin vs verbatim d43cb15 copy (VALID baseline) plus a double-precision anchor | Value; mutation-proven | OK |
+| `tests/IO/SpeakerLayoutTests.cpp` | EXTR-03 | 0 | No | Value | OK |
+
+Disabled tests on requirements: 0. Circular patterns: 0. Insufficient assertions: 0.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| (files changed by 02-08 and 02-09) | | TBD / FIXME / XXX | none found | Debt-marker gate clear |
-| `src/IO/SpeakerLayout.cpp` | 293-375 | WR-05: holes when the ear-level ring has an azimuth gap of 180 degrees or more (hull "away from origin" orientation) | ⚠️ Advisory | See below |
-| `src/Core/SpatialMath.cpp`, `include/.../SpeakerLayout.h` | 243-256 / 30-52 | WR-02: wedge kind identified only by the implicit `nadirVertex >= 0 && nadirMask == 0` sentinel | ⚠️ Advisory | Hand-built triplets with `nadirMask == 0` would be reclassified; nothing enforces the encoding |
-| `src/Core/SpatialMath.cpp` | 337-355 | WR-03: regular-only triplet list has no below-horizon coverage; Debug assert on the audio thread | ⚠️ Advisory (UAT test 3 accepted) | Reachable only by bypassing `RenderEngine` |
-| `src/Algorithms/{VBAP,VBIP,MDAP}Algorithm.cpp` | jassert sites | Release fall-through to 2D pan on a height layout with empty triplets | ⚠️ Advisory | Hand-built contexts only, accepted under D-01 |
-| `tests/Engine/RenderEngineTests.cpp` | 817-819 (also 824-832) | WR-06: `std::max` reductions drop NaN, so a NaN decode passes `[ambi-pin]` and the anchor | ⚠️ Warning | Reproduced (see the G-02-10 section). Bounded: `[io][ambisonics]` catches NaN from `getDecodeMatrix`. Not a blocker for any must-have. |
-| `tests/Engine/RenderEngineTests.cpp` | 692-696, 715-782, 673-707 | IN-07 (the +0.1% catch is resolved on only 5 of 15 layouts), IN-08 (double helper has no `N <= M` guard and shares the float SH input), IN-09 (comment says 2.5x where the ratio is 2.3x, duplicated path sentence, indentation split unexplained) | ℹ️ Info | None affects a must-have |
-| `tests/Algorithms/PanningLawTests.cpp`, `tests/IO/AmbisonicsCodecTests.cpp` | 65, 836 / 170 | Unqualified issue references (bare `#22` twice, `SpatialCore#11` without owner) | ⚠️ Warning | See "Cross-phase regression check". Cosmetic, they name SpatialCore's own tracker |
-| (files changed by 02-10: `tests/Engine/RenderEngineTests.cpp`, `.gitignore`) | | TBD / FIXME / XXX | none found | Debt-marker gate clear |
-
-### Code review cross-check
-
-**Earlier review (G-02-2 round: 0 critical, 3 warnings, 2 info).** Unchanged by this pass: `src`, `include` and `tests/reference` have no diff since `a322673`, so WR-05, WR-02, WR-03, IN-05 and IN-06 stand as recorded (none contradicts a must-have; WR-05, WR-02 and WR-03 are follow-ups for hand-built layouts or a future minor version, see the disposition ledger).
-
-**02-10 review (`02-REVIEW.md`, 0 critical, 1 warning, 3 info; findings renumbered WR-06, IN-07, IN-08, IN-09 past existing IDs).** Checked against the must-haves:
-
-- **WR-06** is real and reproduced, see the G-02-10 section. It does not contradict a must-have (the truth is about the Release suite passing, the derivation, and the mutation proof, all verified), but it weakens the pin's own claim to catch a broken decode. Recommend the two-line fix before the phase is closed.
-- **IN-07** is true: the +0.1% resolution is shown on 7.0, 7.1, 7.1.2, 7.1.4, 7.1.6, which is what the must-have required ("at least 3 failing per-layout pin checks"). My mutation gave 5 per-layout plus 5 anchor failures.
-- **IN-08** is true and harmless today (15 speakers is the maximum, `N <= M`). The anchor tests the solve and its conditioning, not `evalSH`; SH values are pinned separately by `[sn3d]` (49 scipy literals, 153 assertions, passes in both builds).
-- **IN-09** is true (comment hygiene).
-- The disposition ledger (`02-REVIEW-DISPOSITION.md`) records all four as `open` (14 open of 15).
-
-### Cross-phase regression check: Phase 1 criterion 4
-
-Phase 1's verification used `grep -rhoE '[[:alnum:]/-]*#[0-9]+' include/ src/ tests/ | grep -cv 'OpenSpatialDelay#'` and recorded `0`. I re-ran it: it returns **11**. All 11 predate 02-10 (the 02-10 diff touches neither `include/`, `src/` nor those test files, apart from `RenderEngineTests.cpp`, which contains no `#NNN`).
-
-| File:line | Text | Form |
-|---|---|---|
-| `include/SpatialCore/Core/SpatialMath.h:78` | `AndrewRahman/SpatialCore#11` | qualified |
-| `include/SpatialCore/IO/AmbisonicsCodec.h:11` | `AndrewRahman/SpatialCore#11` | qualified |
-| `include/SpatialCore/Algorithms/VBIPAlgorithm.h:19` | `AndrewRahman/SpatialCore#20` | qualified |
-| `include/SpatialCore/Algorithms/DBAPAlgorithm.h:21` | `AndrewRahman/SpatialCore#10` | qualified |
-| `src/Algorithms/VBIPAlgorithm.cpp:18` | `AndrewRahman/SpatialCore#20` | qualified |
-| `tests/Algorithms/PanningLawTests.cpp:243, 553, 644` | `AndrewRahman/SpatialCore#22` | qualified (3) |
-| `tests/IO/AmbisonicsCodecTests.cpp:170` | `SpatialCore#11` | owner missing |
-| `tests/Algorithms/PanningLawTests.cpp:65, 836` | bare `#22` (`(F5, #22)`) | **bare** |
-
-**Judgment: not a real regression of the criterion's intent, but a real drift in form on three sites, plus an obsolete check command.** Reasoning:
-
-- The criterion is "every `#NNN` resolves in the tracker it names, OSD references written `Spatial-Media-Lab/OpenSpatialDelay#NNN`". Phase 1's purpose was to stop bare numbers that a reader would resolve in the wrong repo (the code had bare OSD issue numbers). Nine of the eleven are in the explicit `Owner/Repo#N` form, which is exactly the form the criterion asks for; they name SpatialCore's own tracker, which did not appear in code comments when Phase 1 ran, so the grep's "anything not OSD is a violation" proxy could not distinguish them. The check command, not the code, is what no longer fits.
-- The three non-qualified sites are the real drift. All three refer to SpatialCore's own issues (#22 is the coplanar-tie issue filed in Phase 2 and its text was confirmed identical to the approved draft in UAT test 4; #11 is the Ambisonics convention issue, ROADMAP line 75 and REQUIREMENTS line 326). In context, `#22` is unambiguous: line 243 and 553 of the same file cite it qualified. But a bare `#22` in a repo whose comments also cite OSD issues is the exact pattern Phase 1 banned.
-- I could not re-resolve the issues live (`gh` returns HTTP 401 this session). #22 and #11 are evidenced by UAT test 4 and the requirements file. #10 and #20 are cited by qualified references written in Phases 1 and 2 and were not re-resolved this pass.
-
-**Classification: WARNING (advisory), not a blocker.** The drift came in with plans 02-05 and 02-08 (the bare `#22`) and 02-06 or earlier (`SpatialCore#11`), and Phase 2 did not re-run Phase 1's grep. Recommended fix, three one-token comment edits (`#22` to `AndrewRahman/SpatialCore#22` at PanningLawTests.cpp:65 and :836; `SpatialCore#11` to `AndrewRahman/SpatialCore#11` at AmbisonicsCodecTests.cpp:170) and amend the Phase 1 check to `grep -rhoE '[[:alnum:]/-]*#[0-9]+' include/ src/ tests/ | grep -cv 'OpenSpatialDelay#\|AndrewRahman/SpatialCore#'`, which would then return 0. This is not a Phase 2 goal item, so no gap is raised against Phase 2.
+| (all 45 non-planning files changed by the phase) | | TBD / FIXME / XXX / TODO / HACK | none found | Debt-marker gate clear |
+| `src/Core/SpatialMath.cpp` | 407-437 | Silent nearest-speaker snap on the fallback path (no diagnostic) | ⚠️ Warning | Already a gap (02-04). It is not counted twice. |
+| `tests/Algorithms/PanningLawTests.cpp`, `tests/IO/AmbisonicsCodecTests.cpp` | 67, 877 / 172 | Unqualified issue references | ℹ️ Info | Carried advisory |
 
 ### Human Verification Required
 
-#### 1. Accept the 25-parts-per-million bound for the decode check? (yes or no)
+None open. All earlier human items are resolved in `02-UAT.md` (status `complete`: 12 tests, 11 passed, 1 skipped and deferred to backlog 999.1, 0 pending). That includes test 11, the 2.5e-5 `[ambi-pin]` bound ("yes"), and test 12, the four 02-10 prohibitions ("accept"), both answered on 2026-10-04. The post-review listening checks for WR-05 and WR-08 are deferred to backlog 999.2 by the user and do not gate this phase. All judgment-tier prohibitions from 02-01 to 02-10 were accepted in UAT tests 5, 9 and 12 and hold as scoped to their plans. One exception: 02-08's "MUST NOT add … a public struct member or function" no longer holds at HEAD because of WR-02. It is covered by gap 02-08.
 
-**Test:** None to run. 02-10 changed one test's allowed difference, between the library's Ambisonics decoder and a copy of the original decoder, from 1e-6 (one part per million) to 2.5e-5 (25 parts per million).
-**Expected:** Answer yes or no. Yes keeps the new limit (the recommendation). The decoder in the library is unchanged, so nothing you hear changes. The old limit came from a measurement on a debug build and was never derived; the new one is worked out from the matrix maths, re-checked against a double-precision solve on every test run, and I reproduced that it still fails when the decoder is deliberately changed by 0.1%, in both Release and Debug. No means keeping one part per million and forcing identical rounding with a compiler setting on the whole library, which slows the audio code and means re-checking OpenSpatialDelay's sound; that needs a new decision before any change.
-**Why human:** Loosening a test's limit is a trust judgment. The numbers are checked; the acceptance is yours. Nothing else is blocked on the answer.
-
-#### 2. Judgment-tier prohibitions from 02-10 (4)
-
-**Test:** Review the last four rows of the Prohibitions table.
-**Expected:** Accept or reject. All four hold on the evidence.
-**Why human:** Judgment-tier items are never silently absorbed into a pass. The 25 earlier prohibitions were already accepted in UAT tests 5 and 9.
-
-**No longer open (closed by the user in UAT since the previous report):** the 5.1.4 rear-gap question (test 6, "yes, leave it as it is"), the 25 earlier prohibitions (tests 5 and 9), and the D-02a abort backstop (test 8, observed). **Deferred follow-up, not a gate:** the optional listening check of the corrected band (test 7, queued by the user for the next round of listening reviews).
+The five gaps below do need your decision, but they are recorded as gaps (failed must-haves), not as human-verification items.
 
 ### Gaps Summary
 
-There are no gaps and no blockers. G-02-10 was the only open gap and it is closed: the full suite passes in a Release build on Apple Silicon (193/193 under ctest), `[ambi-pin]` passes in Release and Debug, and a deliberate +0.1% decoder change fails it in both, which I reproduced rather than took from the SUMMARY. Nothing regressed: the source diff since the last verification is one test file and one gitignore line, and every Phase 2 tag I ran passes in both build types. The only failing test in either build is the pre-existing Debug-only HUTUBS PP2 checksum, owned by Phase 3.
+**One root cause: the code-review fix rounds (25 findings, 4 rounds) changed five things that Phase 2 plan must-haves promised, and none of those changes was signed off as a change to the phase contract.** Nothing is functionally broken. The suites pass, the shipped-layout output is bit-identical, the EAR pins, `[ambi-pin]`, the panning-law suite and the D-02a abort all hold, and OSD builds. These are contract gaps, not code defects. Each closes with a decision, not with a gap-closure plan.
 
-Status is `human_needed` because the user has one yes/no question open (the 2.5e-5 bound) and four flagged judgment-tier prohibitions to accept.
+| Group | Must-haves | Change | Weight |
+|---|---|---|---|
+| A. Fallback and asserts (WR-03, IN-14) | 02-01 (Debug assert, empty triplets), 02-04 (Debug assert on the no-enclosing path), 02-07 (no doc describes a nearest-speaker fallback) | Audio-thread asserts removed. A nearest-speaker snap was reintroduced for hand-built partial lists when the D-06b candidate clamps to zero. Docs updated to say so. | **Substantive:** reverses locked decisions D-06(b)/(c) and D-01's assert. The fixer flagged WR-03 as "needs a human to confirm it"; I found no record of that. Not reachable through RenderEngine. |
+| B. Public API additions (WR-02, IN-03) | 02-08 (VBAPTriplet unchanged, header diff comment-only) | `VBAPTriplet::Kind` + `kind()`; `getDecodeMatrix` returns bool | Additive and source-compatible; OSD builds. The fixer flagged IN-03 as "needs a human to confirm it". |
+| C. Line endings (IN-13) | 02-09 (CRLF on every line) | Guide and SKILL.md are LF, pinned in .gitattributes | Cosmetic, deliberate |
 
-Follow-ups, none of which blocks the phase:
+**To close:** for each group, either accept it (paste the matching override into this file's frontmatter `overrides:`, with your name and the time, then re-run verification, which should then pass) or revert the change. If you accept group A, also amend D-06(b), D-06(c) and the DR-1 note in `02-CONTEXT.md`, so the locked decision matches the code.
 
-- **Recommended before closing the phase:** fix WR-06 (two-line `REQUIRE (std::isfinite (...))` per decode entry in `[ambi-pin]`, as written in 02-REVIEW.md). Otherwise the pin's claim to catch a broken decode has a known hole.
-- Qualify the three unqualified issue references (PanningLawTests.cpp:65 and :836, AmbisonicsCodecTests.cpp:170) and amend the Phase 1 criterion 4 grep to exclude `AndrewRahman/SpatialCore#`.
-- Update `02-UAT.md`: test 10 to pass, G-02-10 to resolved, status to complete.
-- Update REQUIREMENTS.md by hand: EXTR-01 and EXTR-03 to `[x]` and `Complete` (the tool cannot, see the tracking note).
-- Tick the `02-VALIDATION.md` rows for 02-08, 02-09 and 02-10 (still `pending`).
-- Carry the 02-09 OSD follow-ups into the OSD repo.
-- Optional hardening: IN-07 to IN-09, WR-05, WR-02/IN-06, WR-03, WR-04, and the Phase 6 CI items (arm64/FMA leg, CI's ctest step running zero tests).
+**Suggested overrides (not applied; ready to paste):**
+
+```yaml
+overrides:
+  - must_have: "No VBAP, VBIP or MDAP source file contains a nearest-speaker branch; a hand-built LayoutContext with empty triplets on a height layout trips a Debug-only assert (D-01)"
+    reason: "IN-14: JUCE's assert path logs and allocates on the audio thread (DR-1). The invariant is enforced on the message thread by activateLayout's D-02a abort, and a hand-built empty context now pans by 2D VBAP, pinned by the IN-14 [robust] test."
+    accepted_by: "{your name}"
+    accepted_at: "{ISO timestamp}"
+  - must_have: "When no triplet contains a finite direction, computeVBAPGains3D uses the triplet with the largest minimum gain, clamps negatives to 0 and renormalises; an empty triplet list returns silence; a Debug-only assert marks the path (D-06b, D-06c)"
+    reason: "WR-03: the audio-thread assert is removed, and a candidate that clamps to zero now gives unity on the nearest speaker instead of silence. Hand-built partial lists only; unreachable through RenderEngine ([ear][coverage]). D-06(b)/(c) amended in CONTEXT."
+    accepted_by: "{your name}"
+    accepted_at: "{ISO timestamp}"
+  - must_have: "The docs describe below-horizon panning on height layouts as the ITU-R BS.2127 (EAR) lower-hemisphere construction, the no-triplet case as the largest-minimum-gain triplet, and non-finite positions as silence (algorithm layer) or last-good (engine); no doc describes a nearest-speaker fallback"
+    reason: "Follows from accepting WR-03: the guide and skill describe the new snap accurately, which the docs-match-code prohibition requires."
+    accepted_by: "{your name}"
+    accepted_at: "{ISO timestamp}"
+  - must_have: "VBAPTriplet, LayoutContext, SpatializationAlgorithm and every signature OpenSpatialDelay compiles against are unchanged: the SpeakerLayout.h diff is comment lines only and [consumer-surface] passes (DR-3)"
+    reason: "WR-02 and IN-03 are additive and source-compatible (no data member changed; void-to-bool return). [consumer-surface] passes and OSD 30391cd builds against HEAD."
+    accepted_by: "{your name}"
+    accepted_at: "{ISO timestamp}"
+  - must_have: "README.md, docs/integration-guide.md and SKILL.md keep CRLF on every line"
+    reason: "IN-13: the guide and SKILL.md were flipped to LF in 8899bcf; restoring CRLF would hide the edits a second time, so LF is pinned in .gitattributes."
+    accepted_by: "{your name}"
+    accepted_at: "{ISO timestamp}"
+```
+
+Three more follow-ups, none of which blocks: qualify the three issue references; set EXTR-01 and EXTR-03 to complete by hand in REQUIREMENTS.md; tick the remaining `02-VALIDATION.md` rows.
 
 ---
 
-_Verified: 2026-10-03T22:30:00Z_
+_Verified: 2026-10-04T00:50:10Z_
 _Verifier: Claude (gsd-verifier)_
