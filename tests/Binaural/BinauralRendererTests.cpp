@@ -329,3 +329,92 @@ TEST_CASE ("BinauralRenderer: the 64-sample ITD line is characterised at 44.1 an
     INFO ("largest SADIE 48 kHz raw delay " << maxSadie48Delay << " samples");
     CHECK (maxSadie48Delay >= 64.0f);
 }
+
+// ============================================================================
+// BUG-02 follow-on (03-RESEARCH.md Pitfall 4): KEMAR's HRIR is 558 samples, longer than the
+// 512-sample scratch the renderer used to size in prepare(). updateSourceHRIR() then grew the
+// scratch buffers on the audio thread (a jassertfalse in Debug). The buffers are now sized
+// for the loaded IR in prepare() and setProfile(), which run on the message or loader thread.
+//
+// The allocation itself is not observable from here, so besides the finite, non-silent output
+// this test is judged by the Debug log: a run must print no
+// "JUCE Assertion failure in BinauralRenderer.cpp" line (the 03-03 plan's Task 3 verify
+// counts them). The renderSourceBuffers guard and the jassertfalse pattern stay as they are;
+// they are RTSF-01 (Phase 5).
+// ============================================================================
+
+namespace
+{
+    // Renders 20 blocks of `blockSize` with source 0 sweeping 12 degrees per block (well above
+    // the renderer's 1 degree HRIR-update threshold, so every block loads a new HRIR) and
+    // returns the whole output. The renderer's profile must already be loaded.
+    StereoSignal renderMovingSource (BinauralRenderer& renderer, int blockSize)
+    {
+        constexpr int kBlocks = 20;
+        const std::vector<float> input = whiteNoise (static_cast<size_t> (kBlocks * blockSize), 41, 0.25f);
+
+        StereoSignal out;
+        bool enabled[MAX_SOURCES] = {};
+        enabled[0] = true;
+        std::vector<float> blockL (static_cast<size_t> (blockSize), 0.0f);
+        std::vector<float> blockR (static_cast<size_t> (blockSize), 0.0f);
+
+        for (int b = 0; b < kBlocks; ++b)
+        {
+            renderer.updateSourceHRIR (0, rad (-60.0f + 12.0f * static_cast<float> (b)), 0.0f);
+
+            const float* bufs[MAX_SOURCES];
+            for (auto& p : bufs)
+                p = input.data() + static_cast<size_t> (b * blockSize);
+
+            renderer.renderSourceBuffers (bufs, enabled, MAX_SOURCES, blockSize, blockL.data(), blockR.data());
+            out.left.insert (out.left.end(), blockL.begin(), blockL.end());
+            out.right.insert (out.right.end(), blockR.begin(), blockR.end());
+        }
+        return out;
+    }
+
+    float peakMagnitude (const StereoSignal& s)
+    {
+        float peak = 0.0f;
+        for (float v : s.left)
+            peak = std::max (peak, std::abs (v));
+        for (float v : s.right)
+            peak = std::max (peak, std::abs (v));
+        return peak;
+    }
+}
+
+TEST_CASE ("BinauralRenderer: KEMAR's 558-sample IR is prepared off the audio thread at every block size",
+           "[renderer][scratch]")
+{
+    SECTION ("loaded after prepare() at maximum block 64, 256 and 512")
+    {
+        for (int maxBlock : { 64, 256, 512 })
+        {
+            BinauralRenderer renderer;
+            renderer.prepare (kRate, maxBlock);
+            REQUIRE (loadProfileIntoRenderer (renderer, 5, kRate));
+            REQUIRE (renderer.hrtfDatabase.getIRLength() == 558);
+
+            const StereoSignal out = renderMovingSource (renderer, maxBlock);
+
+            INFO ("maximum block " << maxBlock);
+            CHECK (signalIsFinite (out));
+            CHECK (peakMagnitude (out) > 1.0e-3f);
+        }
+    }
+
+    SECTION ("prepare() again at a smaller block size keeps room for the loaded IR")
+    {
+        BinauralRenderer renderer;
+        renderer.prepare (kRate, 512);
+        REQUIRE (loadProfileIntoRenderer (renderer, 5, kRate));
+
+        renderer.prepare (kRate, 64);
+
+        const StereoSignal out = renderMovingSource (renderer, 64);
+        CHECK (signalIsFinite (out));
+        CHECK (peakMagnitude (out) > 1.0e-3f);
+    }
+}

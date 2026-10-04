@@ -12,11 +12,22 @@ void BinauralRenderer::prepare (double sampleRate, int maxBlockSize)
     currentSampleRate = sampleRate;
     currentBlockSize = maxBlockSize;
 
-    // Pre-allocate to max(blockSize, 512) to cover typical IR lengths
-    // and avoid audio-thread allocation in renderSourceBuffers / updateSourceHRIR.
-    size_t preAllocSize = static_cast<size_t> (std::max (maxBlockSize, 512));
-    convTmpL.resize (preAllocSize, 0.0f);
-    convTmpR.resize (preAllocSize, 0.0f);
+    // Size the scratch buffers off the audio thread so renderSourceBuffers and
+    // updateSourceHRIR never have to grow them (see ensureScratchCapacity).
+    ensureScratchCapacity();
+}
+
+void BinauralRenderer::ensureScratchCapacity()
+{
+    // max (block size, 512, loaded IR length): the block size covers renderSourceBuffers, the
+    // IR length covers updateSourceHRIR (KEMAR's 558-sample HRIR exceeds the old 512 floor).
+    // Grow-only, so a later prepare() at a smaller block never drops below a loaded IR.
+    // Message or loader thread only; never called from the audio thread.
+    const size_t needed = static_cast<size_t> (std::max ({ currentBlockSize, 512, storedIRLength }));
+    if (convTmpL.size() < needed)
+        convTmpL.resize (needed, 0.0f);
+    if (convTmpR.size() < needed)
+        convTmpR.resize (needed, 0.0f);
 }
 
 void BinauralRenderer::setProfile (int profileIndex)
@@ -40,6 +51,10 @@ void BinauralRenderer::setProfile (int profileIndex)
 
     int irLen = hrtfDatabase.getIRLength();
     storedIRLength = irLen;
+
+    // Size the convolution scratch buffers for this IR now, on the loader/message thread,
+    // so updateSourceHRIR() never has to grow them on the audio thread.
+    ensureScratchCapacity();
 
     // =========================================================================
     // Compute cross-profile normalization gain.
@@ -156,7 +171,10 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
     std::vector<float>& tmpL = convTmpL;  // Reuse work buffer (safe: not in render path here)
     std::vector<float>& tmpR = convTmpR;
 
-    // Ensure work buffers are large enough for IR
+    // Ensure work buffers are large enough for IR. ensureScratchCapacity() sizes them in
+    // prepare() and setProfile(), so this guard cannot fire for a profile loaded through
+    // setProfile(). The guard pattern itself (a jassertfalse plus an audio-thread resize) is
+    // RTSF-01 and is dealt with in Phase 5; it is deliberately left as is here.
     if ((int) tmpL.size() < storedIRLength)
     {
         jassertfalse;  // Audio thread allocation -- should have been pre-allocated in prepare()

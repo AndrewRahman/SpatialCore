@@ -22,10 +22,14 @@ public:
         between timer thread loading and audio thread HRIR lookups). */
     HRTFDatabase hrtfDatabase;
 
-    /** Prepare all convolvers for the given sample rate and block size. */
+    /** Prepare all convolvers for the given sample rate and block size. Sizes the
+        convolution scratch buffers for max (maxBlockSize, 512, loaded IR length).
+        Allocates: never call from the audio thread. */
     void prepare (double sampleRate, int maxBlockSize);
 
-    /** Load a new HRTF profile. Computes normGain and prepares source convolvers. */
+    /** Load a new HRTF profile. Computes normGain, prepares source convolvers and sizes the
+        convolution scratch buffers for the loaded IR (so updateSourceHRIR never allocates).
+        Allocates: never call from the audio thread. */
     void setProfile (int profileIndex);
 
     /** Update a single source's HRIR based on its current 3D position.
@@ -83,6 +87,10 @@ private:
 
     // Temporary work buffers for convolution output
     std::vector<float> convTmpL, convTmpR;
+
+    /** Grows convTmpL/convTmpR to max (currentBlockSize, 512, storedIRLength). Called from
+        prepare() and setProfile() only (message or loader thread). Grow-only. */
+    void ensureScratchCapacity();
 
     // ITD (Inter-aural Time Difference) tracking for smooth HRIR transitions.
     // When using getAlignedHRIR(), HRIRs are time-aligned (ITD removed).
