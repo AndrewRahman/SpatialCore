@@ -634,7 +634,14 @@ TEST_CASE ("HRTF database: loadFromFile enforces the byte cap while reading",
     CHECK (db.loadFromFile (file, 48000.0f, file.getSize()));             // exactly at the cap
     CHECK (db.isLoaded());
     CHECK (db.loadFromFile (file, 48000.0f));                             // no cap given
+
+    // A failed read leaves the database fully empty, not half-loaded (IN-04).
+    REQUIRE (db.loadFromFile (file, 48000.0f));
+    REQUIRE (db.getIRLength() > 0);
     CHECK_FALSE (db.loadFromFile (file.getSiblingFile ("does-not-exist.sofa"), 48000.0f, 1000));
+    CHECK_FALSE (db.isLoaded());
+    CHECK (db.getIRLength() == 0);
+    CHECK (db.getNumPositions() == 0);
 }
 
 #if JUCE_MAC || JUCE_LINUX

@@ -66,6 +66,11 @@ bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleR
     //
     // The byte cap is enforced while reading, from one open handle, so a file that lies about
     // its size, grows after a size check, or is not a regular file cannot bypass it (T-03-09).
+    //
+    // Unload first, as loadFromBytes and loadFromBinaryData do: a read failure then leaves the
+    // database fully empty, not holding the previous handle behind loaded = false (IN-04).
+    unload();
+
     constexpr juce::int64 kMaxInt = std::numeric_limits<int>::max();
     const juce::int64 cap = (maxBytes > 0 && maxBytes < kMaxInt) ? maxBytes : kMaxInt;
 
