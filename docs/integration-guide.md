@@ -311,7 +311,9 @@ the audio thread.
 `ctx.engineComputesGains = true` in your `RenderBlockContext`. The engine then decides between the
 Simple path and the HRTF path from the profile that is actually active and, during a switch between
 Simple and an HRTF profile, blends the two, so profile 0 is as click-free as the others. Your own
-`useHRTF` is ignored. Both flags default to `false`, so an existing plugin renders exactly as before.
+`useHRTF` is ignored. On a binaural block `engineSelectsHRTF` fills `objGains` for you, but only
+`engineComputesGains` fills `objChannelGains` for the non-binaural formats, so set both. Both flags
+default to `false`, so an existing plugin renders exactly as before.
 Do not mix `setHRTFProfile` with the older `swapActiveRenderer` / `getPrepareRendererIndex` /
 `getBinauralRenderer` loading on the same engine; pick one way.
 
@@ -331,8 +333,12 @@ The built-in file names are `sadie_d2_ku100.sofa`, `cipic_subject_003.sofa`, `hu
 whether the name match is case-sensitive follows the file system, and no per-user folder is looked at.
 SpatialCore only reads the folder; it never creates or writes it. A missing folder or file falls back
 to the built-in copy silently. A file that is there but unusable (empty, half-copied, a Git LFS stub,
-not a SOFA file, or larger than 256 MB) falls back to the built-in copy and the status says
-"unreadable, used built-in". Until a dedicated custom-file feature exists, this is also how to try your
+not a SOFA file, larger than 256 MB, or outside the supported shape) falls back to the built-in copy
+and the status says "unreadable, used built-in". The supported shape is: a sample rate declared
+between 8 kHz and 768 kHz, two receivers (left and right ear), at most 65536 measurement positions,
+and an impulse response that, resampled to the host rate, is at most 16384 samples long. The shipped
+profiles are far inside these limits (the longest is 558 samples). A custom file outside them gets the
+same "unreadable, used built-in" status; there is no separate message for the reason. Until a dedicated custom-file feature exists, this is also how to try your
 own HRTF: name your file like the profile it should replace.
 
 **Git LFS.** The `.sofa` files in `HRTF/` are Git LFS objects. A checkout without them cannot build:

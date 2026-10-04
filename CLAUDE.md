@@ -69,8 +69,10 @@ turn it into text on the message thread with the free function
 `waitForHRTFProfileIdle (int timeoutMs)` and `setSharedHRTFFolderForTesting (const juce::File&)` exist
 for tests. `RenderBlockContext::engineSelectsHRTF` (default `false`, D-15) lets the engine choose the
 binaural path from its own active renderer and blend Simple and HRTF during a switch, so profile 0 fades
-like any other; the consumer's `useHRTF` is ignored. Set it together with `engineComputesGains`, because
-the Woodworth path can run during an HRTF fade and needs valid `objGains`. Do not mix `setHRTFProfile`
+like any other; the consumer's `useHRTF` is ignored. On a binaural, non-stereo-variant block the flag fills
+`objGains` itself, which the Woodworth path needs during an HRTF fade, so that case is safe on its own. Still
+set it together with `engineComputesGains`: `objChannelGains` for every non-binaural format stay yours
+unless the engine computes them. Do not mix `setHRTFProfile`
 with `swapActiveRenderer` / `getPrepareRendererIndex` / `getBinauralRenderer` loads on one engine; those
 remain only as the legacy escape hatch. The Simple path (profile 0) is no longer spectrally flat: it
 applies a position-blended rear head-shadow and up/down pinna cue bank (`Core/SimpleBinauralCues.h`)
