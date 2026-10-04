@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 03
-current_phase_name: binaural-defects-hrtf-packaging
+current_phase_name: Binaural Defects & HRTF Packaging
 status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-10-04T12:33:14.824Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-10-04T13:08:59.852Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 02 complete, transitioned to Phase 3
-state_head: 284ad28752c41653d8ba7f4e1051f7ff7b10a675
+last_activity_desc: Phase 03 execution started
+state_head: e5e9fea53a71d744a01ff1d240da537d500c1a3d
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 15
+  completed_plans: 16
 milestone_name: milestone
 ---
 
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 3 — Binaural Defects & HRTF Packaging
+**Current focus:** Phase 03 — Binaural Defects & HRTF Packaging
 
 ## Current Position
 
-Phase: 03 (binaural-defects-hrtf-packaging) — READY TO EXECUTE
-Plan: Not started
+Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
+Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-10-04 — Phase 02 complete, transitioned to Phase 3
+Last activity: 2026-10-04 — Phase 03 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -91,6 +91,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 02 P08 | 5 min | 2 tasks | 9 files |
 | Phase 02 P09 | 5 min | 2 tasks | 5 files |
 | Phase 02 P10 | wall 4h50m (incl. usage-limit pause) | 2 tasks | 5 files |
+| Phase 03 P01 | 12 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 02]: VBIP is textbook single-band (dual-band SpatialCore#20); one SH evaluator with SN3D orders 4-6 fixed and one decoder; AmbiX convention in code and docs; `getDecodeMatrix` returns `bool` (IN-03). Offline oracles live in `tests/reference/` and never run in CI
 - [Phase 02]: fast-math is a build error for SpatialCore sources (`src/Core/FloatSemanticsGuard.h`, WR-04), because the non-finite guards are `std::isfinite` tests
 - [Phase 02]: Public API changes are additive only (`VBAPTriplet::kind()`, `getDecodeMatrix` -> `bool`), so the next release is a minor bump; `nearestSpeaker3DFallback` is comment-deprecated, removal at next major. Full log: PROJECT.md Key Decisions (P2-*) and the 02-*-SUMMARY files
+- [Phase 03]: 03-01: convolver oracle signals use IR amplitude 0.05 so output scale matches the research measurement behind the unchanged 2e-6 bound
+- [Phase 03]: 03-01: ITD line characterised not fixed (D-16): 20-row table pinned, wrap mechanism holds on SADIE and KEMAR at 44.1/48 kHz, Debug equals Release; D-14 loudness recorded (spread 2.48 LU), no tolerance asserted
 
 ### Pending Todos
 
@@ -151,7 +154,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T09:30:47.522Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md
+Last session: 2026-10-04T13:08:59.796Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
