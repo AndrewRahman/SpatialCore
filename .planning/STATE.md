@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
-status: executing
-stopped_at: Completed 03-10-PLAN.md
-last_updated: "2026-10-04T16:31:29.270Z"
+status: verifying
+stopped_at: Completed 03-11-PLAN.md
+last_updated: "2026-10-04T17:26:20.097Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 03 execution started
-state_head: 8eb46f0e2fe5251e1d368ee56f10d1da98308909
+state_head: bb8b3d1ae453213d187e967d29f6b4e771b3b7fc
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
 milestone_name: milestone
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 
 Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
 Plan: 11 of 11
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-04 — Phase 03 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -101,6 +101,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 03 P08 | 39 min | 3 tasks | 2 files |
 | Phase 03 P09 | 31 min | 2 tasks | 3 files |
 | Phase 03 P10 | 13 min | 3 tasks | 8 files |
+| Phase 03 P11 | 60 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: Renderer crossfade is counted in elapsed samples: max (8 x block at fade start, 4096), fixed when the fade starts; identical to the old fade at 512-sample blocks and above — Below 512-sample blocks the old block-counted fade was shorter than the HRIRs it blends. The step and dip bounds already held at the plan base (03-03 sample-based convolver), so the length is what the tests pin.
 - [Phase 03]: RenderBlockContext::engineSelectsHRTF (default false, D-15): the engine claims a ready profile, derives useHRTF from its active renderer and blends the Woodworth and HRTF paths during a Simple <-> HRTF fade; flag-off and no-switch output is bit-identical — A consumer-derived useHRTF can read a different renderer than the engine claims (the SC-16 tear class). Plain paths call exactly the flag-off dispatch so existing consumers are unchanged; the blend was rebuilt outside the engine and matched to 0 deviation, with once-per-block Woodworth proven by mutation.
 - [Phase 03]: 03-10: spatial-audio-dsp skill profile table renumbered to match kHRTFProfiles (SADIE 1 ... KEMAR 5); describeHRTFProfileStatus documented as a free function; Windows shared-folder path documented as implemented but unverified
+- [Phase 03]: 03-11: OSD#234 comment (A) and SpatialCore#15 close (C) approved but deferred until Phase 3 is pushed to main; B filed as SpatialCore#25; D loudness bounds pinned (0.5 LU, spread 2.98 LU)
 
 ### Pending Todos
 
@@ -179,7 +181,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T16:31:29.224Z
-Stopped at: Completed 03-10-PLAN.md
+Last session: 2026-10-04T17:26:20.044Z
+Stopped at: Completed 03-11-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)

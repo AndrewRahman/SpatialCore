@@ -285,7 +285,7 @@ Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one wi
 
 New category. These are real bugs in code SpatialCore now owns.
 
-- [ ] **BUG-01**: DirectBinaural produces no elevation cue and cannot distinguish front from rear
+- [x] **BUG-01**: DirectBinaural produces no elevation cue and cannot distinguish front from rear
   - `src/Algorithms/DirectBinauralAlgorithm.cpp:34` — `lateral = sinAz * cosEl` collapses to 0 at
     elevation ±90° *and* at azimuth 0°/180°. Both the Woodworth ITD (line 37) and the ILD
     (line 42) derive from this single value, so neither carries elevation.
@@ -296,7 +296,7 @@ New category. These are real bugs in code SpatialCore now owns.
   - Acceptance: a source at elevation +90° is measurably distinguishable from one at 0°, and
     azimuth 0° from 180°.
 
-- [ ] **BUG-02**: Audio artifacts at buffer sizes below 256 samples
+- [x] **BUG-02**: Audio artifacts at buffer sizes below 256 samples
   - `Spatial-Media-Lab/OpenSpatialDelay#234` — **still open** — is cited in live convolver code at
     `src/Binaural/PartitionedConvolver.cpp:120-124`. SpatialCore inherited an unfixed OSD defect
     during extraction.
@@ -436,8 +436,8 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | RTSF-03 | CONCERNS.md | 5 | Pending |
 | ~~RTSF-04~~ | — | — | **Closed, non-finding** |
 | RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Pending |
-| BUG-01 | SpatialCore#15 | 3 | Pending |
-| BUG-02 | OpenSpatialDelay#234 | 3 | Pending |
+| BUG-01 | SpatialCore#15 | 3 | Complete |
+| BUG-02 | OpenSpatialDelay#234 | 3 | Complete |
 | BUG-03 | CONCERNS.md | 1 | Complete |
 | VERIFY-01 | SpatialCore#11 | 2 | Complete |
 | VERIFY-02 | SpatialCore#12 | 5 | Pending |

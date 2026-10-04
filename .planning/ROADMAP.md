@@ -149,7 +149,7 @@ proves it does not have.
 **Corrected premise**: the original roadmap said "no `.sofa` file and no BinaryData target exists
 anywhere in the tree, so DATA-01 is unstarted." Half wrong: 5 real HDF5 files (1.2–36.6 MB) are
 present and LFS-tracked with a CI guard against pointer stubs. Only the embedding is absent.
-**Plans**: 10/11 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 11/11 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -183,7 +183,7 @@ Plans:
 - [x] 03-10-PLAN.md — Docs truth (CLAUDE.md, README, guide, skills, PROJECT.md follow-ups) and phase gate: Debug + Release, KEMAR-only build, consumer-mode proof, DR-3 OSD build *(wave 10)*
 
 **Wave 11** *(blocked on Wave 10 completion)*
-- [ ] 03-11-PLAN.md — Outward actions after user approval: OSD#234 comment (D-13), ITD-wrap issue (D-16), close SpatialCore#15 (D-03), loudness tolerance (D-14); ends with the full suite in both build types *(wave 11)*
+- [x] 03-11-PLAN.md — Outward actions after user approval: OSD#234 comment (D-13), ITD-wrap issue (D-16), close SpatialCore#15 (D-03), loudness tolerance (D-14); ends with the full suite in both build types *(wave 11)*
 
 ### Phase 4: Control Surface & UI
 
@@ -264,7 +264,7 @@ External Dependencies.
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
-| 3. Binaural Defects & HRTF Packaging | 10/11 | In Progress|  |
+| 3. Binaural Defects & HRTF Packaging | 11/11 | In Progress|  |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
