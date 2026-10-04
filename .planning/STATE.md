@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-10-04T13:25:56.542Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-10-04T13:38:55.851Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 03 execution started
-state_head: 1948f9fe0d967e113d8151bfab650f70b24c5444
+state_head: 6f3ab73f89ee6d9b6d0e8d70d1ffee712c0685e4
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 18
+  completed_plans: 19
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 ## Current Position
 
 Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
-Plan: 4 of 11
+Plan: 5 of 11
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 03 execution started
 
@@ -94,6 +94,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 03 P01 | 12 min | 3 tasks | 8 files |
 | Phase 03 P02 | 6 min | 2 tasks | 6 files |
 | Phase 03 P03 | 8 min | 3 tasks | 6 files |
+| Phase 03 P04 | 11 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: 03-02: Binaural goldens compare a tolerance fingerprint (length/peak index exact, delays 1e-4 samples, energy/peak 1e-5 relative) instead of an FNV hash; values captured from the tree, Debug and Release agree
 - [Phase 03]: 03-03: convolver warm-up ends at max(1 call, irLen samples); fade is max(4 x call size at fade start, 2048) samples, fixed once and advanced by elapsed samples
 - [Phase 03]: 03-03: BinauralRenderer scratch is grow-only max(block, 512, IR length), sized in prepare() and setProfile(); the RTSF-01 audio-thread resize guard is left for Phase 5
+- [Phase 03]: 03-04: Simple-path Down cue dip tuned -6 to -5.5 dB (research value measured -5.78 dB at 5.5 kHz, outside the -5.2 +- 0.5 design check; now -5.28 dB)
+- [Phase 03]: 03-04: non-finite mono input is fed to the Simple cue filters as 0 (output unchanged) so one bad sample cannot poison recursive state
 
 ### Pending Todos
 
@@ -159,7 +162,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T13:25:56.490Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-10-04T13:38:55.800Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
