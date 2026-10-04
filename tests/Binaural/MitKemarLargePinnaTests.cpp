@@ -29,7 +29,13 @@ namespace
 {
     constexpr const char* kSofaFile = "mit_kemar_large_pinna.sofa";
 
-    constexpr uint64_t kGoldenChecksum = 0xd69ffad577d8f609ULL;
+    // Tolerance fingerprint of the az=90deg ITD-aligned HRIR pair (field order: irLength,
+    // delayL, delayR, energyL, energyR, peakL, peakR, peakIndexL, peakIndexR).
+    // Captured from this tree at commit 12d6929 on 2026-10-04 with libmysofa v1.3.2.
+    // Replaces the FNV checksum 0xd69ffad577d8f609: byte-exact float hashes differ across
+    // build types by one ulp (research Pitfall 6). D-17 governs any future change of these
+    // values.
+    constexpr HRIRFingerprint kGoldenFingerprint { 558, 31.0f, 61.0f, 2.00355748, 0.163567331, 0.515830636f, -0.121116042f, 39, 52 };
     constexpr int kGoldenIRLength = 558;
     constexpr int kGoldenNumPositions = 710;
 }
@@ -47,7 +53,7 @@ TEST_CASE ("MIT KEMAR Large Pinna — synchronous load succeeds", "[binaural][mi
     CHECK (db.getNumPositions() == kGoldenNumPositions);
 }
 
-TEST_CASE ("MIT KEMAR Large Pinna — golden HRIR checksum at az=90deg (own control)", "[binaural][mitkemar][golden]")
+TEST_CASE ("MIT KEMAR Large Pinna — golden HRIR fingerprint at az=90deg (own control)", "[binaural][mitkemar][golden]")
 {
     HRTFDatabase db;
     REQUIRE (db.loadFromFile (getSofaFile (kSofaFile), static_cast<float> (kTestSampleRate)));
@@ -58,10 +64,30 @@ TEST_CASE ("MIT KEMAR Large Pinna — golden HRIR checksum at az=90deg (own cont
 
     db.getAlignedHRIR (juce::degreesToRadians (90.0f), 0.0f, irL.data(), irR.data(), delayL, delayR);
 
-    uint64_t checksum = hashHRIRPair (irL.data(), irR.data(), db.getIRLength());
-    CHECK (checksum == kGoldenChecksum);
+    const HRIRFingerprint actual = fingerprintAlignedHRIR (db, 90.0f, 0.0f);
+    std::string why;
+    const bool matches = fingerprintMatches (actual, kGoldenFingerprint, &why);
+    INFO (why);
+    CHECK (matches);
 
     CHECK (std::abs (delayL) < std::abs (delayR));
+
+    SECTION ("negative control: a 0.01% gain change fails the fingerprint")
+    {
+        std::vector<float> scaled (irL);
+        for (auto& x : scaled)
+            x *= 1.0001f;
+        const auto fp = fingerprintHRIRPair (scaled.data(), irR.data(), db.getIRLength(), delayL, delayR);
+        CHECK_FALSE (fingerprintMatches (fp, kGoldenFingerprint));
+    }
+
+    SECTION ("negative control: a one-sample shift fails the fingerprint")
+    {
+        std::vector<float> shifted (irL.size(), 0.0f);
+        std::copy (irL.begin(), irL.end() - 1, shifted.begin() + 1);
+        const auto fp = fingerprintHRIRPair (shifted.data(), irR.data(), db.getIRLength(), delayL, delayR);
+        CHECK_FALSE (fingerprintMatches (fp, kGoldenFingerprint));
+    }
 }
 
 TEST_CASE ("MIT KEMAR Large Pinna — ITD pass-through: raw SOFA delay is zero (preserved verbatim, D-09)",
