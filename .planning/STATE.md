@@ -1,19 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 02
-current_phase_name: Algorithm & Format Verification
-status: verifying
-stopped_at: Completed 02-10-PLAN.md
-last_updated: "2026-10-03T21:55:22.596Z"
+current_phase: 3
+current_phase_name: Binaural Defects & HRTF Packaging
+status: planning
+stopped_at: Phase 02 complete, ready to plan Phase 3
+last_updated: "2026-10-04T01:10:36.382Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 02 code review resolved to clean (25 findings fixed)
-state_head: dc945acd93f3fecbcac6d4c5cff9803dbb5eb635
+last_activity_desc: Phase 02 complete, transitioned to Phase 3
+state_head: 516c57c7709bb845ee22c021b4da4874e9444ba2
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 15
   completed_plans: 15
+  percent: 33
 milestone_name: milestone
 ---
 
@@ -21,18 +22,18 @@ milestone_name: milestone
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-09)
+See: .planning/PROJECT.md (updated 2026-10-04)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 02 — Algorithm & Format Verification
+**Current focus:** Phase 3 — Binaural Defects & HRTF Packaging
 
 ## Current Position
 
-Phase: 02 (Algorithm & Format Verification) — EXECUTING
-Plan: 10 of 10 (02-10 complete; all plans executed)
-Status: Phase complete — ready for verification
-Last activity: 2026-10-04 — Phase 02 code review resolved: 4 fix/re-review rounds, all 25 findings fixed, final review `clean` (`02-REVIEW.md`, ledger `02-REVIEW-DISPOSITION.md` 0 open). Debug 200/201 (only the pre-existing `HutubsPP2Tests.cpp:47`), Release 201/201, OpenSpatialDelay builds against the branch. Phase verification still has the human UAT items in `02-UAT.md`.
+Phase: 3 — Binaural Defects & HRTF Packaging
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-04 — Phase 02 complete, transitioned to Phase 3
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -49,13 +50,13 @@ count context as a defect.
 The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
 described a tree that no longer matched reality. Do not plan against `origin/main` alone.
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 15
 - Average duration: —
 - Total execution time: —
 
@@ -64,6 +65,7 @@ Progress: [██████████] 100%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 5 | - | - |
+| 02 | 10 | - | - |
 
 **Recent Trend:**
 
@@ -109,26 +111,11 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase ?]: OQ-2 stays closed: shipped tanh soft ceiling is outputLimiter()'s sole governing contract (SpatialMath.h docblock); the scaffold plan's hard-clamp sketch was stamped historical (Tier B pattern) rather than amended, per D-07/D-01
 - [Phase ?]: OQ-5 (org repo migration timing) retired to decision DR-18: development stays on the personal remote until the pipeline is proven, migration gated on proof not a date
 - [Phase ?]: Phase 01 complete: all Tier B documents stamped historical (zero renumbering); PROJECT.md and REQUIREMENTS.md corrected so they no longer mis-steer future phases with stale counts or a phantom DSP/ path
-- [Phase 02]: Plan 02-03 Task 1 resolved file-as-drafted (user delegated to orchestrator); coplanar-quad tie-break filed as AndrewRahman/SpatialCore#22, not fixed in Phase 2 (D-18)
-- [Phase 02]: Plan 02-02 Task 1 package gate resolved approved-recreate (user delegated to orchestrator, PyPI provenance verified); .context/venv rebuilt from pins, which also removed an unpinned pypdf 6.19.0
-- [Phase 02]: Offline oracles checked in under tests/reference/ (scipy SN3D, ear 2.1.0 nadir cap, textbook VBAP/VBIP/DBAP, MDAP port labelled not-an-oracle); headers regenerate byte-identically and are never run in CI
-- [Phase 02]: Plan 02-04: D-19(i) bounded std::remainder wrap applied to computeVBAPGains2D only; computeVBAPGains3D silences non-finite az/el but leaves finite angles unwrapped so finite output stays bit-identical to d43cb15 (D-06b)
-- [Phase 02]: Plan 02-04: RenderEngine sanitiser holds azimuth, elevation and distance per field (ADM-OSC sends NaN for unset axes) and never wraps or clamps a finite value, per the plan rather than RESEARCH Pattern 4's pair-hold with wrap/clamp
-- [Phase 02]: Plan 02-04: [robust] power check temporarily accepts VBIP's pre-D-14 law (gains sum to 1, F1); Plan 02-05 should remove the commented carve-out once VBIP is unit-power
-- [Phase 02]: Plan 02-05: VBIP is textbook VBIP (sqrt of VBAP gains, renormalised to unit power, DAFx-98 sec. 2.2.2); single band, dual-band tracked in AndrewRahman/SpatialCore#20 (D-14, D-15)
-- [Phase 02]: Plan 02-05: the coplanar-tie mirror filter counts only rivals of the minimum-sum enclosing triplet; the any-two reading skipped every point on 7.1.6/9.1.6/SML13.1 because coplanar triangles always tie
-- [Phase 02]: Plan 02-05: 02-04's temporary VBIP carve-out in the [robust] power check is removed; VBIP is held to power 0 or 1
-- [Phase 02]: Plan 02-06: D-08 is constants only -- 22 SN3D substitutions in evalSH; post-fix max literal error 2.4e-7, addition-theorem deviation 2.8e-6 (was 19.54); AmbisonicsCodec::evaluateSH is a forwarder, so evalSH is the single SH implementation
-- [Phase 02]: Plan 02-06: D-09 proven pure refactor -- activateLayout uses AmbisonicsCodec::getDecodeMatrix (3, ...); max |diff| vs the verbatim d43cb15 decoder is 0 on all 15 layouts; rows past the speaker count are now cleared (old code left them stale)
-- [Phase 02]: Plan 02-06: SpatialCore#11 referenced as closed in commit 2c4e38d message only (no gh action); the docs half of the ACN/SN3D/no-Condon-Shortley statement lands in Plan 02-07
-- [Phase 02]: Plan 02-07: docs (README, integration guide, spatial-audio-dsp skill) restate the Phase 2 code -- AmbiX convention, textbook single-band VBIP (#20), EAR below horizon, min-sum tie-break (#22), DBAP 12.04 dB, MDAP WASPAA 1999; the guide names only VBAP/VBIP/MDAP/KNN/DirectBinaural as silent for non-finite input and only the 2D VBAP path as wrapping
-- [Phase 02]: Plan 02-07: DR-3 passed -- OpenSpatialDelay 30391cd compiles and links against the branch (OpenSpatialDelay + OpenSpatialDelayTests, git archive + symlinked SpatialCore + JUCE_DIR); only SpatialCore-header warnings are 5 pre-existing -Wunused-parameter in ADMOSCReceiver.h; RESEARCH A4 retired
-- [Phase 02]: Plan 02-07: nearestSpeaker3DFallback is comment-deprecated (no attribute, F9), removal at next major; OSD follow-ups (glossary 127-128, release notes for 4 audible changes, delete OSD's local SH/VBAP copies) recorded in 02-07-SUMMARY, not performed
-- [Phase 02]: 02-08: pair-pan wedge encoded in existing VBAPTriplet fields (nadirVertex>=0, nadirMask==0, nadirGain==0); no public member added
-- [Phase 02]: 02-08: 5.1.4 rear gap (|az|>110) not special-cased; same wedge as other pairs, EAR difference documented and not pinned
-- [Phase 02]: 02-09: 5.1.x wedge region depth (about -59 degrees) is a geometric derivation tan(el)=tan(-30)/cos(D/2), not a 02-08 measurement; WR-01 closed by scoping #22 to above the horizon
-- [Phase 02]: 02-10: [ambi-pin] bound is kAmbiPinTolerance = 2.5e-5 (derived from conditioning, 2.3x below the +0.1% epsilon failure), anchored by a double-precision decode at 4.0e-5; library and reference untouched
-- [Phase 02]: 02-10: Release gate runs ctest on build-release/tests, because ctest from the build root finds no tests and exits 0 (CI has the same blind spot, deferred to Phase 6)
+- [Phase 02]: Below-horizon VBAP on height layouts is ITU-R BS.2127 (EAR): n nadir caps plus n pair-pan wedges, ear-level gaps of 179 degrees or more bridged (WR-05), tiers named by `VBAPTriplet::kind()` (WR-02). The coplanar-quad tie above the horizon stays open as SpatialCore#22
+- [Phase 02]: D-06 amended 2026-10-04: engine hold-last-good sanitiser per field (az/el/distance); VBAP falls back to the largest-min-gain triplet, then the nearest speaker at unity for hand-built partial triplet lists (WR-03); no asserts in `computeGains` (IN-14); DBAP non-finite distance -> 0.5, finite clamp +-1000 (WR-08)
+- [Phase 02]: VBIP is textbook single-band (dual-band SpatialCore#20); one SH evaluator with SN3D orders 4-6 fixed and one decoder; AmbiX convention in code and docs; `getDecodeMatrix` returns `bool` (IN-03). Offline oracles live in `tests/reference/` and never run in CI
+- [Phase 02]: fast-math is a build error for SpatialCore sources (`src/Core/FloatSemanticsGuard.h`, WR-04), because the non-finite guards are `std::isfinite` tests
+- [Phase 02]: Public API changes are additive only (`VBAPTriplet::kind()`, `getDecodeMatrix` -> `bool`), so the next release is a minor bump; `nearestSpeaker3DFallback` is comment-deprecated, removal at next major. Full log: PROJECT.md Key Decisions (P2-*) and the 02-*-SUMMARY files
 
 ### Pending Todos
 
@@ -143,35 +130,29 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` publishes a submodule URL that does not resolve.
 - **OQ-6** (Phase 3) — HRTF packaging. **CLOSED 2026-08-10: lookup chain now, embedded default for v1.** Target architecture is the user's — profiles on disk once per machine in a shared folder, all SML plugins reference it; better than embedding chiefly because it enables user-supplied SOFA files. But v1 still embeds all 5, because the shared folder needs a signed installer that does not exist and OSD ships drag-and-drop. Phase 3 builds the resolution chain (shared folder → embedded → loud error) behind `SPATIALCORE_EMBED_ALL_HRTF=ON`; flipping it OFF later is a build flag, not a redesign. Tracked as SUITE-01.
 
+- **[Phase 2] Branch sync before Phase 3.** `origin/main` (as last fetched) carries the Phase 2 merge `879a8fe`, then the LFE fixes `3a0d912` + `5140c9a` (merge `4bed89a`) and the SC-16 OpenSpatialPanner engine work (`b9877e1`..`ab60c25`). `gsd-remap` has none of the post-`879a8fe` commits, and local `main` is stale. Bring `origin/main` into `gsd-remap` before planning Phase 3, which touches `RenderEngine`.
+- **[Phase 2] CI "green" is test-vacuous.** CI passed at `879a8fe`, but its ctest step runs from the build root and finds zero tests (no top-level `enable_testing()`); there is also no arm64/FMA leg. Phase gates use `ctest` in `build-release/tests`. Owned by Phase 6.
+- **[Phase 3] `HutubsPP2Tests.cpp:47`** fails in Debug only (golden captured from an optimised build); Release passes 201/201. Phase 3 owns the binaural goldens.
+- **[Phase 3] BUG-01** — DirectBinaural elevation and front/back cues are deliberately unasserted in `PanningLawTests.cpp`; Phase 3 adds them.
+- **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
+- **[Phase 2] OSD-side follow-ups** — release notes for the audible changes, four OSD docs describing VBIP as squared gains, delete OSD's local SH/VBAP copies at migration (`02-09-SUMMARY.md`). Tracked in PROJECT.md External Dependencies.
+
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
 
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Open — Phase 3 or 5 | Phase 02 (02-04) |
+| Binaural | HUTUBS PP2 golden checksum fails in Debug only | Open — Phase 3 | Phase 02 (02-10) |
+| Tests | Other tight test-local tolerances may fail on another compiler/build type (none fails today) | Open | Phase 02 (02-10) |
+| CI | ctest step runs zero tests; no arm64/FMA Release leg | Open — Phase 6 | Phase 02 (02-10) |
+| Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
+| Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Open — pre-existing | Phase 02 (02-07) |
 
 ## Session Continuity
 
-Last session: 2026-10-03T21:55:19.174Z
-Stopped at: Completed 02-10-PLAN.md
+Last session: 2026-10-04T01:15:00Z
+Stopped at: Phase 02 complete, ready to plan Phase 3
 Resume file: None
-Next command: `/gsd-execute-phase 1`
-
-**Scope grew during Phase 1 planning — three findings worth carrying forward:**
-
-1. **BUG-03 is ~10× its filed size.** REQUIREMENTS.md named 4 sites; RESEARCH.md corrected that to
-   19; the planner's repo-wide sweep found **39 occurrences across 38 lines in 17 files, spanning 15
-   distinct issue numbers**, including `tests/` which earlier sweeps never scanned. Material: **`#2`
-   resolves in BOTH trackers to different issues** — `Spatial-Media-Lab/OpenSpatialDelay#2` is "User
-   Presets folder missing after build", `AndrewRahman/SpatialCore#2` is "[OpenSpatialPanner] Preset
-   system" (OPEN). SpatialCore's tracker runs to #19, so every low-numbered bare citation is already
-   ambiguous and that one already points at the wrong issue. BUG-03 is not cosmetic.
-
-2. **`docs/integration-guide.md:164` says "7 spatialization algorithms"** — a stale count that
-   appeared in no prior fix table. Folded into plan 01-03.
-
-3. **Two items are already partly done:** `docs/development-roadmap.md:3` already carries a
-   supersession note, and `CLAUDE.md`'s `Engine/` row (`:20`) plus its HRTF-loading description
-   (`:74`) were already fixed by `2e3b090` / `87cb7a3`. Plans verify these rather than redo them,
-   and plan 01-05 corrects the requirement text that still lists them as outstanding.
+Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)

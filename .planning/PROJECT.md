@@ -38,23 +38,25 @@ decomposed when their milestone opens.
 
 ### Validated
 
-None yet. The working tree contains substantial implementation, but the user has ruled it
-**partial until audited** (see Context). Nothing moves to Validated until a phase verifies it.
+Full acceptance text in `.planning/REQUIREMENTS.md`; IDs follow that file.
+
+- ✓ **API-01** — algorithm count is 8, derived from `AllAlgorithmTypes` and frozen by `static_assert` — Phase 1
+- ✓ **API-02** — `outputLimiter()` is the shipped tanh soft ceiling — Phase 1
+- ✓ **API-03** — HRTF profile count is 5 — Phase 1
+- ✓ **API-04 / API-05 / BUG-03** — 23 formats / 15 layouts match the tree; CLAUDE.md accurate; cross-repo issue references qualified — Phase 1
+- ✓ **EXTR-01** — all 8 algorithms verified against independent oracles (textbook VBAP/VBIP/DBAP, ear 2.1.0); below-horizon VBAP follows ITU-R BS.2127 (EAR); VBIP is textbook DAFx-98; non-finite input never crashes playback — Phase 2
+- ✓ **EXTR-03** — 23 formats resolve, 15 layouts populated, Ambisonics round-trips to order 6 with corrected SN3D at orders 4-6 and one decoder — Phase 2
+- ✓ **VERIFY-01** — Ambisonics convention is AmbiX (ACN, SN3D, no Condon-Shortley phase), stated in code and docs — Phase 2
 
 ### Active
 
 Milestone v1 scope. Full detail and acceptance in `.planning/REQUIREMENTS.md`.
 
 **Public contract resolution**
-- [ ] **API-01** — Public algorithm count fixed at one number and made consistent across headers, SPEC, PRD, and integration guide
-- [ ] **API-02** — `outputLimiter()` transfer function decided (hard clamp vs tanh) and spec/implementation aligned
-- [ ] **API-03** — HRTF profile count fixed at one number across docs, headers, and embedded data
 - [ ] **AUDIT-01** — Every module carries a complete/partial/stub verdict backed by an executed probe
 
 **Extraction completion**
-- [ ] **EXTR-01** — Algorithms module complete and verified
 - [ ] **EXTR-02** — Binaural rendering (HRTFDatabase, PartitionedConvolver, BinauralRenderer) complete and verified
-- [ ] **EXTR-03** — Speaker layouts, output format registry, and Ambisonics codec complete and verified
 - [ ] **EXTR-04** — ADM-OSC receive/send and trajectory engine complete and verified
 - [ ] **EXTR-05** — UI rendering (SpatialMapComponent, SMLLookAndFeel, widgets) complete and verified
 
@@ -79,7 +81,7 @@ Milestone v1 scope. Full detail and acceptance in `.planning/REQUIREMENTS.md`.
 - **OpenSpatialDelay repository work** — seven requirements live in that repo. Tracked below as external dependencies, deliberately given no SpatialCore phase.
 - **Future plugin suite (OpenSpatialReverb, OpenSpatialGranular, OpenSpatialPanner, OpenSpatialChorus)** — 2027 targets. One of them becomes the v2 milestone.
 - **Windows and Linux CI verification** — cross-platform support is an intent and the build flags exist, but v1 verification is macOS-only. Adding CI matrices before a second consumer exists is premature.
-- **Custom / vendor-specific speaker layouts** — only the 14 built-in layouts. Generalizing the layout API is a post-v1 API addition.
+- **Custom / vendor-specific speaker layouts** — only the 15 built-in layouts. Generalizing the layout API is a post-v1 API addition.
 - **Replacing the JUCE FFT dependency** — noted as a medium risk in CONCERNS.md; swapping FFT libraries is disproportionate to v1.
 
 ## External Dependencies
@@ -91,6 +93,7 @@ be planned here.
 | ID | Work (external repo) | Gates v1? |
 |----|----------------------|-----------|
 | REQ-osd-consume-spatialcore-submodule | Refactor OpenSpatialDelay to consume SpatialCore as a submodule instead of inline framework code | Yes |
+| OSD Phase 2 follow-ups | Release notes for the audible Phase 2 changes (wider VBIP, EAR below-horizon panning, corrected 4OA-6OA levels, non-finite positions held or silenced); four OSD docs still describing VBIP as squared gains; delete OSD's local `evalSH` / VBAP copies at migration. List in `02-09-SUMMARY.md` | Yes — ships with the migration |
 | REQ-osd-custom-sofa-import | Let users load their own HRTF files | No — OSD v1.0 backlog |
 | REQ-osd-adm-osc-settings-ui | In-plugin UI for OSC port configuration | No — OSD v1.0 backlog |
 | REQ-osd-aax-format | Pro Tools AAX format support | No — OSD v1.0 backlog |
@@ -105,7 +108,9 @@ marked as reusable spatial audio infrastructure. Extraction separated framework 
 HRTF, I/O, OSC, trajectories, UI) from delay-specific code (delay line, pitch shift, feedback,
 wobble).
 
-**The tree is partial until proven otherwise — this is a user ruling.**
+**The tree is partial until proven otherwise — this is a user ruling.** *(Discharged by evidence —
+see STATE.md Decisions. Phases 1-2 verified their modules with executed tests and offline oracles;
+later phases still verify by probe, not by reading.)*
 `.planning/codebase/ARCHITECTURE.md` and `STRUCTURE.md` report all five extraction requirements as
 already implemented: 8 algorithms in `src/Algorithms/`, a working `HRTFDatabase` with libmysofa,
 KD-tree and ITD extraction, a dual-slot `PartitionedConvolver`, 22 populated output formats, 13
@@ -142,7 +147,8 @@ can be measured — the earlier "~5%" was never a real measurement. Modules with
 
 - **Tech stack**: JUCE 9.0.0, C++17, CMake 3.22+, libmysofa v1.3.2 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
 - **Distribution**: Static library consumed via git submodule + `add_subdirectory(SpatialCore)` + `target_link_libraries(... PRIVATE SpatialCore)`. Consumers include only `<SpatialCore/SpatialCore.h>`.
-- **Platform**: macOS is primary — arm64, deployment target 12.0, `-ffast-math`. Windows (MSVC, `/fp:fast`) and Linux are intended but not verified in v1.
+- **Platform**: macOS is primary — arm64, deployment target 12.0. Windows (MSVC) and Linux are intended but not verified in v1.
+- **Float semantics**: SpatialCore sources must not be compiled with `-ffast-math`, `-ffinite-math-only` or `/fp:fast` — the non-finite guards are `std::isfinite` tests that fast-math folds away. `src/Core/FloatSemanticsGuard.h` makes it a build error (Phase 2, WR-04).
 - **Realtime**: No malloc, locks, or logging in any function reachable from `processBlock`. Algorithms are stateless; all computation state lives in context structs. Layout changes use dual-buffered atomic swap.
 - **Frozen API**: The `SpatializationAlgorithm` interface cannot change without a major version bump. Same for anything else consumers link against.
 - **Scale limits**: `MAX_SOURCES = 12`, `MAX_SPEAKERS = 16`, `MAX_AMBI_ORDER = 6` (49 channels).
@@ -206,9 +212,15 @@ normal planning decision.
 | DR-15 | SpatialCore ships no BinaryData; consumers supply HRTF data | ✗ **Superseded by DR-5** — closed by user ruling |
 | DR-16 | UI components take an abstract Listener interface, never a concrete processor pointer | ✓ Good |
 | DR-17 | Every SML plugin is ~68% SpatialCore framework + ~32% plugin-specific DSP | ✓ Good — the product thesis |
+| P2-D04 | Below-horizon VBAP on height layouts follows ITU-R BS.2127 (EAR): nadir caps plus one pair-pan wedge per ear-level pair; ear-level azimuth gaps of 179 degrees or more are bridged (WR-05) | ✓ Good — Phase 2; ear 2.1.0 pins on all 8 height layouts |
+| P2-D06 | Playback never crashes on an unplaceable position: `RenderEngine` holds the last good az/el/distance per field; VBAP falls back to the largest-min-gain triplet, and to the nearest speaker at unity if that clamps to zero (hand-built partial triplet lists only); no asserts in `computeGains`. DBAP maps a non-finite distance to 0.5 and clamps finite distance to +-1000 (WR-08) | ✓ Good — Phase 2; D-06 amended 2026-10-04 (WR-03 / IN-14) |
+| P2-D08 | One SH evaluator (`evalSH`) and one decoder (`AmbisonicsCodec::getDecodeMatrix`); AmbiX convention | ✓ Good — Phase 2 |
+| P2-D14 | VBIP is textbook single-band VBIP (Pernaux, Boussard & Jot, DAFx-98); dual-band tracked in SpatialCore#20 | ✓ Good — Phase 2; audible change for OSD |
+| P2-D18 | Coplanar-quad triplet tie-break above the horizon is not fixed in v1; tracked as SpatialCore#22 | — Pending |
+| P2-VER | Phase 2 public API changes are additive (`VBAPTriplet::kind()`, `AmbisonicsCodec::getDecodeMatrix` now returns `bool`) — a minor-version bump at the next release (DR-6) | — Pending — next tag |
 | DR-18 | **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote, not an accident awaiting cleanup. Development stays on the personal remote until the pipeline is proven, for risk containment: `Spatial-Media-Lab/OpenSpatialDelay` is public and in use by real people right now, so migrating it onto an unproven SpatialCore could break a live plugin. Migration is **gated on proof, not on a date** — SpatialCore, OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner land on the organisation together once the process is proven. `docs/integration-guide.md` carries the working remote as the live instruction and labels the organisation URL as the post-proof destination. | ✓ Decided 2026-08-10 — resolves OQ-5 |
 
 </decisions>
 
 ---
-*Last updated: 2026-08-09 after ingest of docs + codebase map, with user-supplied conflict rulings*
+*Last updated: 2026-10-04 after Phase 2 (Algorithm & Format Verification)*

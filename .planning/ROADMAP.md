@@ -24,7 +24,7 @@ yet consume SpatialCore; the migration is unstarted.
 ## Phases
 
 - [x] **Phase 1: Documentation Truth & Contract Freeze** - Every public number matches the tree, and CLAUDE.md stops mis-steering future sessions (completed 2026-08-15)
-- [ ] **Phase 2: Algorithm & Format Verification** - Ambisonics convention stated; gain paths verified against the panning laws
+- [x] **Phase 2: Algorithm & Format Verification** - Ambisonics convention stated; gain paths verified against the panning laws (completed 2026-10-04)
 - [ ] **Phase 3: Binaural Defects & HRTF Packaging** - The two inherited binaural bugs are fixed and a consumer gets HRTF data by linking
 - [ ] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction
 - [ ] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds
@@ -78,7 +78,7 @@ named gaps, it does not rebuild the modules.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 
-**Plans**: 10/10 plans executed (02-08 and 02-09 close UAT gap G-02-2; 02-10 closes G-02-10)
+**Plans**: 10/10 plans complete (02-08 and 02-09 close UAT gap G-02-2; 02-10 closes G-02-10)
 
 Plans:
 **Wave 1**
@@ -229,7 +229,7 @@ External Dependencies.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
-| 2. Algorithm & Format Verification | 10/10 | In Progress|  |
+| 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
