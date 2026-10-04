@@ -269,7 +269,13 @@ public:
     //
     // setOutputFormat() thread contract:
     //   - message thread only, and single-writer: never call it from two
-    //     threads at once;
+    //     threads at once. The engine does NOT serialise writers: a consumer
+    //     with more than one non-realtime caller (for example a UI handler
+    //     and the host's prepare callback, which some hosts run on a worker
+    //     thread) must serialise them itself, with a mutex or by funnelling
+    //     them onto one thread. Two overlapping calls fill the same layout
+    //     slot concurrently, which is undefined behaviour. Debug builds
+    //     jassert on overlapping entry;
     //   - allocating (it builds the speaker layout, decode matrix and VBAP
     //     triplets), so never from the audio thread;
     //   - safe to call any number of times between two blocks: the layout is
@@ -597,6 +603,11 @@ private:
     //     once per block. The writer never holds the reader's slot (SC-16). ---
     LayoutState layoutBuffers[TripleBufferIndex::kNumSlots];
     TripleBufferIndex layoutSlots_;
+    // Debug detector for the single-writer contract (WR-09): set while a
+    // setOutputFormat() call is in flight so an overlapping second writer
+    // trips a jassert. Present in every build type (never #if'd) so the class
+    // layout does not depend on the consumer's JUCE_DEBUG setting.
+    std::atomic<bool> inSetOutputFormat_ { false };
 
     // --- SC-13: engine-owned gain computation state ---
     // Algorithms are stateless per the project convention, so a plain member

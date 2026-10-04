@@ -1344,7 +1344,16 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 //==============================================================================
 void RenderEngine::setOutputFormat (OutputFormat format)
 {
+    // Single-writer detector (Debug jassert only; Release behaviour is
+    // unchanged). The caller owns serialisation -- see RenderEngine.h.
+    const bool overlapped = inSetOutputFormat_.exchange (true, std::memory_order_acquire);
+    jassert (! overlapped);
+
     activateLayout (format);
+
+    // On overlap the other writer's call is still in flight and owns the flag.
+    if (! overlapped)
+        inSetOutputFormat_.store (false, std::memory_order_release);
 }
 
 OutputFormat RenderEngine::getActiveOutputFormat() const
