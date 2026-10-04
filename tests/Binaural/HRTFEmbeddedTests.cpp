@@ -1,6 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include "BinauralMetrics.h"
 
+#include <SpatialCore/Binaural/HRTFDatabase.h>
+#include <SpatialCore/Binaural/HRTFProfile.h>
+
 #include <cstdint>
 
 using namespace spatialcore;
@@ -40,4 +43,23 @@ TEST_CASE ("HRTF files: every source-tree SOFA file is real HDF5, not a Git LFS 
             CHECK (head[i] == kSignature[i]);
         }
     }
+}
+
+TEST_CASE ("HRTF embed: KEMAR's embedded bytes equal the source file and load",
+           "[hrtf-embed][bytes]")
+{
+    int size = 0;
+    const char* data = HRTFDatabase::getEmbeddedProfileData (5, size);
+    REQUIRE (data != nullptr);
+
+    const juce::File file = getSofaFile (testProfileFile (5));
+    juce::MemoryBlock fileBytes;
+    REQUIRE (file.loadFileAsData (fileBytes));
+
+    CHECK (static_cast<size_t> (size) == fileBytes.getSize());
+    CHECK (fnv1aHash (data, static_cast<size_t> (size)) == fnv1aHash (fileBytes.getData(), fileBytes.getSize()));
+
+    HRTFDatabase db;
+    REQUIRE (db.loadFromMemory (data, size, 48000.0f));
+    CHECK (db.getIRLength() == 558);
 }

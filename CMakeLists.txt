@@ -57,6 +57,51 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
+# --- Embedded HRTF profiles (DATA-01, OQ-6) ---
+# SpatialCore carries the five SOFA profiles as BinaryData, so a consumer that links
+# SpatialCore gets them with no install step, no path and no BinaryData target of its own.
+# A file of the same name in the shared HRTF folder replaces the embedded copy at run time
+# (HRTFProfileResolver); the embedded copy is the default and the fallback.
+#
+# SPATIALCORE_EMBED_ALL_HRTF=ON (default) embeds all five. OFF embeds only
+# mit_kemar_large_pinna.sofa, with no #if in the lookup path: profiles 1-4 then report
+# NotFound unless the shared folder supplies them. SUITE-01 flips it with no code change.
+#
+# Same mechanism as SpatialCoreUIFontData below. The namespace (SpatialCoreHRTFData) differs
+# from OpenSpatialDelay's HRTFData on purpose, so both link while OSD still embeds its own
+# copy (about 2 x 58 MB until the OSD migration deletes it).
+option(SPATIALCORE_EMBED_ALL_HRTF
+    "Embed all 5 HRTF profiles (OFF: KEMAR only; the shared folder supplies the rest, SUITE-01)" ON)
+
+if(SPATIALCORE_EMBED_ALL_HRTF)
+    set(_sc_hrtf_sources
+        ${CMAKE_CURRENT_SOURCE_DIR}/HRTF/sadie_d2_ku100.sofa
+        ${CMAKE_CURRENT_SOURCE_DIR}/HRTF/cipic_subject_003.sofa
+        ${CMAKE_CURRENT_SOURCE_DIR}/HRTF/hutubs_pp2.sofa
+        ${CMAKE_CURRENT_SOURCE_DIR}/HRTF/bernschuetz_ku100.sofa
+        ${CMAKE_CURRENT_SOURCE_DIR}/HRTF/mit_kemar_large_pinna.sofa)
+else()
+    set(_sc_hrtf_sources ${CMAKE_CURRENT_SOURCE_DIR}/HRTF/mit_kemar_large_pinna.sofa)
+endif()
+
+# A Git LFS pointer is a ~130 byte text stub. Embedding one would ship a binary whose
+# profile silently fails to parse, so refuse to configure unless every embedded file starts
+# with the HDF5 signature 89 48 44 46 0D 0A 1A 0A (T-03-11).
+foreach(_sc_sofa IN LISTS _sc_hrtf_sources)
+    file(READ "${_sc_sofa}" _sc_sofa_head LIMIT 8 HEX)
+    if(NOT _sc_sofa_head STREQUAL "894844460d0a1a0a")
+        get_filename_component(_sc_sofa_name "${_sc_sofa}" NAME)
+        message(FATAL_ERROR
+            "SpatialCore: ${_sc_sofa_name} is not a real SOFA/HDF5 file (a Git LFS pointer?). Run: git lfs pull")
+    endif()
+endforeach()
+
+juce_add_binary_data(SpatialCoreHRTFData
+    HEADER_NAME "SpatialCoreHRTFData.h"
+    NAMESPACE SpatialCoreHRTFData
+    SOURCES ${_sc_hrtf_sources}
+)
+
 # --- SpatialCore static library (DSP-ONLY — no GUI modules, no UI sources) ---
 # NOTE: src/UI/*.cpp (SpatialMapComponent, SMLLookAndFeel, ReverseSlider,
 # IndicatorToggle, StyledButton) is deliberately NOT compiled into this target.
@@ -78,6 +123,7 @@ add_library(SpatialCore STATIC
     src/Binaural/HRTFDatabase.cpp
     src/Binaural/PartitionedConvolver.cpp
     src/Binaural/BinauralRenderer.cpp
+    src/Binaural/EmbeddedHRTF.cpp
     # IO
     src/IO/OutputFormatRegistry.cpp
     src/IO/SpeakerLayout.cpp
@@ -147,7 +193,13 @@ target_link_libraries(SpatialCore
     PRIVATE
         mysofa-static
         ZLIB::ZLIB
+        SpatialCoreHRTFData
 )
+
+# 1 when all five profiles are compiled in, 0 when only KEMAR is (SPATIALCORE_EMBED_ALL_HRTF).
+# PUBLIC so consumers and tests can tell which build they linked.
+target_compile_definitions(SpatialCore PUBLIC
+    SPATIALCORE_EMBEDS_ALL_HRTF=$<BOOL:${SPATIALCORE_EMBED_ALL_HRTF}>)
 
 # JUCE_USE_CURL=0: avoids juce_core's optional libcurl dependency (WebInputStream/
 # URL download support), which SpatialCore's DSP code never uses. Without this,

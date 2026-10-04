@@ -30,6 +30,12 @@ public:
         valid SOFA file (e.g. an unresolved Git LFS pointer stub). */
     bool loadFromFile (const juce::File& sofaFile, float targetSampleRate);
 
+    /** The compiled-in SOFA bytes for profile 1..5 (see HRTFProfile.h), or nullptr with
+        sizeInBytes = 0 when that profile is not embedded (a build with
+        SPATIALCORE_EMBED_ALL_HRTF=OFF embeds profile 5 only) or the index is out of range.
+        Never allocates; the pointer is valid for the life of the program. */
+    static const char* getEmbeddedProfileData (int profileIndex, int& sizeInBytes);
+
     /** Get interpolated HRIR pair for a direction (our convention: radians).
         Writes irLength samples to irL and irR buffers (must be pre-allocated). */
     void getInterpolatedHRIR (float azimuthRad, float elevationRad,
