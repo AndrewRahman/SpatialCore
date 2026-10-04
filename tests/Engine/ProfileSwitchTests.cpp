@@ -1528,6 +1528,40 @@ TEST_CASE ("Profile switch: engineSelectsHRTF with no switch is bit-identical to
     }
 }
 
+TEST_CASE ("Profile switch: engineSelectsHRTF alone computes the Woodworth gains, so profile 0 is never silent (WR-06)",
+           "[hrtf-switch][flag-identity][wr06]")
+{
+    constexpr int kB = 64;
+    constexpr int kBlocks = 20;
+
+    RenderEngine selectsOnly, selectsAndComputes;
+    prepareLegacy (selectsOnly);
+    prepareLegacy (selectsAndComputes);
+
+    RenderBlockContext onlyCtx = selectsHRTFContext (false);
+    onlyCtx.engineComputesGains = false;                       // the footgun: objGains stay zero unless the engine fills them
+    RenderBlockContext bothCtx = selectsHRTFContext (false);   // engineComputesGains is set by makeBinauralContext
+    REQUIRE (bothCtx.engineComputesGains);
+
+    LiveRender onlyLive (selectsOnly, onlyCtx, kB, kRate);
+    LiveRender bothLive (selectsAndComputes, bothCtx, kB, kRate);
+
+    std::vector<float> onlyL, onlyR, bothL, bothR;
+    for (int b = 0; b < kBlocks; ++b)
+    {
+        const float az = 20.0f + 9.0f * static_cast<float> (b);
+        onlyLive.renderOne (az);
+        bothLive.renderOne (az);
+        appendBlock (onlyLive, onlyL, onlyR);
+        appendBlock (bothLive, bothL, bothR);
+    }
+
+    size_t first = 0;
+    CHECK (*std::max_element (onlyL.begin(), onlyL.end()) > 1.0e-4f);   // not silence
+    CHECK (countMismatches (onlyL, bothL, first) == 0);                 // the same sound as both flags set
+    CHECK (countMismatches (onlyR, bothR, first) == 0);
+}
+
 TEST_CASE ("Profile switch: engineSelectsHRTF ignores the consumer's useHRTF on every block, through a switch",
            "[hrtf-switch][flag-identity]")
 {

@@ -201,8 +201,11 @@ struct RenderBlockContext
     // useHRTF is ignored. While a switch between Simple (profile 0) and an HRTF profile is
     // fading, the engine renders the Woodworth path and the HRTF path and blends them with
     // the renderer crossfade's equal-power ramp, so a Simple <-> HRTF switch is as click-free
-    // as an HRTF <-> HRTF one. The Woodworth path may therefore run during an HRTF fade, so
-    // this flag needs valid objGains: set engineComputesGains or supply them every block.
+    // as an HRTF <-> HRTF one. The Woodworth path may therefore run during an HRTF fade and
+    // reads objGains, so on a binaural, non-stereo-variant block this flag also makes the engine
+    // compute objGains itself, as engineComputesGains does (WR-06): no flag combination can leave
+    // the Simple path running on zero gains. objGains you supply on such a block are overwritten;
+    // objChannelGains stay yours unless you also set engineComputesGains.
     // Only a binaural, non-stereo-variant block is affected; every other format renders as it
     // always did. Defaults false so every existing caller -- including OpenSpatialDelay's
     // derive-useHRTF-itself flow -- sees byte-for-byte unchanged behaviour (apart from the
@@ -455,8 +458,10 @@ private:
     // live object. Does not touch objGainL/objGainR/stereoMode (D-06 — those
     // stay consumer-side, not a SpatializationAlgorithm concern).
     //--------------------------------------------------------------------------
+    // With binauralOnly set (engineSelectsHRTF without engineComputesGains, WR-06) only
+    // ctx.objGains is filled and objChannelGains is left as the consumer supplied it.
     void computeObjectGains (const RenderSources& sources, const LayoutState& layout,
-                              RenderBlockContext& ctx);
+                              RenderBlockContext& ctx, bool binauralOnly = false);
 
     //--------------------------------------------------------------------------
     // SC-16: the one place a block obtains its layout. renderBlock() calls

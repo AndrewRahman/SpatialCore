@@ -689,6 +689,13 @@ void RenderEngine::renderBlock (const RenderSources& sources,
             deriveDispatchFromLayout (layout, gainScratch_);
         if (blockCtx.engineComputesGains)
             computeObjectGains (src, layout, gainScratch_);
+        else if (blockCtx.engineSelectsHRTF && gainScratch_.isBinaural && ! gainScratch_.isStereoVariant)
+        {
+            // WR-06: the Woodworth path (profile 0, and every Simple <-> HRTF blend) reads
+            // objGains. The flag implies them, so a consumer that sets only engineSelectsHRTF
+            // does not get silence on profile 0.
+            computeObjectGains (src, layout, gainScratch_, true);
+        }
         if (blockCtx.engineSelectsHRTF)
         {
             // D-15: claim any ready profile first, then read the path off the renderer that is
@@ -750,11 +757,12 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 // computeObjectGains — SC-13. Fills ctx.objChannelGains (surround/Ambisonics,
 // via surroundAlgorithm_) and ctx.objGains (simple binaural, via
 // binauralAlgorithm_) for every object slot. Only called when the consumer
-// sets RenderBlockContext::engineComputesGains. Does not read or write
+// sets RenderBlockContext::engineComputesGains, or (binauralOnly, objGains
+// alone) engineSelectsHRTF on a binaural block (WR-06). Does not read or write
 // objGainL/objGainR/stereoMode — those stay consumer-side (D-06).
 //==============================================================================
 void RenderEngine::computeObjectGains (const RenderSources& sources, const LayoutState& ls,
-                                        RenderBlockContext& ctx)
+                                        RenderBlockContext& ctx, bool binauralOnly)
 {
     LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
 
@@ -762,8 +770,9 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
     {
         // Zero the full speaker-wide row first so a stale value from a wider
         // previous layout cannot survive into this block.
-        for (int sp = 0; sp < MAX_SPEAKERS; ++sp)
-            ctx.objChannelGains[t][sp] = 0.0f;
+        if (! binauralOnly)
+            for (int sp = 0; sp < MAX_SPEAKERS; ++sp)
+                ctx.objChannelGains[t][sp] = 0.0f;
 
         if (! sources.objectLive[t])
         {
@@ -777,7 +786,8 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
             sources.objects[t].distance
         };
 
-        surroundAlgorithm_.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
+        if (! binauralOnly)
+            surroundAlgorithm_.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
 
         BinauralContext binCtx { binauralProfileIndex_, ctx.sampleRate, kDefaultBinauralProfiles };
         ctx.objGains[t] = binauralAlgorithm_.computeBinauralGains (pos, binCtx);
