@@ -1,7 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Engine/RenderEngine.h>
+#include <SpatialCore/Core/SpatialMath.h>
+#include "../Binaural/BinauralTestUtilities.h"
+#include "../TestNumerics.h"
+#include <algorithm>
 #include <cmath>
+#include <limits>
+#include <memory>
 #include <vector>
 
 using namespace spatialcore;
@@ -353,4 +359,674 @@ TEST_CASE ("RenderEngine: escape hatches expose the underlying BinauralRenderer 
 
     engine.swapActiveRenderer();
     CHECK (engine.getActiveRendererIndexAtomic().load() == prepareIdx);
+}
+
+// ----------------------------------------------------------------------------
+// D-06(a) extended by D-19(ii): RenderEngine holds the last finite azimuth,
+// elevation and distance per object slot, field by field, and substitutes it for
+// any non-finite value before every render path and before engine-side gain
+// computation. Each test builds two engines identically and varies ONLY the
+// position fields, then compares full output buffers with exact ==.
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+    constexpr float kInf = std::numeric_limits<float>::infinity();
+
+    enum class SanitizePath { SurroundEngineGains, AmbisonicsHOA, BinauralHRTF };
+
+    /** One engine + fixture + context + output storage for one render path. */
+    struct SanitizeRig
+    {
+        RenderEngine engine;
+        SourceFixture fixture;
+        RenderBlockContext ctx;
+        int numCh = 0;
+        std::vector<std::vector<float>> out;
+        std::vector<float*> ptrs;
+
+        SanitizeRig (SanitizePath path, OutputFormat format)
+        {
+            engine.prepare (kSampleRate, kBlockSize);
+            engine.setOutputFormat (format);
+            ctx.sampleRate = kSampleRate;
+            ctx.activeFormat = format;
+
+            switch (path)
+            {
+                case SanitizePath::SurroundEngineGains:
+                    ctx.engineComputesGains = true;
+                    numCh = engine.getActiveLayout().layout.totalChannels;
+                    break;
+                case SanitizePath::AmbisonicsHOA:
+                    ctx.isAmbiOutput = true;
+                    ctx.ambiOrder = 3;
+                    numCh = 16;
+                    break;
+                case SanitizePath::BinauralHRTF:
+                    ctx.isBinaural = true;
+                    ctx.useHRTF = true;
+                    numCh = 2;
+                    break;
+            }
+
+            out.assign (static_cast<size_t> (numCh), std::vector<float> (kBlockSize, 0.0f));
+            for (auto& ch : out)
+                ptrs.push_back (ch.data());
+        }
+
+        void render (float azDeg, float elDeg, float dist, bool live = true)
+        {
+            for (auto& ch : out)
+                std::fill (ch.begin(), ch.end(), 0.0f);
+
+            RenderSources s = fixture.makeSources (live);
+            s.objects[0].azimuthDeg   = azDeg;
+            s.objects[0].elevationDeg = elDeg;
+            s.objects[0].distance     = dist;
+            engine.renderBlock (s, ctx, ptrs.data(), numCh);
+        }
+
+        bool outputFinite() const
+        {
+            for (const auto& ch : out)
+                if (! allFinite (ch.data(), kBlockSize))
+                    return false;
+            return true;
+        }
+    };
+
+    /** Exact == on every sample of every channel; reports the first mismatch. */
+    void requireIdenticalOutput (const SanitizeRig& a, const SanitizeRig& b)
+    {
+        REQUIRE (a.numCh == b.numCh);
+        for (int c = 0; c < a.numCh; ++c)
+            for (int i = 0; i < kBlockSize; ++i)
+            {
+                const float va = a.out[static_cast<size_t> (c)][static_cast<size_t> (i)];
+                const float vb = b.out[static_cast<size_t> (c)][static_cast<size_t> (i)];
+                if (! (va == vb))
+                {
+                    INFO ("channel " << c << " sample " << i << " got " << va << " expected " << vb);
+                    REQUIRE (va == vb);
+                }
+            }
+    }
+
+    bool anyOutputNonzero (const SanitizeRig& r)
+    {
+        for (const auto& ch : r.out)
+            if (anyNonzero (ch.data(), kBlockSize))
+                return true;
+        return false;
+    }
+}
+
+TEST_CASE ("RenderEngine: a NaN azimuth block renders exactly like repeating the last finite azimuth (D-06a)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    REQUIRE (a->numCh >= 4);
+
+    a->render (30.0f, 0.0f, 0.5f);
+    b->render (30.0f, 0.0f, 0.5f);
+    requireIdenticalOutput (*a, *b);
+
+    a->render (kNaN, 0.0f, 0.5f);
+    b->render (30.0f, 0.0f, 0.5f);
+    CHECK (a->outputFinite());
+    CHECK (anyOutputNonzero (*a));
+    requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: a first-ever non-finite position renders exactly like the ObjectState defaults 0, 0, 0.5 (D-06a, D-19ii)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+
+    for (int block = 0; block < 2; ++block)
+    {
+        INFO ("block " << block);
+        a->render (kInf, kNaN, kNaN);
+        b->render (0.0f, 0.0f, 0.5f);
+        CHECK (a->outputFinite());
+        requireIdenticalOutput (*a, *b);
+    }
+}
+
+TEST_CASE ("RenderEngine: a NaN distance never reaches the NFC-HOA filter state; output matches the last good distance (D-19ii, F7)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+
+    a->render (30.0f, 10.0f, 0.4f);
+    b->render (30.0f, 10.0f, 0.4f);
+    CHECK (a->outputFinite());
+
+    for (int block = 2; block <= 4; ++block)
+    {
+        INFO ("block " << block);
+        a->render (30.0f, 10.0f, kNaN);
+        b->render (30.0f, 10.0f, 0.4f);
+        CHECK (a->outputFinite());
+    }
+
+    // Block 4 equals an engine fed 0.4 throughout.
+    requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: positions are held per field, so a new finite azimuth with a NaN elevation keeps the new azimuth (D-06a, F7)",
+           "[engine][sanitize]")
+{
+    // 7.1.4 + engine-computed gains: the 3D VBAP path, where elevation matters.
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Surround7_1_4);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Surround7_1_4);
+
+    a->render (30.0f, 20.0f, 0.5f);
+    b->render (30.0f, 20.0f, 0.5f);
+
+    // ADM-OSC forwards NaN for "field not set" on a single-axis /azim update.
+    a->render (60.0f, kNaN, 0.5f);
+    b->render (60.0f, 20.0f, 0.5f);
+    CHECK (a->outputFinite());
+    CHECK (anyOutputNonzero (*a));
+    requireIdenticalOutput (*a, *b);
+}
+
+TEST_CASE ("RenderEngine: held positions belong to the slot, keep updating while it is not live, and carry over to a reused slot (D-06a, IN-04)",
+           "[engine][sanitize]")
+{
+    // Pins the "per object slot" wording in docs/integration-guide.md. Three
+    // engines share the same history except for the last block.
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    auto b = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+    auto c = std::make_unique<SanitizeRig> (SanitizePath::SurroundEngineGains, OutputFormat::Quad);
+
+    for (auto* r : { a.get(), b.get(), c.get() })
+    {
+        r->render (30.0f, 0.0f, 0.5f);           // first occupant, live
+        r->render (90.0f, 0.0f, 0.5f, false);    // slot not live: 90 still becomes the held azimuth
+    }
+
+    // The slot is reused and its first update leaves the azimuth unset.
+    a->render (kNaN, 0.0f, 0.5f);
+    b->render (90.0f, 0.0f, 0.5f);   // the slot's last finite azimuth
+    c->render (0.0f, 0.0f, 0.5f);    // the ObjectState default
+    CHECK (a->outputFinite());
+    CHECK (anyOutputNonzero (*a));
+    requireIdenticalOutput (*a, *b);
+
+    // And that is distinguishable from the default position.
+    bool differsFromDefault = false;
+    for (int ch = 0; ch < a->numCh; ++ch)
+        for (int i = 0; i < kBlockSize; ++i)
+            if (a->out[static_cast<size_t> (ch)][static_cast<size_t> (i)] != c->out[static_cast<size_t> (ch)][static_cast<size_t> (i)])
+                differsFromDefault = true;
+    CHECK (differsFromDefault);
+}
+
+TEST_CASE ("RenderEngine: the direct-binaural HRTF branch stays finite for an infinite elevation (D-06a)",
+           "[engine][sanitize]")
+{
+    auto a = std::make_unique<SanitizeRig> (SanitizePath::BinauralHRTF, OutputFormat::Binaural);
+
+    // Load a real SOFA profile into the active renderer so the elevation
+    // actually reaches the HRIR lookup (in Simple mode updateSourceHRIR
+    // returns before reading the direction).
+    const int active = a->engine.getActiveRendererIndexAtomic().load();
+    auto& renderer = a->engine.getBinauralRenderer (active);
+    REQUIRE (renderer.hrtfDatabase.loadFromFile (test::getSofaFile ("sadie_d2_ku100.sofa"),
+                                                  static_cast<float> (kSampleRate)));
+    renderer.setProfile (1);
+    REQUIRE_FALSE (renderer.isSimpleMode());
+
+    for (int block = 0; block < 3; ++block)
+    {
+        INFO ("block " << block);
+        a->render (30.0f, kInf, 0.5f);
+        CHECK (a->outputFinite());
+    }
+    CHECK (anyOutputNonzero (*a));
+}
+
+// ----------------------------------------------------------------------------
+// D-09: RenderEngine has no private SH decoder. activateLayout fills
+// ambiDecodeMatrix through AmbisonicsCodec::getDecodeMatrix at order 3. The
+// pin below compares it with the pre-change private decoder, copied from the
+// git blob d43cb15:src/Engine/RenderEngine.cpp lines 650-734 so it is the
+// pre-change code regardless of when this test runs. Only the name and the
+// static-member qualification differ; the body is byte-identical (left
+// unindented so it diffs cleanly against the blob). It uses ACN 0-15, which the
+// D-08 constant fix does not touch, so the pin is unaffected by that fix. The
+// comparison is within float rounding, not exact, because the two copies are
+// compiled separately; see kAmbiPinTolerance below.
+// ----------------------------------------------------------------------------
+// Indentation in this namespace is split on purpose (IN-09):
+// referenceAmbiDecode is left unindented so it diffs byte-for-byte against the
+// d43cb15 blob; the helpers after it are indented as everywhere else in this
+// file. Do not re-indent referenceAmbiDecode.
+namespace
+{
+void referenceAmbiDecode (const SpeakerLayout& layout,
+                          float (*outMatrix)[MAX_SPEAKERS],
+                          int& outNumSpeakers)
+{
+    const int N = layout.numSpeakers;
+    const int M = 16; // HOA_CHANNELS (surround decode cap, 3rd order)
+    outNumSpeakers = N;
+
+    // Build encoding matrix E[c][s] = evalSH(c, speaker_s_position)
+    float E[16][16] = {};
+    for (int s = 0; s < N; ++s)
+        for (int c = 0; c < M; ++c)
+            E[c][s] = evalSH (c, layout.speakers[s].azimuthRad,
+                                 layout.speakers[s].elevationRad);
+
+    // Compute EET = E * E^T  (M x M)
+    float EET[16][16] = {};
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < M; ++j)
+        {
+            float sum = 0.0f;
+            for (int s = 0; s < N; ++s)
+                sum += E[i][s] * E[j][s];
+            EET[i][j] = sum;
+        }
+
+    // Tikhonov regularization: EET += epsilon * I
+    float epsilon = 0.01f;
+    for (int i = 0; i < M; ++i)
+        EET[i][i] += epsilon;
+
+    // Invert EET via Gauss-Jordan (M x M, small matrix)
+    float inv[16][16] = {};
+    for (int i = 0; i < M; ++i)
+        inv[i][i] = 1.0f;
+
+    float aug[16][16];
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < M; ++j)
+            aug[i][j] = EET[i][j];
+
+    for (int col = 0; col < M; ++col)
+    {
+        int pivot = col;
+        for (int row = col + 1; row < M; ++row)
+            if (std::abs (aug[row][col]) > std::abs (aug[pivot][col]))
+                pivot = row;
+
+        if (pivot != col)
+        {
+            std::swap_ranges (aug[col], aug[col] + M, aug[pivot]);
+            std::swap_ranges (inv[col], inv[col] + M, inv[pivot]);
+        }
+
+        float diagVal = aug[col][col];
+        if (std::abs (diagVal) < 1e-10f) continue;
+
+        for (int j = 0; j < M; ++j)
+        {
+            aug[col][j] /= diagVal;
+            inv[col][j] /= diagVal;
+        }
+
+        for (int row = 0; row < M; ++row)
+        {
+            if (row == col) continue;
+            float factor = aug[row][col];
+            for (int j = 0; j < M; ++j)
+            {
+                aug[row][j] -= factor * aug[col][j];
+                inv[row][j] -= factor * inv[col][j];
+            }
+        }
+    }
+
+    // D[s][c] = sum_k E^T[s][k] * inv[k][c] = sum_k E[k][s] * inv[k][c]
+    for (int s = 0; s < N; ++s)
+        for (int c = 0; c < M; ++c)
+        {
+            float sum = 0.0f;
+            for (int k = 0; k < M; ++k)
+                sum += E[k][s] * inv[k][c];
+            outMatrix[s][c] = sum;
+        }
+}
+
+    // The 15 OutputFormats that resolve to a speaker layout.
+    constexpr OutputFormat kSpeakerFormats[] = {
+        OutputFormat::Quad,          OutputFormat::Surround5_0,   OutputFormat::Surround5_1,
+        OutputFormat::Surround7_0,   OutputFormat::Surround7_1,   OutputFormat::Surround9_1,
+        OutputFormat::Octaphonic,    OutputFormat::Surround5_1_2, OutputFormat::Surround5_1_4,
+        OutputFormat::Surround7_1_2, OutputFormat::Surround7_1_4, OutputFormat::Surround7_1_6,
+        OutputFormat::Surround9_1_4, OutputFormat::Surround9_1_6, OutputFormat::SurroundSML13_1
+    };
+    static_assert (sizeof (kSpeakerFormats) / sizeof (kSpeakerFormats[0]) == NUM_LAYOUT_DEFS,
+                   "one speaker OutputFormat per LayoutID");
+
+    // Derivation of the two bounds below (G-02-10; full evidence in
+    // .planning/debug/ambi-pin-release-tolerance.md).
+    //
+    // The library decoder and referenceAmbiDecode run the same float algorithm
+    // in different translation units. At -O3 on FMA hardware (Apple Silicon)
+    // clang contracts the E*E^T sums into fused multiply-adds, and the
+    // vectoriser keeps only the scalar tail fused, so the two copies round
+    // differently. Debug (-O0) vectorises nothing and is bit-identical; Release
+    // arm64 differs by up to 5.3e-6 on 10 of 15 layouts.
+    //
+    // E*E^T is singular (rank at most 15 of 16) and only the 0.01 Tikhonov term
+    // makes it invertible, with cond(EET + 0.01 I) from 501 (Quad) to 1786
+    // (9.1.6). One rounding therefore moves the decode by 1e-6 to 1e-5.
+    //
+    // Measured: the spread between the two float decoders is 0 in Debug, 5.3e-6
+    // in Release arm64, and 1.0e-5 for the worst compiler variant tried. Each
+    // float decoder sits up to 1.4e-5 (Release) / 1.7e-5 (Debug) / 1.8e-5 (any
+    // variant tried) from a double-precision solve of the same E.
+    //
+    // The smallest change the pin must catch is a +0.1% Tikhonov epsilon. It
+    // moves the decode by 5.8e-5 to 6.3e-5 on 7.0, 7.1, 7.1.2, 7.1.4 and 7.1.6,
+    // while real regressions (wrong order, stride, speaker order, dropped
+    // regularisation) move it by 0.1 to 1. A +0.01% change (about 6e-6) is below
+    // rounding, and no tolerance can resolve it. The +0.1% resolution holds on
+    // those five 7.x layouts only: on the other ten the same change moves the
+    // decode by 9.6e-7 (Quad) to 2.2e-5 (5.1.2), under the bound, so a
+    // regression confined to them is caught only if it is of the 0.1 to 1
+    // kind. The pin as a whole still fails a +0.1% change, through the 7.x
+    // layouts (IN-07; measured with a double solve of each layout's E).
+    //
+    // Hence kAmbiPinTolerance = 2.5e-5: about 2.5x above the worst rounding
+    // spread (1.0e-5) and 2.3x below the +0.1% change (5.8e-5). kAmbiFloatVsDoubleTolerance =
+    // 4e-5 is about 2.2x the worst float-vs-double distance. It re-checks the
+    // premise above on every build, so a toolchain that moves the noise floor
+    // fails there with a message that says so, instead of looking like a
+    // library change.
+    //
+    // The previous bound (1e-6) came from RESEARCH F10, a Debug-grade "worst 0"
+    // measurement plus an unmeasured margin.
+    constexpr float kAmbiPinTolerance = 2.5e-5f;
+    constexpr double kAmbiFloatVsDoubleTolerance = 4.0e-5;
+
+    // Non-finite-aware max-reduction (WR-06), shared with the other test files
+    // through tests/TestNumerics.h (WR-07).
+    using spatialcore_test::accumulateWorstFinite;
+
+    // The same decode as referenceAmbiDecode, in double, on the same float
+    // inputs: E is bit-identical to what both float decoders see, and the
+    // Tikhonov term is the float epsilon promoted, so only precision differs.
+    // Fixed-size stack arrays, no heap. The caller zero-initialises outMatrix.
+    void doublePrecisionAmbiDecode (const SpeakerLayout& layout,
+                                    double (*outMatrix)[MAX_SPEAKERS])
+    {
+        constexpr int M = 16;
+        const int N = layout.numSpeakers;
+
+        // IN-08: E is M x M, indexed E[c][s] for s < N, so more speakers than
+        // order-3 channels would write past it.
+        REQUIRE (N >= 0);
+        REQUIRE (N <= M);
+
+        double E[M][M] = {};
+        for (int s = 0; s < N; ++s)
+            for (int c = 0; c < M; ++c)
+                E[c][s] = static_cast<double> (evalSH (c, layout.speakers[s].azimuthRad,
+                                                          layout.speakers[s].elevationRad));
+
+        double aug[M][M] = {};
+        double inv[M][M] = {};
+        for (int i = 0; i < M; ++i)
+        {
+            for (int j = 0; j < M; ++j)
+            {
+                double sum = 0.0;
+                for (int s = 0; s < N; ++s)
+                    sum += E[i][s] * E[j][s];
+                aug[i][j] = sum;
+            }
+            aug[i][i] += static_cast<double> (0.01f);
+            inv[i][i] = 1.0;
+        }
+
+        // Gauss-Jordan with partial pivoting.
+        for (int col = 0; col < M; ++col)
+        {
+            int pivot = col;
+            for (int row = col + 1; row < M; ++row)
+                if (std::abs (aug[row][col]) > std::abs (aug[pivot][col]))
+                    pivot = row;
+            if (pivot != col)
+                for (int j = 0; j < M; ++j)
+                {
+                    std::swap (aug[col][j], aug[pivot][j]);
+                    std::swap (inv[col][j], inv[pivot][j]);
+                }
+
+            // IN-08: the library skips a pivot below 1e-10; this exact
+            // reference must never meet one (the 0.01 Tikhonov term keeps
+            // every pivot near 0.01 or above), so it stops by name instead of
+            // dividing into NaN.
+            const double diag = aug[col][col];
+            REQUIRE (std::abs (diag) >= 1e-10);
+            for (int j = 0; j < M; ++j)
+            {
+                aug[col][j] /= diag;
+                inv[col][j] /= diag;
+            }
+            for (int row = 0; row < M; ++row)
+            {
+                if (row == col) continue;
+                const double f = aug[row][col];
+                for (int j = 0; j < M; ++j)
+                {
+                    aug[row][j] -= f * aug[col][j];
+                    inv[row][j] -= f * inv[col][j];
+                }
+            }
+        }
+
+        for (int s = 0; s < N; ++s)
+            for (int c = 0; c < M; ++c)
+            {
+                double sum = 0.0;
+                for (int k = 0; k < M; ++k)
+                    sum += E[k][s] * inv[k][c];
+                outMatrix[s][c] = sum;
+            }
+    }
+}
+
+TEST_CASE ("RenderEngine: the order-3 speaker decode matches the pre-change private decoder within float rounding on all 15 layouts (D-09)",
+           "[engine][ambi-pin]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    float worst = 0.0f;
+    int layoutsChecked = 0;
+    for (const auto format : kSpeakerFormats)
+    {
+        engine.setOutputFormat (format);
+        const auto& active = engine.getActiveLayout();
+        REQUIRE (active.format == format);
+
+        float reference[MAX_SPEAKERS][MAX_SPEAKERS] = {};
+        int refNumSpeakers = -1;
+        referenceAmbiDecode (active.layout, reference, refNumSpeakers);
+
+        INFO ("format " << static_cast<int> (format) << " (" << OutputFormatRegistry::getDisplayName (format) << ")");
+        CHECK (active.layout.numSpeakers > 0);
+        CHECK (refNumSpeakers == active.layout.numSpeakers);
+        CHECK (active.ambiNumSpeakers == active.layout.numSpeakers);
+
+        double exact[MAX_SPEAKERS][MAX_SPEAKERS] = {};
+        doublePrecisionAmbiDecode (active.layout, exact);
+
+        float worstHere = 0.0f;
+        double libVsExact = 0.0;
+        double refVsExact = 0.0;
+        int nonFinite = 0;
+        for (int s = 0; s < active.layout.numSpeakers; ++s)
+            for (int c = 0; c < 16; ++c)
+            {
+                // accumulateWorstFinite rejects a NaN or Inf distance instead of
+                // letting std::max drop it (WR-06). Count the rejects and fail
+                // once per layout (IN-10).
+                const float  dNew = std::abs (active.ambiDecodeMatrix[s][c] - reference[s][c]);
+                const double dLib = std::abs (static_cast<double> (active.ambiDecodeMatrix[s][c]) - exact[s][c]);
+                const double dRef = std::abs (static_cast<double> (reference[s][c]) - exact[s][c]);
+                const bool newOk = accumulateWorstFinite (worstHere, dNew);
+                const bool libOk = accumulateWorstFinite (libVsExact, dLib);
+                const bool refOk = accumulateWorstFinite (refVsExact, dRef);
+                // Name only the first bad entry; the count says how many.
+                if (! (newOk && libOk && refOk) && nonFinite++ == 0)
+                    UNSCOPED_INFO ("first non-finite decode entry: s=" << s << " c=" << c
+                                   << " lib=" << active.ambiDecodeMatrix[s][c]
+                                   << " ref=" << reference[s][c]
+                                   << " exact=" << exact[s][c]);
+            }
+        CHECK (nonFinite == 0);
+        INFO ("worst |new - old| = " << worstHere);
+        INFO ("worst |library - double solve| = " << libVsExact);
+        INFO ("worst |reference - double solve| = " << refVsExact);
+        CHECK (worstHere <= kAmbiPinTolerance);
+        CHECK (libVsExact <= kAmbiFloatVsDoubleTolerance);
+        CHECK (refVsExact <= kAmbiFloatVsDoubleTolerance);
+        worst = std::max (worst, worstHere);
+        ++layoutsChecked;
+    }
+    CHECK (layoutsChecked == 15);
+    INFO ("worst |new - old| over all 15 layouts = " << worst);
+    CHECK (worst <= kAmbiPinTolerance);
+}
+
+TEST_CASE ("RenderEngine: the ambi-pin max-reduction rejects non-finite distances instead of dropping them (WR-06, IN-11)",
+           "[engine][ambi-pin]")
+{
+    const double quietNaN = std::numeric_limits<double>::quiet_NaN();
+    const double posInf = std::numeric_limits<double>::infinity();
+
+    double worst = 0.25;
+    CHECK_FALSE (accumulateWorstFinite (worst, quietNaN));
+    CHECK_FALSE (accumulateWorstFinite (worst, posInf));
+    CHECK_FALSE (accumulateWorstFinite (worst, -posInf));
+    CHECK (worst == 0.25);   // a rejected distance leaves the maximum untouched
+
+    // A rejected distance must not poison later finite ones either.
+    CHECK (accumulateWorstFinite (worst, 0.5));
+    CHECK (worst == 0.5);
+    CHECK (accumulateWorstFinite (worst, 0.1));
+    CHECK (worst == 0.5);
+
+    // A NaN on an untouched maximum: bare std::max would keep 0.0 and report no
+    // problem, which is exactly the WR-06 vacuous pass.
+    double fresh = 0.0;
+    CHECK_FALSE (accumulateWorstFinite (fresh, quietNaN));
+    CHECK (accumulateWorstFinite (fresh, 0.125));
+    CHECK (fresh == 0.125);
+
+    // The float instantiation, as used for worstHere.
+    float worstF = 0.0f;
+    CHECK_FALSE (accumulateWorstFinite (worstF, std::numeric_limits<float>::quiet_NaN()));
+    CHECK_FALSE (accumulateWorstFinite (worstF, std::numeric_limits<float>::infinity()));
+    CHECK (worstF == 0.0f);
+    CHECK (accumulateWorstFinite (worstF, 2.0f));
+    CHECK (worstF == 2.0f);
+}
+
+TEST_CASE ("RenderEngine: decode rows beyond the speaker count are cleared on a layout switch (D-09)",
+           "[engine][ambi-pin]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    // Double-buffered: 9.1.6 fills one buffer, Binaural takes the other, and
+    // Quad lands back in 9.1.6's buffer. Rows 4-15 must not keep 9.1.6 data.
+    engine.setOutputFormat (OutputFormat::Surround9_1_6);
+    REQUIRE (engine.getActiveLayout().layout.numSpeakers == 15);
+    engine.setOutputFormat (OutputFormat::Binaural);
+    engine.setOutputFormat (OutputFormat::Quad);
+
+    const auto& active = engine.getActiveLayout();
+    REQUIRE (active.layout.numSpeakers == 4);
+    int staleEntries = 0;
+    for (int s = active.layout.numSpeakers; s < MAX_SPEAKERS; ++s)
+        for (int c = 0; c < MAX_SPEAKERS; ++c)
+            if (active.ambiDecodeMatrix[s][c] != 0.0f)
+                ++staleEntries;
+    CHECK (staleEntries == 0);
+}
+
+// ----------------------------------------------------------------------------
+// Criterion 3: every OutputFormat resolves through RenderEngine::setOutputFormat
+// to a layout that agrees with OutputFormatRegistry (RESEARCH Reference Data D).
+// ----------------------------------------------------------------------------
+TEST_CASE ("RenderEngine: all 23 output formats resolve to layouts that agree with the registry (criterion 3)",
+           "[engine][format-resolve]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    int formatsChecked = 0, speakerFormats = 0;
+    for (int i = 0; i < NUM_OUTPUT_FORMATS; ++i)
+    {
+        const auto format = static_cast<OutputFormat> (i);
+        const auto& info = OutputFormatRegistry::getInfo (format);
+        REQUIRE (info.format == format);
+
+        engine.setOutputFormat (format);
+        const auto& active = engine.getActiveLayout();
+        const auto& layout = active.layout;
+
+        INFO ("format " << i << " (" << info.name << ")");
+        CHECK (active.format == format);
+        CHECK (layout.totalChannels == info.requiredChannels);
+        CHECK ((layout.lfeChannelIndex >= 0) == info.hasLFE);
+
+        const bool isSpeakerFormat = ! info.isAmbisonicsOutput && ! info.isStereoVariant
+                                     && format != OutputFormat::Binaural;
+        if (isSpeakerFormat)
+        {
+            ++speakerFormats;
+            CHECK (layoutHasHeight (layout) == info.hasHeight);
+            CHECK (layout.numSpeakers > 0);
+
+            bool seen[MAX_SPEAKERS] = {};
+            for (int s = 0; s < layout.numSpeakers; ++s)
+            {
+                const int ch = layout.speakers[s].channelIndex;
+                INFO ("speaker " << s << " -> channel " << ch);
+                CHECK (ch >= 0);
+                CHECK (ch < layout.totalChannels);
+                CHECK (ch != layout.lfeChannelIndex);
+                if (ch >= 0 && ch < MAX_SPEAKERS)
+                {
+                    CHECK_FALSE (seen[ch]);   // no two speakers share a channel
+                    seen[ch] = true;
+                }
+            }
+
+            if (info.hasHeight)
+            {
+                int regular = 0;
+                for (const auto& t : active.vbapTriplets)
+                    if (! t.lowerHemisphere)
+                        ++regular;
+                CHECK (regular > 0);
+            }
+            else
+            {
+                CHECK (active.vbapTriplets.empty());
+            }
+        }
+        else
+        {
+            CHECK (layout.numSpeakers == 0);
+            CHECK (active.vbapTriplets.empty());
+        }
+        ++formatsChecked;
+    }
+    CHECK (formatsChecked == 23);
+    CHECK (speakerFormats == 15);
 }

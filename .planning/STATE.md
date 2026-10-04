@@ -1,19 +1,20 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.0.0
-milestone_name: milestone
-current_phase: 2
+current_phase: 02
 current_phase_name: Algorithm & Format Verification
-status: planning
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-08-15T09:17:18.563Z"
-last_activity: 2026-08-15
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
+status: verifying
+stopped_at: Completed 02-10-PLAN.md
+last_updated: "2026-10-03T21:55:22.596Z"
+last_activity: 2026-10-04
+last_activity_desc: Phase 02 code review resolved to clean (25 findings fixed)
+state_head: dc945acd93f3fecbcac6d4c5cff9803dbb5eb635
 progress:
-  total_phases: 1
+  total_phases: 6
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 15
+  completed_plans: 15
+milestone_name: milestone
 ---
 
 # Project State
@@ -24,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 01 — documentation-truth-contract-freeze
+**Current focus:** Phase 02 — Algorithm & Format Verification
 
 ## Current Position
 
-Phase: 2 — Algorithm & Format Verification
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-15 — Phase 01 complete, transitioned to Phase 2
+Phase: 02 (Algorithm & Format Verification) — EXECUTING
+Plan: 10 of 10 (02-10 complete; all plans executed)
+Status: Phase complete — ready for verification
+Last activity: 2026-10-04 — Phase 02 code review resolved: 4 fix/re-review rounds, all 25 findings fixed, final review `clean` (`02-REVIEW.md`, ledger `02-REVIEW-DISPOSITION.md` 0 open). Debug 200/201 (only the pre-existing `HutubsPP2Tests.cpp:47`), Release 201/201, OpenSpatialDelay builds against the branch. Phase verification still has the human UAT items in `02-UAT.md`.
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -79,6 +80,16 @@ Progress: [██████████] 100%
 | Phase 01 P03 | 6min | 3 tasks | 5 files |
 | Phase 01 P04 | 18min | 2 tasks | 2 files |
 | Phase 01 P05 | 6min | 2 tasks | 8 files |
+| Phase 02 P01 | 7min | 3 tasks | 11 files |
+| Phase 02 P03 | 2min | 2 tasks | 1 files |
+| Phase 02 P02 | 4min | 3 tasks | 9 files |
+| Phase 02 P04 | 13min | 3 tasks | 8 files |
+| Phase 02 P05 | 10min | 3 tasks | 9 files |
+| Phase 02 P06 | 7min | 3 tasks | 8 files |
+| Phase 02 P07 | 8min | 3 tasks | 5 files |
+| Phase 02 P08 | 5 min | 2 tasks | 9 files |
+| Phase 02 P09 | 5 min | 2 tasks | 5 files |
+| Phase 02 P10 | wall 4h50m (incl. usage-limit pause) | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -98,6 +109,26 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase ?]: OQ-2 stays closed: shipped tanh soft ceiling is outputLimiter()'s sole governing contract (SpatialMath.h docblock); the scaffold plan's hard-clamp sketch was stamped historical (Tier B pattern) rather than amended, per D-07/D-01
 - [Phase ?]: OQ-5 (org repo migration timing) retired to decision DR-18: development stays on the personal remote until the pipeline is proven, migration gated on proof not a date
 - [Phase ?]: Phase 01 complete: all Tier B documents stamped historical (zero renumbering); PROJECT.md and REQUIREMENTS.md corrected so they no longer mis-steer future phases with stale counts or a phantom DSP/ path
+- [Phase 02]: Plan 02-03 Task 1 resolved file-as-drafted (user delegated to orchestrator); coplanar-quad tie-break filed as AndrewRahman/SpatialCore#22, not fixed in Phase 2 (D-18)
+- [Phase 02]: Plan 02-02 Task 1 package gate resolved approved-recreate (user delegated to orchestrator, PyPI provenance verified); .context/venv rebuilt from pins, which also removed an unpinned pypdf 6.19.0
+- [Phase 02]: Offline oracles checked in under tests/reference/ (scipy SN3D, ear 2.1.0 nadir cap, textbook VBAP/VBIP/DBAP, MDAP port labelled not-an-oracle); headers regenerate byte-identically and are never run in CI
+- [Phase 02]: Plan 02-04: D-19(i) bounded std::remainder wrap applied to computeVBAPGains2D only; computeVBAPGains3D silences non-finite az/el but leaves finite angles unwrapped so finite output stays bit-identical to d43cb15 (D-06b)
+- [Phase 02]: Plan 02-04: RenderEngine sanitiser holds azimuth, elevation and distance per field (ADM-OSC sends NaN for unset axes) and never wraps or clamps a finite value, per the plan rather than RESEARCH Pattern 4's pair-hold with wrap/clamp
+- [Phase 02]: Plan 02-04: [robust] power check temporarily accepts VBIP's pre-D-14 law (gains sum to 1, F1); Plan 02-05 should remove the commented carve-out once VBIP is unit-power
+- [Phase 02]: Plan 02-05: VBIP is textbook VBIP (sqrt of VBAP gains, renormalised to unit power, DAFx-98 sec. 2.2.2); single band, dual-band tracked in AndrewRahman/SpatialCore#20 (D-14, D-15)
+- [Phase 02]: Plan 02-05: the coplanar-tie mirror filter counts only rivals of the minimum-sum enclosing triplet; the any-two reading skipped every point on 7.1.6/9.1.6/SML13.1 because coplanar triangles always tie
+- [Phase 02]: Plan 02-05: 02-04's temporary VBIP carve-out in the [robust] power check is removed; VBIP is held to power 0 or 1
+- [Phase 02]: Plan 02-06: D-08 is constants only -- 22 SN3D substitutions in evalSH; post-fix max literal error 2.4e-7, addition-theorem deviation 2.8e-6 (was 19.54); AmbisonicsCodec::evaluateSH is a forwarder, so evalSH is the single SH implementation
+- [Phase 02]: Plan 02-06: D-09 proven pure refactor -- activateLayout uses AmbisonicsCodec::getDecodeMatrix (3, ...); max |diff| vs the verbatim d43cb15 decoder is 0 on all 15 layouts; rows past the speaker count are now cleared (old code left them stale)
+- [Phase 02]: Plan 02-06: SpatialCore#11 referenced as closed in commit 2c4e38d message only (no gh action); the docs half of the ACN/SN3D/no-Condon-Shortley statement lands in Plan 02-07
+- [Phase 02]: Plan 02-07: docs (README, integration guide, spatial-audio-dsp skill) restate the Phase 2 code -- AmbiX convention, textbook single-band VBIP (#20), EAR below horizon, min-sum tie-break (#22), DBAP 12.04 dB, MDAP WASPAA 1999; the guide names only VBAP/VBIP/MDAP/KNN/DirectBinaural as silent for non-finite input and only the 2D VBAP path as wrapping
+- [Phase 02]: Plan 02-07: DR-3 passed -- OpenSpatialDelay 30391cd compiles and links against the branch (OpenSpatialDelay + OpenSpatialDelayTests, git archive + symlinked SpatialCore + JUCE_DIR); only SpatialCore-header warnings are 5 pre-existing -Wunused-parameter in ADMOSCReceiver.h; RESEARCH A4 retired
+- [Phase 02]: Plan 02-07: nearestSpeaker3DFallback is comment-deprecated (no attribute, F9), removal at next major; OSD follow-ups (glossary 127-128, release notes for 4 audible changes, delete OSD's local SH/VBAP copies) recorded in 02-07-SUMMARY, not performed
+- [Phase 02]: 02-08: pair-pan wedge encoded in existing VBAPTriplet fields (nadirVertex>=0, nadirMask==0, nadirGain==0); no public member added
+- [Phase 02]: 02-08: 5.1.4 rear gap (|az|>110) not special-cased; same wedge as other pairs, EAR difference documented and not pinned
+- [Phase 02]: 02-09: 5.1.x wedge region depth (about -59 degrees) is a geometric derivation tan(el)=tan(-30)/cos(D/2), not a 02-08 measurement; WR-01 closed by scoping #22 to above the horizon
+- [Phase 02]: 02-10: [ambi-pin] bound is kAmbiPinTolerance = 2.5e-5 (derived from conditioning, 2.3x below the +0.1% epsilon failure), anchored by a double-precision decode at 4.0e-5; library and reference untouched
+- [Phase 02]: 02-10: Release gate runs ctest on build-release/tests, because ctest from the build root finds no tests and exits 0 (CI has the same blind spot, deferred to Phase 6)
 
 ### Pending Todos
 
@@ -122,8 +153,8 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-08-15T08:44:57.776Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-10-03T21:55:19.174Z
+Stopped at: Completed 02-10-PLAN.md
 Resume file: None
 Next command: `/gsd-execute-phase 1`
 

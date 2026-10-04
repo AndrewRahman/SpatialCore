@@ -5,7 +5,8 @@ namespace spatialcore
 {
 
 //==============================================================================
-// MDAPAlgorithm -- Multiple-Direction Amplitude Panning (Pulkki 2000)
+// MDAPAlgorithm -- Multiple-Direction Amplitude Panning (Pulkki, "Uniform
+// spreading of amplitude panned virtual sources", IEEE WASPAA 1999)
 //==============================================================================
 void MDAPAlgorithm::computeGains (const SourcePosition& source, const LayoutContext& ctx,
                                    float* outputGains, int numSpeakers) const
@@ -39,15 +40,17 @@ void MDAPAlgorithm::computeGains (const SourcePosition& source, const LayoutCont
 
     float tempGains[MAX_SPEAKERS] = {};
 
+    // Height layouts always carry triplets and flat layouts never do:
+    // RenderEngine::activateLayout enforces that on the message thread and
+    // aborts on a mismatch (D-02a). There is deliberately no assert here
+    // (IN-14): this runs on the audio thread, and JUCE's assertion path logs
+    // and allocates. A hand-built LayoutContext that breaks the invariant
+    // still gets a defined, finite result: an empty list pans by 2D VBAP
+    // (azimuth only), a non-empty list by 3D VBAP.
+
     // Main source VBAP contribution
     if (! ctx.triplets.empty())
         computeVBAPGains3D (ctx.layout, ctx.triplets, source.azimuthRad, source.elevationRad, tempGains);
-    else if (layoutHasHeight (ctx.layout))
-    {
-        jassertfalse;
-        nearestSpeaker3DFallback (ctx.layout, source.azimuthRad, source.elevationRad,
-                                  tempGains, numSpeakers);
-    }
     else
         computeVBAPGains2D (ctx.layout, source.azimuthRad, tempGains);
 
@@ -95,11 +98,6 @@ void MDAPAlgorithm::computeGains (const SourcePosition& source, const LayoutCont
 
         if (! ctx.triplets.empty())
             computeVBAPGains3D (ctx.layout, ctx.triplets, auxAz, auxEl, tempGains);
-        else if (layoutHasHeight (ctx.layout))
-        {
-            jassertfalse;
-            nearestSpeaker3DFallback (ctx.layout, auxAz, auxEl, tempGains, numSpeakers);
-        }
         else
             computeVBAPGains2D (ctx.layout, auxAz, tempGains);
 

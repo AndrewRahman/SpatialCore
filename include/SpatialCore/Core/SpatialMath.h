@@ -34,8 +34,13 @@ inline void cartesianToPolar (float x, float y, float z,
 // Removed; SpeakerLayout.h is already #included above, so callers of this
 // header get the canonical declaration automatically.
 //==============================================================================
-// v1.0: 3D nearest-speaker fallback -- used when triplets are empty on a 3D layout.
-// Prevents 2D fallback from routing signal to height speakers for horizontal sources.
+// DEPRECATED (comment-only): 3D nearest-speaker snap, scheduled for removal at
+// the next major version. No SpatialCore code calls it since Phase 2 (D-01):
+// height layouts always carry VBAP triplets, and below-horizon directions use
+// the ITU-R BS.2127 (EAR) lower-hemisphere triplets (D-04). It is kept, body
+// and signature unchanged, because removing a public inline function is a
+// major-version change under the CLAUDE.md versioning rule. No deprecation
+// attribute: in a header it would add warnings to consumer builds (RESEARCH F9).
 //==============================================================================
 inline void nearestSpeaker3DFallback (const SpeakerLayout& layout,
                                       float azimuthRad, float elevationRad,
@@ -68,8 +73,36 @@ inline void nearestSpeaker3DFallback (const SpeakerLayout& layout,
 //==============================================================================
 // Forward declarations for functions defined in SpatialMath.cpp
 //==============================================================================
+/** Evaluates one real spherical harmonic, ACN channel `acnIndex` (0..48, orders 0-6).
+
+    Convention (D-10; AndrewRahman/SpatialCore#11): real spherical harmonics, ACN channel
+    order (acn = l*l + l + m; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
+    normalisation (the sum over m of Y_lm^2 is 1 at every order l), no Condon-Shortley
+    phase, angles in radians, azimuth 0 = front, positive azimuth toward the listener's
+    left (AmbiX +Y; +x in SpatialCore's internal Cartesian frame, where
+    x = cos(el) sin(az) and y = cos(el) cos(az) is front), elevation 0 = horizon,
+    positive up. This is the AmbiX convention.
+
+    This is the single SH implementation in SpatialCore (D-08):
+    AmbisonicsCodec::evaluateSH forwards to it. Its values are pinned against 49
+    independent scipy reference values and the SN3D addition theorem in
+    tests/IO/AmbisonicsCodecTests.cpp ([sn3d]). Returns 0 for acnIndex outside 0..48.
+*/
 float evalSH (int acnIndex, float azimuthRad, float elevationRad);
 void computeVBAPGains2D (const SpeakerLayout& layout, float azimuthRad, float* outGains);
+
+/** 3D VBAP over a precomputed triplet list. Audio-thread safe: no allocation,
+    lock or log.
+
+    `triplets` must be what RenderEngine stores for the layout:
+    buildVBAPTripletsForLayout followed by appendLowerHemisphereTriplets (see
+    SpeakerLayout.h). The first builder alone has no below-horizon coverage.
+    With a partial list, a direction no triplet encloses still gets a defined,
+    audible result (WR-03): the triplet with the largest minimum gain,
+    negatives clamped to 0 (D-06b), or, if that clamps to all zeros, unity on
+    the nearest speaker. There is no assert on this path. An empty list, or a
+    non-finite direction, gives silence.
+*/
 void computeVBAPGains3D (const SpeakerLayout& layout, const std::vector<VBAPTriplet>& triplets,
                          float azimuthRad, float elevationRad, float* outGains);
 

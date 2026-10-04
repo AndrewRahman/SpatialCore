@@ -2,13 +2,45 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/IO/AmbisonicsCodec.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include <SpatialCore/Core/SpatialMath.h>
+#include "../reference/ShReference.h"
+#include "../TestNumerics.h"
+#include <algorithm>
 #include <cmath>
+#include <random>
+#include <utility>
+#include <vector>
 
 using namespace spatialcore;
 using Catch::Matchers::WithinAbs;
+using spatialcore_test::accumulateWorstFinite;
 
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kDegToRad = kPi / 180.0f;
+
+namespace
+{
+    constexpr int kNumShChannels = AmbisonicsCodec::MAX_AMBI_CHANNELS;   // 49, order 6
+
+    // ACN -> (l, m): l = floor(sqrt(acn)), m = acn - l*l - l.
+    int shOrderOf (int acn)  { return static_cast<int> (std::floor (std::sqrt (static_cast<double> (acn)))); }
+    int shDegreeOf (int acn) { const int l = shOrderOf (acn); return acn - l * l - l; }
+
+    // Directions uniform on the sphere, fixed seed: az in [-pi, pi), el = asin(u), u in [-1, 1].
+    std::vector<std::pair<float, float>> seededDirections (int count, unsigned long long seed)
+    {
+        std::mt19937_64 rng (seed);
+        std::uniform_real_distribution<double> azDist (-static_cast<double> (kPi), static_cast<double> (kPi));
+        std::uniform_real_distribution<double> zDist (-1.0, 1.0);
+
+        std::vector<std::pair<float, float>> dirs;
+        dirs.reserve (static_cast<size_t> (count));
+        for (int i = 0; i < count; ++i)
+            dirs.emplace_back (static_cast<float> (azDist (rng)),
+                               static_cast<float> (std::asin (zDist (rng))));
+        return dirs;
+    }
+}
 
 // ============================================================================
 // AmbisonicsCodec::evaluateSH -- spot-check a handful of known closed-form
@@ -134,4 +166,354 @@ TEST_CASE("AmbisonicsCodec: applyMaxREWeights leaves W channel unweighted at ord
     CHECK_THAT(coeffs[0], WithinAbs(1.0f, 1e-5f));
     // Higher-order channels get progressively attenuated (weight < 1)
     CHECK(coeffs[9] < 1.0f);
+}
+
+// ============================================================================
+// Spherical harmonics correctness (D-08, D-11b, D-11c, D-05; SpatialCore#11).
+// The reference values come only from the checked-in ShReference.h header,
+// which scipy generated offline (two independent routes) -- never from the
+// code under test. Convention: ACN order, SN3D, no Condon-Shortley phase.
+// ============================================================================
+TEST_CASE("SH: evalSH and AmbisonicsCodec::evaluateSH match 49 scipy reference values at az=64 el=10 (D-11c)",
+          "[ambisonics][sn3d][golden]")
+{
+    const float az = spatialcore_ref::kShRefAzimuthDeg * kDegToRad;
+    const float el = spatialcore_ref::kShRefElevationDeg * kDegToRad;
+
+    // Every value has a magnitude of at least 0.072, both signs occur at every
+    // order, and 64/10 degrees is asymmetric, so this table catches a wrong
+    // scale, an m/-m swap, a sign flip, azimuth or elevation reversal and a
+    // Condon-Shortley phase.
+    for (int c = 0; c < kNumShChannels; ++c)
+    {
+        INFO("ACN " << c << " (l=" << shOrderOf (c) << ", m=" << shDegreeOf (c) << ")");
+        CHECK_THAT(evalSH (c, az, el), WithinAbs(spatialcore_ref::kShRef_az64_el10[c], 1e-5f));
+        CHECK_THAT(AmbisonicsCodec::evaluateSH (c, az, el), WithinAbs(spatialcore_ref::kShRef_az64_el10[c], 1e-5f));
+    }
+}
+
+TEST_CASE("SH: SN3D addition theorem, sum over m of Y_lm^2 == 1 at orders 1-6 (D-11b)", "[ambisonics][sn3d]")
+{
+    auto dirs = seededDirections (2000, 42);
+    dirs.emplace_back (0.0f, kPi * 0.5f);           // zenith
+    dirs.emplace_back (0.0f, -kPi * 0.5f);          // nadir
+    dirs.emplace_back (1.234f, kPi * 0.5f);         // zenith, arbitrary azimuth
+    dirs.emplace_back (-2.5f, -kPi * 0.5f);         // nadir, arbitrary azimuth
+    for (int k = 0; k < 8; ++k)                      // the horizon
+        dirs.emplace_back (-kPi + static_cast<float> (k) * kPi * 0.25f, 0.0f);
+
+    for (int l = 1; l <= AmbisonicsCodec::MAX_AMBI_ORDER; ++l)
+    {
+        double worst = 0.0;
+        int nonFinite = 0;
+        std::pair<float, float> worstDir { 0.0f, 0.0f };
+        for (const auto& d : dirs)
+        {
+            double sum = 0.0;
+            for (int acn = l * l; acn < (l + 1) * (l + 1); ++acn)
+            {
+                const double y = evalSH (acn, d.first, d.second);
+                sum += y * y;
+            }
+            // WR-07: a NaN sum must fail, not be skipped by "dev > worst".
+            const double before = worst;
+            if (! accumulateWorstFinite (worst, std::abs (sum - 1.0)))
+            {
+                if (nonFinite++ == 0)
+                    UNSCOPED_INFO("order " << l << ": first non-finite sum " << sum
+                                  << " at az=" << d.first << " el=" << d.second << " rad");
+                continue;
+            }
+            if (worst > before)
+                worstDir = d;
+        }
+        INFO("order " << l << ": worst |sum - 1| = " << worst
+             << " at az=" << worstDir.first << " el=" << worstDir.second << " rad");
+        CHECK(nonFinite == 0);
+        CHECK(worst <= 2e-5);
+    }
+}
+
+TEST_CASE("SH: negative elevation keeps its true sign, Y(az,-el) = (-1)^(l+|m|) Y(az,el) (D-05)", "[ambisonics][sn3d]")
+{
+    const auto dirs = seededDirections (200, 7);
+    for (int c = 0; c < kNumShChannels; ++c)
+    {
+        const int l = shOrderOf (c);
+        const int m = shDegreeOf (c);
+        const float parity = ((l + std::abs (m)) % 2 == 0) ? 1.0f : -1.0f;
+
+        float worst = 0.0f;
+        int nonFinite = 0;
+        for (const auto& d : dirs)
+        {
+            // WR-07: std::max would drop a NaN parity error.
+            const float err = std::abs (evalSH (c, d.first, -d.second)
+                                        - parity * evalSH (c, d.first, d.second));
+            if (! accumulateWorstFinite (worst, err) && nonFinite++ == 0)
+                UNSCOPED_INFO("ACN " << c << ": first non-finite parity error at az="
+                              << d.first << " el=" << d.second << " rad");
+        }
+        INFO("ACN " << c << " (l=" << l << ", m=" << m << "), worst parity error " << worst);
+        CHECK(nonFinite == 0);
+        CHECK(worst <= 1e-5f);
+    }
+}
+
+TEST_CASE("SH: AmbisonicsCodec::evaluateSH forwards to evalSH bit-for-bit (D-08)", "[ambisonics]")
+{
+    const auto dirs = seededDirections (500, 1234);
+    int mismatches = 0;
+    for (int c = 0; c < kNumShChannels; ++c)
+        for (const auto& d : dirs)
+            if (AmbisonicsCodec::evaluateSH (c, d.first, d.second) != evalSH (c, d.first, d.second))
+                ++mismatches;
+    CHECK(mismatches == 0);
+}
+
+// ============================================================================
+// getDecodeMatrix bounds (D-20, RESEARCH F6). E is sized MAX_SPEAKERS columns,
+// so more than 16 speakers used to write past a stack array. The guard makes
+// it write nothing; 0 speakers also writes nothing; exactly 16 decodes.
+// ============================================================================
+TEST_CASE("AmbisonicsCodec: getDecodeMatrix writes nothing for more than 16 or for 0 speakers (D-20)",
+          "[ambisonics][decode-guard]")
+{
+    constexpr int order = 3;
+    constexpr int M = (order + 1) * (order + 1);
+    constexpr float kSentinel = 12345.0f;
+    constexpr int kTooMany = MAX_SPEAKERS + 1;   // 17
+
+    float az[kTooMany] = {};
+    float el[kTooMany] = {};
+    for (int s = 0; s < kTooMany; ++s)
+    {
+        // Distinct directions spread over the upper and lower hemisphere.
+        az[s] = -kPi + (2.0f * kPi) * static_cast<float> (s) / static_cast<float> (kTooMany);
+        el[s] = std::asin (1.0f - (2.0f * static_cast<float> (s) + 1.0f) / static_cast<float> (kTooMany));
+    }
+
+    std::vector<float> out (static_cast<size_t> (kTooMany) * static_cast<size_t> (M), kSentinel);
+
+    SECTION("17 speakers: rejected, the whole 17 x 16 buffer is untouched")
+    {
+        CHECK_FALSE(AmbisonicsCodec::getDecodeMatrix (order, kTooMany, az, el, out.data()));
+        int changed = 0;
+        for (float v : out)
+            if (v != kSentinel)
+                ++changed;
+        CHECK(changed == 0);
+    }
+
+    SECTION("0 speakers: a valid empty decode, the buffer is untouched")
+    {
+        CHECK(AmbisonicsCodec::getDecodeMatrix (order, 0, az, el, out.data()));
+        int changed = 0;
+        for (float v : out)
+            if (v != kSentinel)
+                ++changed;
+        CHECK(changed == 0);
+    }
+
+    SECTION("16 speakers (the boundary): every one of the 16 x 16 entries is written and finite")
+    {
+        CHECK(AmbisonicsCodec::getDecodeMatrix (order, MAX_SPEAKERS, az, el, out.data()));
+        int written = 0, finite = 0;
+        for (int i = 0; i < MAX_SPEAKERS * M; ++i)
+        {
+            if (out[static_cast<size_t> (i)] != kSentinel) ++written;
+            if (std::isfinite (out[static_cast<size_t> (i)])) ++finite;
+        }
+        CHECK(written == MAX_SPEAKERS * M);
+        CHECK(finite == MAX_SPEAKERS * M);
+        // Row 17 (index 16) lies beyond numSpeakers and must stay untouched.
+        for (int c = 0; c < M; ++c)
+            CHECK(out[static_cast<size_t> (MAX_SPEAKERS * M + c)] == kSentinel);
+    }
+}
+
+TEST_CASE("AmbisonicsCodec: getDecodeMatrix rejects an order outside 0..6 and reports every rejection (IN-03)",
+          "[ambisonics][decode-guard]")
+{
+    // 5 speakers, a valid geometry: only the order is wrong.
+    const float az[] = { 0.0f, 0.5f, -0.5f, 2.0f, -2.0f };
+    const float el[] = { 0.0f, 0.3f, 0.3f, -0.2f, -0.2f };
+    constexpr int n = 5;
+    constexpr float kSentinel = 12345.0f;
+
+    // Big enough for any order the call could have tried to write.
+    std::vector<float> out (static_cast<size_t> (n * 64), kSentinel);
+    auto untouched = [&]
+    {
+        for (float v : out)
+            if (v != kSentinel)
+                return false;
+        return true;
+    };
+
+    for (int order : { -1, -2, -3, -7, 7, 8 })
+    {
+        INFO("order " << order);
+        std::fill (out.begin(), out.end(), kSentinel);
+        CHECK_FALSE(AmbisonicsCodec::getDecodeMatrix (order, n, az, el, out.data()));
+        CHECK(untouched());   // order -3 used to decode with M = 4
+    }
+
+    std::fill (out.begin(), out.end(), kSentinel);
+    CHECK_FALSE(AmbisonicsCodec::getDecodeMatrix (1, -1, az, el, out.data()));
+    CHECK(untouched());
+
+    for (int order = 0; order <= AmbisonicsCodec::MAX_AMBI_ORDER; ++order)
+    {
+        INFO("order " << order);
+        const int M = (order + 1) * (order + 1);
+        std::fill (out.begin(), out.end(), kSentinel);
+        CHECK(AmbisonicsCodec::getDecodeMatrix (order, n, az, el, out.data()));
+        int written = 0;
+        for (int i = 0; i < n * M; ++i)
+            written += (out[static_cast<size_t> (i)] != kSentinel && std::isfinite (out[static_cast<size_t> (i)])) ? 1 : 0;
+        CHECK(written == n * M);
+    }
+}
+
+// ============================================================================
+// Encode -> dense decode -> re-encode round trip (D-11a) -- a DECODER-
+// CONDITIONING SMOKE TEST ONLY, not evidence of SH correctness.
+//
+// D-12: a mode-matching round trip is blind to per-channel scale errors.
+// If the evaluator is off by a per-channel scale S (Y' = S Y), the decoder
+// built from it is pinv(S Y) = pinv(Y) S^-1, and the re-encode multiplies S
+// back in, so S cancels exactly. This test passed identically on the pre-fix
+// constants at every order (RESEARCH F6: 1.5e-8 .. 6.2e-8, buggy == fixed).
+// SH correctness is proven by the [sn3d] literal and addition-theorem tests.
+//
+// The decoder is test-local (200-point Fibonacci lattice, double precision,
+// Tikhonov epsilon 1e-6), because the shipped getDecodeMatrix caps at 16
+// speakers and is rank-limited above order 1 (F6); it says nothing about the
+// shipped decoder, which [ambi-pin] covers.
+// ============================================================================
+namespace
+{
+    // D = E^T (E E^T + eps I)^-1, the same shape as getDecodeMatrix, in double.
+    // E is M x S (row c = channel, column s = speaker); returns D as S x M.
+    std::vector<double> denseDecode (const std::vector<double>& E, int M, int S, double eps)
+    {
+        std::vector<double> aug (static_cast<size_t> (M * M), 0.0);
+        std::vector<double> inv (static_cast<size_t> (M * M), 0.0);
+        auto at = [M] (std::vector<double>& m, int r, int c) -> double& { return m[static_cast<size_t> (r * M + c)]; };
+
+        for (int i = 0; i < M; ++i)
+        {
+            for (int j = 0; j < M; ++j)
+            {
+                double sum = 0.0;
+                for (int s = 0; s < S; ++s)
+                    sum += E[static_cast<size_t> (i * S + s)] * E[static_cast<size_t> (j * S + s)];
+                at (aug, i, j) = sum;
+            }
+            at (aug, i, i) += eps;
+            at (inv, i, i) = 1.0;
+        }
+
+        // Gauss-Jordan with partial pivoting.
+        for (int col = 0; col < M; ++col)
+        {
+            int pivot = col;
+            for (int row = col + 1; row < M; ++row)
+                if (std::abs (at (aug, row, col)) > std::abs (at (aug, pivot, col)))
+                    pivot = row;
+            if (pivot != col)
+                for (int j = 0; j < M; ++j)
+                {
+                    std::swap (at (aug, col, j), at (aug, pivot, j));
+                    std::swap (at (inv, col, j), at (inv, pivot, j));
+                }
+
+            const double diag = at (aug, col, col);
+            for (int j = 0; j < M; ++j)
+            {
+                at (aug, col, j) /= diag;
+                at (inv, col, j) /= diag;
+            }
+            for (int row = 0; row < M; ++row)
+            {
+                if (row == col) continue;
+                const double f = at (aug, row, col);
+                for (int j = 0; j < M; ++j)
+                {
+                    at (aug, row, j) -= f * at (aug, col, j);
+                    at (inv, row, j) -= f * at (inv, col, j);
+                }
+            }
+        }
+
+        std::vector<double> D (static_cast<size_t> (S * M), 0.0);
+        for (int s = 0; s < S; ++s)
+            for (int c = 0; c < M; ++c)
+            {
+                double sum = 0.0;
+                for (int k = 0; k < M; ++k)
+                    sum += E[static_cast<size_t> (k * S + s)] * at (inv, k, c);
+                D[static_cast<size_t> (s * M + c)] = sum;
+            }
+        return D;
+    }
+}
+
+TEST_CASE("SH: encode, dense decode, re-encode round trip at orders 1-6 (D-11a, smoke test only)",
+          "[ambisonics][roundtrip]")
+{
+    // 200-point Fibonacci lattice: near-uniform sphere sampling, no table needed.
+    constexpr int S = 200;
+    const double goldenAngle = 3.14159265358979323846 * (3.0 - std::sqrt (5.0));
+    std::vector<float> latAz (S), latEl (S);
+    for (int i = 0; i < S; ++i)
+    {
+        const double z = 1.0 - (2.0 * i + 1.0) / S;
+        latEl[static_cast<size_t> (i)] = static_cast<float> (std::asin (z));
+        latAz[static_cast<size_t> (i)] = static_cast<float> (std::remainder (goldenAngle * i, 2.0 * 3.14159265358979323846));
+    }
+
+    const auto sources = seededDirections (50, 99);
+
+    for (int order = 1; order <= AmbisonicsCodec::MAX_AMBI_ORDER; ++order)
+    {
+        const int M = (order + 1) * (order + 1);
+
+        std::vector<double> E (static_cast<size_t> (M * S));
+        for (int c = 0; c < M; ++c)
+            for (int s = 0; s < S; ++s)
+                E[static_cast<size_t> (c * S + s)] = AmbisonicsCodec::evaluateSH (c, latAz[static_cast<size_t> (s)],
+                                                                                  latEl[static_cast<size_t> (s)]);
+        const auto D = denseDecode (E, M, S, 1e-6);
+
+        double worst = 0.0;
+        int nonFinite = 0;
+        for (const auto& src : sources)
+        {
+            float coeffs[AmbisonicsCodec::MAX_AMBI_CHANNELS] = {};
+            AmbisonicsCodec::encode (SourcePosition { src.first, src.second, 1.0f }, order, coeffs, M);
+
+            std::vector<double> g (static_cast<size_t> (S), 0.0);       // speaker gains = D y
+            for (int s = 0; s < S; ++s)
+                for (int c = 0; c < M; ++c)
+                    g[static_cast<size_t> (s)] += D[static_cast<size_t> (s * M + c)] * coeffs[c];
+
+            for (int c = 0; c < M; ++c)                                // re-encode = E g
+            {
+                double y = 0.0;
+                for (int s = 0; s < S; ++s)
+                    y += E[static_cast<size_t> (c * S + s)] * g[static_cast<size_t> (s)];
+                // WR-07: a singular or garbage solve gives NaN everywhere, which
+                // std::max would drop, reporting worst == 0.
+                if (! accumulateWorstFinite (worst, std::abs (y - static_cast<double> (coeffs[c])))
+                    && nonFinite++ == 0)
+                    UNSCOPED_INFO("order " << order << ": first non-finite re-encode at ACN " << c
+                                  << " source az=" << src.first << " el=" << src.second << " rad");
+            }
+        }
+        INFO("order " << order << ": worst re-encode coefficient error " << worst);
+        CHECK(nonFinite == 0);
+        CHECK(worst <= 1e-5);
+    }
 }

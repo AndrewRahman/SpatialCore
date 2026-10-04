@@ -8,6 +8,7 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(SpatialCoreTests
     Algorithms/SpatializationAlgorithmTests.cpp
+    Algorithms/PanningLawTests.cpp
     IO/SpeakerLayoutTests.cpp
     IO/AmbisonicsCodecTests.cpp
     OSC/ADMOSCReceiverTests.cpp
@@ -17,6 +18,7 @@ add_executable(SpatialCoreTests
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp
     Core/CountsTests.cpp
+    Core/VBAPTripletSelectionTests.cpp
     Binaural/SadieD2KU100Tests.cpp
     Binaural/CipicSubject003Tests.cpp
     Binaural/HutubsPP2Tests.cpp

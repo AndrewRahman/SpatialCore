@@ -1,5 +1,8 @@
 #include <SpatialCore/Algorithms/ConstantPowerAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include <algorithm>
+#include <cmath>
 
 namespace spatialcore
 {
@@ -14,6 +17,12 @@ void ConstantPowerAlgorithm::computeGains (const SourcePosition& source, const L
         outputGains[s] = 0.0f;
 
     if (numSpeakers == 0) return;
+
+    // Non-finite direction -> silence (D-06, IN-01). Explicit, so it no longer
+    // rests on jlimit passing NaN through and std::max (0.0f, NaN) returning
+    // its first argument.
+    if (! std::isfinite (source.azimuthRad) || ! std::isfinite (source.elevationRad))
+        return;
 
     float px = std::cos (source.elevationRad) * std::sin (source.azimuthRad);
     float py = std::cos (source.elevationRad) * std::cos (source.azimuthRad);

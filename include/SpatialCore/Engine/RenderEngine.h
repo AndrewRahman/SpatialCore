@@ -244,6 +244,9 @@ public:
         SpeakerLayout layout {};
         float ambiDecodeMatrix[MAX_SPEAKERS][MAX_SPEAKERS] = {};
         int ambiNumSpeakers = 0;
+        // buildVBAPTripletsForLayout's regular triplets, then
+        // appendLowerHemisphereTriplets' nadir caps and pair-pan wedges
+        // (VBAPTriplet::kind(); empty for flat and non-speaker formats).
         std::vector<VBAPTriplet> vbapTriplets;
     };
     const LayoutState& getActiveLayout() const;
@@ -290,9 +293,6 @@ private:
                                   float* const* outChannels, int numOutCh);
 
     void activateLayout (OutputFormat format);
-    static void computeAmbiDecodeForLayout (const SpeakerLayout& layout,
-                                             float (*outMatrix)[MAX_SPEAKERS],
-                                             int& outNumSpeakers);
 
     //--------------------------------------------------------------------------
     // SC-13: engine-owned gain computation, used only when the consumer sets
@@ -302,6 +302,20 @@ private:
     // stay consumer-side, not a SpatializationAlgorithm concern).
     //--------------------------------------------------------------------------
     void computeObjectGains (const RenderSources& sources, RenderBlockContext& ctx);
+
+    //--------------------------------------------------------------------------
+    // D-06(a), extended by D-19(ii): hold-last-good position sanitiser.
+    // renderBlock copies its RenderSources into sanitizedSources_ and replaces
+    // any non-finite azimuth, elevation or distance with that object slot's
+    // last finite value, field by field (ADM-OSC forwards NaN for "field not
+    // set" on single-axis updates). Finite values pass through untouched. The
+    // held values belong to the slot (IN-04): every slot updates every block,
+    // live or not, and only the constructor and prepare() reset them. Bodies
+    // live in RenderEngine.cpp so the non-finite checks cannot be folded
+    // away by a consumer's -ffast-math (RESEARCH F9).
+    //--------------------------------------------------------------------------
+    const RenderSources& sanitizeSources (const RenderSources& sources);
+    void resetLastGoodPositions();
 
     // ACN channel index -> SH order lookup (verbatim from
     // OpenSpatialDelayProcessor::acnToOrder, moved because it is used only by
@@ -388,6 +402,14 @@ private:
     DirectBinauralAlgorithm binauralAlgorithm_;
     RenderBlockContext gainScratch_;
     int binauralProfileIndex_ = 1;
+
+    // --- D-06(a) / D-19(ii): hold-last-good position state (preallocated,
+    //     written only by sanitizeSources on the audio thread; reset to the
+    //     ObjectState defaults 0, 0, 0.5 by the constructor and prepare()) ---
+    RenderSources sanitizedSources_;
+    float lastGoodAzimuthDeg_[MAX_SOURCES] = {};
+    float lastGoodElevationDeg_[MAX_SOURCES] = {};
+    float lastGoodDistance_[MAX_SOURCES] = {};
 };
 
 } // namespace spatialcore

@@ -178,6 +178,12 @@ target_compile_features(SpatialCore PUBLIC cxx_std_17)
 # needs -ffast-math perf back on SpatialCore, it must re-verify the full
 # regression harness (not just spot-check) and update the golden manifest
 # deliberately, not silently.
+#
+# It is also a correctness rule, enforced at compile time (WR-04): the D-06/D-19
+# non-finite guards are std::isfinite tests that fast-math folds to "finite".
+# src/Core/FloatSemanticsGuard.h, included by every guarded source, fails the
+# build with #error under -ffast-math, -ffinite-math-only or /fp:fast, however
+# the flag reaches this target. Consumer targets are unaffected.
 if(APPLE)
     target_compile_options(SpatialCore PRIVATE -Wno-nan-infinity-disabled)
 elseif(MSVC)

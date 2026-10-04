@@ -1,6 +1,8 @@
 #include <SpatialCore/Algorithms/KNNAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/IO/SpeakerLayout.h>
 #include <algorithm>
+#include <cmath>
 
 namespace spatialcore
 {
@@ -15,6 +17,13 @@ void KNNAlgorithm::computeGains (const SourcePosition& source, const LayoutConte
         outputGains[s] = 0.0f;
 
     if (numSpeakers == 0) return;
+
+    // Non-finite direction -> silence (D-06, D-19i). Without this the angular
+    // distances are NaN and the gains come out NaN (RESEARCH F7). Kept in this
+    // .cpp so a -ffast-math consumer cannot fold it away (F9).
+    if (! std::isfinite (source.azimuthRad) || ! std::isfinite (source.elevationRad))
+        return;
+
     constexpr int k = 3;
     int kClamped = std::min (k, numSpeakers);
 

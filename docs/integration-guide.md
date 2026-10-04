@@ -176,6 +176,93 @@ Every SML plugin follows the same architecture:
 └─────────────────────────────────────────────┘
 ```
 
+## Ambisonics and panning conventions
+
+What a consumer can rely on when it reads SpatialCore's output. Each statement restates a code
+docblock; if the two ever disagree, the code is right and this section is the defect.
+
+### Ambisonics channel convention
+
+From the `evalSH` docblock in `include/SpatialCore/Core/SpatialMath.h`: real spherical harmonics,
+ACN channel order (`acn = l*l + l + m`; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
+normalisation (the sum over m of Y_lm^2 is 1 at every order l), no Condon-Shortley phase, angles in
+radians, azimuth 0 = front, positive azimuth toward the listener's left (AmbiX +Y; +x in
+SpatialCore's internal Cartesian frame, where x = cos(el) sin(az) and y = cos(el) cos(az) is
+front), elevation 0 = horizon, positive up. This is the AmbiX convention.
+
+`spatialcore::evalSH` is the single spherical-harmonic evaluator in SpatialCore;
+`AmbisonicsCodec::evaluateSH` forwards to it, and both names stay public. Orders 4-6 were corrected
+to true SN3D in Phase 2 (22 constants; AndrewRahman/SpatialCore#11), so a consumer decoding 4OA-6OA
+output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
+
+### Panning behaviour a consumer can observe
+
+- **VBIP is the textbook law** (Pernaux, Boussard & Jot, DAFx-98): the VBAP gains are raised to
+  exponent 1/2 and renormalised to unit power, which aims the energy vector at the source. It is
+  wider than VBAP between speakers. It is single-band: the paper's VBIP half (above 700 Hz) applies
+  at all frequencies, and dual-band VBAP/VBIP is tracked in AndrewRahman/SpatialCore#20.
+- **Below the horizon on height layouts** (no shipped layout has speakers below ear level), VBAP,
+  VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at -30
+  degrees under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level speakers
+  and power-normalised. Between the horizon and the -30 degree ring each pair of neighbouring
+  ear-level speakers is one pan region, as in EAR, so a source keeps exactly the gains its azimuth
+  gets at 0 degrees: VBAP on 7.1.4 at azimuth 60 gives 0.7071 / 0.7071 on M+030 / M+090 at every
+  elevation from 0 to -30, with no lean toward either speaker. Where neighbouring speakers are far
+  apart the region reaches lower (behind the listener on 5.1.x, down to about -59 degrees). Below it
+  a source blends to equal gain on the whole ear-level ring at -90 (the nadir at 1/sqrt(n) to each
+  of the n ear-level speakers). VBAP's lower-hemisphere gains match PyPI ear 2.1.0, the BS.2127
+  reference renderer, to float precision on every shipped height layout, with one deliberate
+  exception: on 5.1.4 behind the listener (azimuths beyond 110 degrees either side, between M+110
+  and M-110), EAR also feeds the rear height speakers U+135 / U-135, even at and just above the
+  horizon; SpatialCore keeps the horizon pan on M+110 / M-110 there, because matching EAR would
+  change the sound above the horizon. On a consumer-defined layout whose ear-level ring leaves a
+  gap of 179 degrees or more between neighbouring speakers (180 or more, with a 1-degree numerical
+  margin; no shipped layout has one, the widest shipped gap is 140 degrees), the first third of the gap stays on the speaker at that edge, the
+  middle third pans between the two edge speakers and the last third stays on the other one, so
+  every below-horizon direction is still audible. VBAP and VBIP put no gain on an elevated speaker for a source
+  at or below -1 degree; MDAP's spread ring can still reach one just below the horizon. Binaural and
+  Ambisonics output keep the true negative elevation.
+- **3D VBAP picks the minimum-gain-sum triplet** (the tightest enclosing triangle). Above the
+  horizon on height layouts, where two triangulations of a coplanar speaker quad tie exactly, float
+  rounding decides, so a small azimuth move can jump the gains; this is tracked in
+  AndrewRahman/SpatialCore#22 and not fixed. Below the horizon there is no such tie: regular
+  triplets are tried first, then the nadir cap, then the pair regions, and regions of one kind meet
+  only on shared edges, where they give the same gains. If no triplet encloses a finite direction
+  (measured never to happen with the list `RenderEngine` builds), the triplet with the largest
+  minimum gain is used, negatives clamped to 0, renormalised; if that clamps to all zeros, the
+  nearest speaker gets unity. That path never asserts and is never silent for a non-empty list. A
+  consumer calling `computeVBAPGains3D` directly must pass `buildVBAPTripletsForLayout` followed by
+  `appendLowerHemisphereTriplets`: the first alone encloses no below-horizon direction, so every
+  one of them would take this fallback instead of the EAR construction.
+
+### Non-finite positions
+
+- `RenderEngine::renderBlock` holds the last finite azimuth, elevation and distance per object
+  slot (an index into `RenderSources::objects`), field by field, before every render path. The
+  held values belong to the slot, not to an object: they update on every block whether or not the
+  slot is live, and only the constructor and `prepare()` reset them. A field that has not been
+  finite in that slot since the last `prepare()` renders as azimuth 0, elevation 0, distance 0.5.
+  A slot reused for a different object whose first update leaves a field non-finite renders that
+  field at the slot's last finite value, which may be the previous occupant's, not at the default,
+  so send a complete finite position when you assign a slot.
+- A consumer that calls `SpatializationAlgorithm::computeGains` directly (as OpenSpatialDelay
+  does) bypasses that hold and is protected by the algorithm layer instead: every algorithm returns
+  finite gains or silence and never hangs. Every algorithm except DBAP returns silence for a
+  non-finite azimuth or elevation (ConstantPower, VBAP, VBIP, MDAP, KNN, Ambisonics and
+  DirectBinaural), with one exception: on a flat layout VBAP, VBIP and MDAP pan by azimuth only, so
+  a non-finite elevation there is ignored and the source pans normally. DBAP never goes silent and
+  always returns unit power: a non-finite azimuth or elevation gives equal gains (1/sqrt(N)) on
+  every speaker, and a non-finite distance (NaN, +Inf or -Inf) is treated as 0.5, the
+  `SourcePosition` default, so the source still pans by its direction (a finite distance is clamped
+  to -1000..1000 so the arithmetic cannot overflow). The 2D VBAP path wraps a
+  huge finite azimuth with a bounded `std::remainder` instead of looping.
+- These guards live in SpatialCore `.cpp` files, so compiling the consumer with `-ffast-math` does
+  not disable them. SpatialCore's own sources must not be compiled with fast-math, and the build
+  enforces it: every guarded source includes `src/Core/FloatSemanticsGuard.h`, which stops with
+  `#error` under `-ffast-math`, `-ffinite-math-only` or MSVC `/fp:fast`, including when the flag
+  arrives through `CMAKE_CXX_FLAGS` or `add_compile_options` before `add_subdirectory(SpatialCore)`.
+  Apply fast-math per consumer target (`target_compile_options`), as OpenSpatialDelay does.
+
 ## What to Keep vs Replace
 
 | Keep from SpatialCore | Replace with Your DSP |

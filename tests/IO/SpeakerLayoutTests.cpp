@@ -1,7 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <SpatialCore/IO/OutputFormatRegistry.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include <algorithm>
+#include <cmath>
 #include <set>
+#include <utility>
+#include <vector>
 
 using namespace spatialcore;
 
@@ -148,6 +152,9 @@ static const LayoutExpectation kLayoutExpectations[] = {
     { "SML 13.1",   LayoutID::SML13_1,  13, 14, 13, true  },
 };
 
+static_assert (sizeof (kLayoutExpectations) / sizeof (kLayoutExpectations[0]) == NUM_LAYOUT_DEFS,
+               "kLayoutExpectations must have one row per layout def");
+
 TEST_CASE("SpeakerLayout: speaker count and channel count match spec", "[io][layout]")
 {
     for (const auto& exp : kLayoutExpectations)
@@ -231,6 +238,12 @@ TEST_CASE("SpeakerLayout: VBAP triplets are non-empty for 3D layouts, empty for 
                 CHECK(! triplets.empty());
             else
                 CHECK(triplets.empty());
+
+            // Regular-only: the builder never emits lower-hemisphere triplets,
+            // so this test and the activateLayout guard see the regular list
+            // alone (D-02c primary catch, RESEARCH F11).
+            for (const auto& t : triplets)
+                CHECK(! t.lowerHemisphere);
         }
     }
 }
@@ -241,4 +254,150 @@ TEST_CASE("OutputFormatRegistry: detectFromChannelCount", "[io]")
     // original scaffold smoke test where the semantics still hold: Binaural
     // is the first entry with requiredChannels == 2.
     REQUIRE(OutputFormatRegistry::getInfo(OutputFormat::Binaural).requiredChannels == 2);
+}
+
+// ============================================================================
+// D-03: layoutHasHeight and the triplet builder share one height predicate.
+// A layout is either height-and-triangulated or flat-and-untriangulated, never
+// mismatched -- a mismatch would turn the D-02a abort into a Release crash.
+// ============================================================================
+TEST_CASE("SpeakerLayout: layoutHasHeight and the triplet builder agree at 0.5, 0.8 and 1.1 degrees (D-03)",
+          "[io][layout][d03]")
+{
+    for (const float elevationDeg : { 0.5f, 0.8f, 1.1f })
+    {
+        DYNAMIC_SECTION ("centre speaker at " << elevationDeg << " degrees")
+        {
+            SpeakerLayout l {};
+            l.numSpeakers     = 5;
+            l.lfeChannelIndex = -1;
+            l.totalChannels   = 5;
+            const float az[] = { 30.0f, -30.0f, 0.0f, 110.0f, -110.0f };
+            for (int i = 0; i < 5; ++i)
+            {
+                l.speakers[i].azimuthRad   = az[i] * 3.14159265358979f / 180.0f;
+                l.speakers[i].elevationRad = 0.0f;
+                l.speakers[i].channelIndex = i;
+            }
+            l.speakers[2].elevationRad = elevationDeg * 3.14159265358979f / 180.0f;
+
+            std::vector<VBAPTriplet> triplets;
+            buildVBAPTripletsForLayout (l, triplets);
+
+            CHECK (layoutHasHeight (l) == ! triplets.empty());
+        }
+    }
+}
+
+// ============================================================================
+// D-04: lower-hemisphere (EAR) triplets are flagged, ear-level-only, and
+// appended only to height layouts.
+// ============================================================================
+TEST_CASE("SpeakerLayout: lower-hemisphere triplets are flagged, ear-level-only, and appended only to height layouts (D-04)",
+          "[io][layout][ear]")
+{
+    const float earLevelLimitRad = 10.0f * 3.14159265358979f / 180.0f;
+
+    for (const auto& exp : kLayoutExpectations)
+    {
+        SECTION(exp.name)
+        {
+            const auto& layout = getLayoutDef(exp.id);
+
+            std::vector<VBAPTriplet> regular;
+            buildVBAPTripletsForLayout(layout, regular);
+
+            std::vector<VBAPTriplet> combined = regular;
+            appendLowerHemisphereTriplets(layout, combined);
+
+            if (! exp.hasHeight)
+            {
+                CHECK(combined.size() == regular.size());
+                continue;
+            }
+
+            unsigned earMask = 0;
+            int earCount = 0;
+            for (int s = 0; s < layout.numSpeakers; ++s)
+                if (std::abs(layout.speakers[s].elevationRad) <= earLevelLimitRad)
+                {
+                    earMask |= 1u << s;
+                    ++earCount;
+                }
+
+            // G-02-2: n nadir caps plus n pair-pan wedges, no trapezoid triangles.
+            const size_t extras = combined.size() - regular.size();
+            CHECK(extras == static_cast<size_t>(2 * earCount));
+
+            // The regular prefix is untouched, field by field.
+            REQUIRE(combined.size() >= regular.size());
+            for (size_t n = 0; n < regular.size(); ++n)
+            {
+                CHECK(combined[n].i == regular[n].i);
+                CHECK(combined[n].j == regular[n].j);
+                CHECK(combined[n].k == regular[n].k);
+                CHECK(combined[n].lowerHemisphere == regular[n].lowerHemisphere);
+                for (int r = 0; r < 3; ++r)
+                    for (int c = 0; c < 3; ++c)
+                        CHECK(combined[n].inv[r][c] == regular[n].inv[r][c]);
+            }
+
+            int caps = 0;
+            int wedges = 0;
+            std::set<std::pair<int, int>> capPairs;
+            std::set<std::pair<int, int>> wedgePairs;
+
+            for (size_t n = regular.size(); n < combined.size(); ++n)
+            {
+                const auto& t = combined[n];
+                CHECK(t.lowerHemisphere);
+                // Every lower triplet contains the nadir.
+                CHECK(t.nadirVertex >= 0);
+                CHECK(t.nadirVertex <= 2);
+
+                const int slots[3] = { t.i, t.j, t.k };
+                for (int v = 0; v < 3; ++v)
+                {
+                    if (v == t.nadirVertex)
+                        continue;
+                    REQUIRE(slots[v] >= 0);
+                    REQUIRE(slots[v] < layout.numSpeakers);
+                    CHECK(std::abs(layout.speakers[slots[v]].elevationRad) <= earLevelLimitRad);
+                }
+
+                int pairSlots[2] = { -1, -1 };
+                int pn = 0;
+                for (int v = 0; v < 3; ++v)
+                    if (v != t.nadirVertex && pn < 2)
+                        pairSlots[pn++] = slots[v];
+                const std::pair<int, int> pair { std::min(pairSlots[0], pairSlots[1]),
+                                                 std::max(pairSlots[0], pairSlots[1]) };
+
+                // The production classifier (WR-02, IN-06), not a re-derivation.
+                REQUIRE(t.kind() != VBAPTriplet::Kind::regular);
+                if (t.kind() == VBAPTriplet::Kind::nadirCap)
+                {
+                    // Nadir-cap triangle.
+                    ++caps;
+                    capPairs.insert(pair);
+                    CHECK(static_cast<unsigned>(t.nadirMask) == earMask);
+                    CHECK(std::abs(t.nadirGain - 1.0f / std::sqrt(static_cast<float>(earCount))) < 1e-6f);
+                }
+                else
+                {
+                    // Pair-pan wedge: zero mask, zero nadir share, two distinct
+                    // ear-level slots.
+                    CHECK(t.nadirMask == 0);
+                    ++wedges;
+                    wedgePairs.insert(pair);
+                    CHECK(t.nadirGain == 0.0f);
+                    CHECK(pairSlots[0] != pairSlots[1]);
+                }
+            }
+
+            CHECK(caps == earCount);
+            CHECK(wedges == earCount);
+            CHECK(wedgePairs == capPairs);
+        }
+    }
 }

@@ -77,7 +77,30 @@ named gaps, it does not rebuild the modules.
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 
-**Plans**: TBD
+**Plans**: 10/10 plans executed (02-08 and 02-09 close UAT gap G-02-2; 02-10 closes G-02-10)
+
+Plans:
+**Wave 1**
+- [x] 02-01-PLAN.md — Tracer: EAR lower-hemisphere panning end to end on 7.1.4, one height threshold, the Release layout-build abort, and deletion of the empty-triplet nearest-speaker branches *(wave 1)*
+- [x] 02-02-PLAN.md — Independent reference oracles (scipy SH, PyPI ear 2.1.0, textbook panning) checked in under `tests/reference/`, behind a blocking package-legitimacy gate *(wave 1)*
+- [x] 02-03-PLAN.md — File the coplanar-quad tie-break issue with the measured jumps, after human approval of the text *(wave 1)*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 02-04-PLAN.md — Playback safety in both layers (non-finite silence, bounded wrap, best-triplet fallback, engine hold-last-good) and the ear-oracle / coverage verification of the lower hemisphere *(wave 2)*
+- [x] 02-05-PLAN.md — Textbook single-band VBIP, MDAP/DBAP corrections, and the panning-law suite for all 8 algorithms with D-18-scoped continuity *(wave 2)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 02-06-PLAN.md — One SH evaluator with corrected SN3D orders 4-6, the ACN/SN3D/no-Condon-Shortley convention in code, the decode guard, one decoder, and the 23-format cross-check *(wave 3)*
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 02-07-PLAN.md — README, integration guide and skill brought in line with the code; OpenSpatialDelay DR-3 build; phase gate; cross-repo follow-ups recorded *(wave 4)*
+
+**Gap closure — UAT G-02-2** (below-horizon band must pan as ITU-R BS.2127 / EAR; user chose to change the panning)
+- [x] 02-08-PLAN.md — Tracer on 7.1.4 az 60, then all 8 height layouts: one pair-pan region per ear-level pair replaces the tying trapezoid triangles; ear 2.1.0 band pins; band continuity 0.12 -> 0.01; above-horizon bit-identical (#22 untouched) *(gap wave 1)*
+- [x] 02-09-PLAN.md — Guide, README and skill state the EAR-exact band and the 5.1.4 rear-gap exception, #22 scoped above the horizon (WR-01 fixed); phase gate; DR-3 OSD build; superseding OSD follow-ups *(gap wave 2)*
+
+**Gap closure — UAT G-02-10** (full suite must pass in Release, the build type CI uses; `[ambi-pin]` fails on Apple Silicon Release only)
+- [x] 02-10-PLAN.md — Tracer: derived `[ambi-pin]` float bound (2.5e-5, derivation beside it) plus a double-precision anchor, red then green in a Release build of this tree and green in Debug; +0.1% epsilon mutation must still fail; phase gate in Debug and Release; Release gate written into VALIDATION and TESTING.md; library and verbatim reference untouched *(gap wave 1)*
 
 ### Phase 3: Binaural Defects & HRTF Packaging
 
@@ -205,7 +228,7 @@ External Dependencies.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
-| 2. Algorithm & Format Verification | 0/TBD | Not started | - |
+| 2. Algorithm & Format Verification | 10/10 | In Progress|  |
 | 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
@@ -238,6 +261,16 @@ All open SpatialCore issues are triaged in REQUIREMENTS.md (14 at rewrite time, 
 
 Deferred to v2 (OpenSpatialPanner): #2, #3, #4, #5, #6, #7, #10, #13, #16, #17.
 None is dropped — see the REQUIREMENTS.md triage table for the reason on each.
+
+## Backlog
+
+### Phase 999.1: Follow-up — Phase 02 deferred UAT follow-up: Test 7 (BACKLOG)
+
+**Goal:** Resolve the UAT checkpoint deferred during Phase 02 verification
+**Source phase:** 02
+**Deferred at:** 2026-10-03 during /gsd-verify-work 02 session completion
+**Follow-ups:**
+- [ ] Test 7: Next listening-review round — in OpenSpatialDelay on 7.1.4, lower a sound from ear height to 30 degrees below at about 60 degrees left; confirm it stays put (no drift toward one speaker, no side flip) (deferred 2026-10-03)
 
 ---
 *Roadmap rewritten 2026-08-10 against branch `gsd-remap`, after the original was found to have been planned against a branch missing 42 commits.*

@@ -1,5 +1,8 @@
 #include <SpatialCore/Algorithms/DirectBinauralAlgorithm.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <juce_audio_basics/juce_audio_basics.h>
+
+#include <cmath>
 
 namespace spatialcore
 {
@@ -18,6 +21,11 @@ void DirectBinauralAlgorithm::computeGains (const SourcePosition&, const LayoutC
 BinauralGains DirectBinauralAlgorithm::computeBinauralGains (
     const SourcePosition& source, const BinauralContext& ctx) const
 {
+    // Non-finite direction -> silent binaural gains, zero delays (D-06). Kept
+    // in this .cpp so a -ffast-math consumer cannot fold it away (RESEARCH F9).
+    if (! std::isfinite (source.azimuthRad) || ! std::isfinite (source.elevationRad))
+        return BinauralGains {};
+
     const auto& profile = ctx.profiles[juce::jlimit (0, 4, ctx.profileIndex - 1)];
 
     // Effective lateral angle (azimuth projected by elevation)

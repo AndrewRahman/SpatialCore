@@ -6,6 +6,16 @@
 namespace spatialcore
 {
 
+/** Ambisonics encode / decode helpers, orders 0-6 (up to 49 channels).
+
+    Convention (D-10; AndrewRahman/SpatialCore#11): real spherical harmonics, ACN channel
+    order (acn = l*l + l + m; m > 0 uses cos(m*az), m < 0 uses sin(|m|*az)), SN3D
+    normalisation (the sum over m of Y_lm^2 is 1 at every order), no Condon-Shortley phase,
+    angles in radians, azimuth 0 = front, positive azimuth toward the listener's left
+    (AmbiX +Y; SpatialCore's internal +x), elevation 0 = horizon, positive up. This is
+    the AmbiX convention, the same layout the
+    OutputFormatRegistry advertises as "AmbiX ACN/SN3D".
+*/
 class AmbisonicsCodec
 {
 public:
@@ -15,11 +25,23 @@ public:
     static void encode(const SourcePosition& source, int order,
                        float* shCoeffs, int numCoeffs);
 
-    static void getDecodeMatrix(int order, int numSpeakers,
+    /** Tikhonov-regularised mode-matching decode, D = E^T (E E^T + 0.01 I)^-1, written
+        row-major as decodeMatrix[s * M + c], M = (order + 1)^2, rows in speaker index
+        order, columns in ACN order. Message thread only (about 32 KB of stack arrays).
+
+        Returns false and writes nothing when the request is invalid: numSpeakers < 0
+        or > MAX_SPEAKERS (D-20), or order outside 0..MAX_AMBI_ORDER (IN-03). A
+        rejected call leaves the caller's buffer exactly as it was, so a reused buffer
+        still holds its previous contents: check the result. numSpeakers == 0 is a
+        valid empty decode: returns true and writes nothing. (Was void before IN-03;
+        call sites that ignore the result compile unchanged.) */
+    static bool getDecodeMatrix(int order, int numSpeakers,
                                 const float* speakerAzimuths,
                                 const float* speakerElevations,
                                 float* decodeMatrix);
 
+    /** Forwards to spatialcore::evalSH, the single SH implementation (D-08); kept as a
+        public name for existing consumers. */
     static float evaluateSH(int acn, float azimuthRad, float elevationRad);
 
     static void applyMaxREWeights(float* shCoeffs, int order);

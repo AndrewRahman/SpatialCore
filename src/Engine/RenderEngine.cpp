@@ -1,14 +1,21 @@
 #include <SpatialCore/Engine/RenderEngine.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/Core/SpatialMath.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <type_traits>
 
 namespace spatialcore
 {
 
-RenderEngine::RenderEngine() = default;
+RenderEngine::RenderEngine()
+{
+    resetLastGoodPositions();
+}
+
 RenderEngine::~RenderEngine() = default;
 
 //==============================================================================
@@ -54,6 +61,57 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
         sourceAccumBufPtrs[src] = sourceAccumStorage_.data() + src * maxBlockSize;
     wetBufL_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
     wetBufR_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
+
+    // D-06(a): a fresh prepare forgets every held position.
+    resetLastGoodPositions();
+}
+
+//==============================================================================
+// D-06(a) / D-19(ii) hold-last-good sanitiser. See the header declaration.
+//==============================================================================
+static_assert (std::is_trivially_copyable_v<RenderSources>,
+               "sanitizeSources copies RenderSources into the preallocated "
+               "sanitizedSources_ member once per block; that must stay a plain "
+               "memberwise copy -- no allocation, lock or log on the audio "
+               "thread (DR-1)");
+
+void RenderEngine::resetLastGoodPositions()
+{
+    // The ObjectState defaults, so a first-ever non-finite value renders at
+    // the default position.
+    const ObjectState defaults {};
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        lastGoodAzimuthDeg_[t]   = defaults.azimuthDeg;
+        lastGoodElevationDeg_[t] = defaults.elevationDeg;
+        lastGoodDistance_[t]     = defaults.distance;
+    }
+}
+
+const RenderSources& RenderEngine::sanitizeSources (const RenderSources& sources)
+{
+    sanitizedSources_ = sources;
+
+    // Each field is held independently: a finite value becomes the slot's
+    // last good value and passes through untouched (never wrapped or clamped,
+    // so finite input stays bit-identical); a non-finite one is replaced.
+    auto hold = [] (float& value, float& lastGood)
+    {
+        if (std::isfinite (value))
+            lastGood = value;
+        else
+            value = lastGood;
+    };
+
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        auto& obj = sanitizedSources_.objects[t];
+        hold (obj.azimuthDeg,   lastGoodAzimuthDeg_[t]);
+        hold (obj.elevationDeg, lastGoodElevationDeg_[t]);
+        hold (obj.distance,     lastGoodDistance_[t]);
+    }
+
+    return sanitizedSources_;
 }
 
 //==============================================================================
@@ -65,6 +123,12 @@ void RenderEngine::renderBlock (const RenderSources& sources,
                                  float* const* outChannels,
                                  int numOutCh)
 {
+    // D-06(a) / D-19(ii): every render path and the engine's own gain
+    // computation read this sanitised copy, never the raw parameter. The
+    // algorithm-layer guards remain the protection for consumers that call
+    // computeGains directly (RESEARCH F7); this does not replace them.
+    const RenderSources& src = sanitizeSources (sources);
+
     // SC-13: when the consumer opts in, compute objChannelGains/objGains
     // internally into a scratch copy and dispatch on that instead — the
     // dispatch chain itself is unchanged (selected once via pointer so it is
@@ -73,7 +137,7 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     if (blockCtx.engineComputesGains)
     {
         gainScratch_ = blockCtx;
-        computeObjectGains (sources, gainScratch_);
+        computeObjectGains (src, gainScratch_);
         dispatchCtx = &gainScratch_;
     }
     const RenderBlockContext& ctx = *dispatchCtx;
@@ -83,23 +147,23 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 
     if (ctx.isStereoVariant)
     {
-        renderStereoVariant (sources, ctx, outL, outR, numOutCh);
+        renderStereoVariant (src, ctx, outL, outR, numOutCh);
     }
     else if (ctx.isBinaural && ctx.useHRTF)
     {
-        renderDirectBinauralHRTF (sources, outL, outR, numOutCh);
+        renderDirectBinauralHRTF (src, outL, outR, numOutCh);
     }
     else if (ctx.isBinaural)
     {
-        renderSimpleBinauralWoodworth (sources, ctx, outL, outR, numOutCh);
+        renderSimpleBinauralWoodworth (src, ctx, outL, outR, numOutCh);
     }
     else if (ctx.isAmbiOutput)
     {
-        renderAmbisonicsOutput (sources, ctx, outChannels, numOutCh);
+        renderAmbisonicsOutput (src, ctx, outChannels, numOutCh);
     }
     else
     {
-        renderDiscreteSurround (sources, ctx, outChannels, numOutCh);
+        renderDiscreteSurround (src, ctx, outChannels, numOutCh);
     }
 }
 
@@ -555,7 +619,9 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 //==============================================================================
 // Output-format double-buffered switching (glitch-free swap, moved INTO the
 // engine per the locked IO-ownership decision). Verbatim-transplanted from
-// OpenSpatialDelayProcessor::activateLayout / computeAmbiDecodeForLayout.
+// OpenSpatialDelayProcessor::activateLayout; the order-3 speaker decode now
+// comes from AmbisonicsCodec::getDecodeMatrix, the library's one decoder
+// (D-09), pinned to the transplanted original by the [ambi-pin] test.
 //==============================================================================
 void RenderEngine::setOutputFormat (OutputFormat format)
 {
@@ -629,108 +695,51 @@ void RenderEngine::activateLayout (OutputFormat format)
             return;
     }
 
-    // Compute Ambisonics decode matrix using shared helper
-    computeAmbiDecodeForLayout (buf.layout, buf.ambiDecodeMatrix, buf.ambiNumSpeakers);
+    // Order-3 Ambisonics speaker decode through the one shared decoder (D-09).
+    // getDecodeMatrix writes decodeMatrix[s * 16 + c], which is exactly
+    // ambiDecodeMatrix[s][c] because the row width equals the order-3 channel
+    // count. Message/prepare thread: DR-1 does not apply.
+    static_assert (MAX_SPEAKERS == (3 + 1) * (3 + 1),
+                   "ambiDecodeMatrix rows must equal the order-3 channel count");
+    float speakerAz[MAX_SPEAKERS] = {};
+    float speakerEl[MAX_SPEAKERS] = {};
+    for (int s = 0; s < buf.layout.numSpeakers; ++s)
+    {
+        speakerAz[s] = buf.layout.speakers[s].azimuthRad;
+        speakerEl[s] = buf.layout.speakers[s].elevationRad;
+    }
+    // Rows at or beyond the speaker count are cleared, not left stale from the
+    // layout this buffer held two switches ago.
+    std::memset (buf.ambiDecodeMatrix, 0, sizeof (buf.ambiDecodeMatrix));
+    if (! AmbisonicsCodec::getDecodeMatrix (3, buf.layout.numSpeakers, speakerAz, speakerEl,
+                                            &buf.ambiDecodeMatrix[0][0]))
+        jassertfalse;   // cannot happen for a shipped layout (<= 15 speakers, order 3);
+                        // the memset above leaves a silent decode if it ever did
+    buf.ambiNumSpeakers = buf.layout.numSpeakers;
 
     // Build 3D VBAP triplets using the SpatialCore IO helper
     buildVBAPTripletsForLayout (buf.layout, buf.vbapTriplets);
 
-    jassert (buf.vbapTriplets.empty() == ! layoutHasHeight (buf.layout));
+    // D-02a: a height layout must yield regular triplets and a flat layout must
+    // yield none. This is the layout-build path (message/prepare thread, already
+    // allocating), reachable only by a SpatialCore developer editing layoutDefs
+    // or the triplet builder: OutputFormat is a closed enum, activateLayout is
+    // private, and there is no custom-layout entry point. DR-1 does not apply
+    // here, so a crash in every build type is the correct loud failure (D-02).
+    if (buf.vbapTriplets.empty() == layoutHasHeight (buf.layout))
+    {
+        jassertfalse;   // Debug: stop at the cause
+        std::abort();   // Release: layout table / builder mismatch
+    }
+
+    // Append the ITU-R BS.2127 lower-hemisphere triplets (D-04) after the
+    // guard above, so the guard still sees the regular list alone (F11).
+    // Message/prepare thread: allocation is fine here.
+    appendLowerHemisphereTriplets (buf.layout, buf.vbapTriplets);
 
     // Atomic swap: audio thread now reads the fully-populated buffer
     activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
     prepareLayoutIndex = 1 - prepareLayoutIndex;
-}
-
-//==============================================================================
-// computeAmbiDecodeForLayout — verbatim-transplanted from
-// OpenSpatialDelayProcessor::computeAmbiDecodeForLayout.
-// D = E^T (E E^T + epsilon I)^{-1}  (Tikhonov-regularized pseudo-inverse)
-//==============================================================================
-void RenderEngine::computeAmbiDecodeForLayout (const SpeakerLayout& layout,
-                                                float (*outMatrix)[MAX_SPEAKERS],
-                                                int& outNumSpeakers)
-{
-    const int N = layout.numSpeakers;
-    const int M = 16; // HOA_CHANNELS (surround decode cap, 3rd order)
-    outNumSpeakers = N;
-
-    // Build encoding matrix E[c][s] = evalSH(c, speaker_s_position)
-    float E[16][16] = {};
-    for (int s = 0; s < N; ++s)
-        for (int c = 0; c < M; ++c)
-            E[c][s] = evalSH (c, layout.speakers[s].azimuthRad,
-                                 layout.speakers[s].elevationRad);
-
-    // Compute EET = E * E^T  (M x M)
-    float EET[16][16] = {};
-    for (int i = 0; i < M; ++i)
-        for (int j = 0; j < M; ++j)
-        {
-            float sum = 0.0f;
-            for (int s = 0; s < N; ++s)
-                sum += E[i][s] * E[j][s];
-            EET[i][j] = sum;
-        }
-
-    // Tikhonov regularization: EET += epsilon * I
-    float epsilon = 0.01f;
-    for (int i = 0; i < M; ++i)
-        EET[i][i] += epsilon;
-
-    // Invert EET via Gauss-Jordan (M x M, small matrix)
-    float inv[16][16] = {};
-    for (int i = 0; i < M; ++i)
-        inv[i][i] = 1.0f;
-
-    float aug[16][16];
-    for (int i = 0; i < M; ++i)
-        for (int j = 0; j < M; ++j)
-            aug[i][j] = EET[i][j];
-
-    for (int col = 0; col < M; ++col)
-    {
-        int pivot = col;
-        for (int row = col + 1; row < M; ++row)
-            if (std::abs (aug[row][col]) > std::abs (aug[pivot][col]))
-                pivot = row;
-
-        if (pivot != col)
-        {
-            std::swap_ranges (aug[col], aug[col] + M, aug[pivot]);
-            std::swap_ranges (inv[col], inv[col] + M, inv[pivot]);
-        }
-
-        float diagVal = aug[col][col];
-        if (std::abs (diagVal) < 1e-10f) continue;
-
-        for (int j = 0; j < M; ++j)
-        {
-            aug[col][j] /= diagVal;
-            inv[col][j] /= diagVal;
-        }
-
-        for (int row = 0; row < M; ++row)
-        {
-            if (row == col) continue;
-            float factor = aug[row][col];
-            for (int j = 0; j < M; ++j)
-            {
-                aug[row][j] -= factor * aug[col][j];
-                inv[row][j] -= factor * inv[col][j];
-            }
-        }
-    }
-
-    // D[s][c] = sum_k E^T[s][k] * inv[k][c] = sum_k E[k][s] * inv[k][c]
-    for (int s = 0; s < N; ++s)
-        for (int c = 0; c < M; ++c)
-        {
-            float sum = 0.0f;
-            for (int k = 0; k < M; ++k)
-                sum += E[k][s] * inv[k][c];
-            outMatrix[s][c] = sum;
-        }
 }
 
 } // namespace spatialcore

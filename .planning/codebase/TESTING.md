@@ -23,6 +23,27 @@ cmake --build build-map --target SpatialCoreTests -j4
 ```
 Alternative (CTest, one process per TEST_CASE): `ctest --test-dir build-map`.
 
+## Build Types (G-02-10, 2026-10-03)
+
+The suite must pass in both Debug (`build/`) and Release (`build-release/`, the build type CI uses). Float results can differ between them: at -O3 on Apple Silicon clang fuses multiply-adds differently per translation unit and per vectorised loop shape, while -O0 vectorises nothing.
+
+**Known build-type-dependent results:**
+- HUTUBS PP2 golden checksum: a bit-exact hash that fails in Debug only (Phase 3 owns it; see `deferred-items.md`).
+- `[ambi-pin]`: two separately compiled float decoders, compared with the derived `kAmbiPinTolerance` in `tests/Engine/RenderEngineTests.cpp` (the derivation sits beside the constant).
+
+**Rule for new tests:** a test that compares two separately compiled float computations needs a bound derived from the computation's conditioning and checked in both build types, not a near-bit-exact tolerance measured in one build.
+
+**Release tree (offline configure, once), then the suite as CI runs it:**
+```bash
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+  -DFETCHCONTENT_SOURCE_DIR_JUCE="$PWD/build/_deps/juce-src" \
+  -DFETCHCONTENT_SOURCE_DIR_CATCH2="$PWD/build/_deps/catch2-src" \
+  -DFETCHCONTENT_SOURCE_DIR_MYSOFA="$PWD/build/_deps/mysofa-src"
+cmake --build build-release --target SpatialCoreTests -j8
+ctest --test-dir build-release/tests --output-on-failure
+```
+`build-release/` is gitignored. Point ctest at `build-release/tests`, not the build root: `include(CTest)` lives in `tests/CMakeLists.txt`, so ctest from the build root finds no tests and exits 0 (a vacuous pass). `.github/workflows/ci.yml` runs ctest from the build root and has the same blind spot (`deferred-items.md`).
+
 ## Build & Run Evidence (2026-08-10)
 
 **Configure:** succeeded cleanly (JUCE fetched/built `juceaide`, libmysofa fetched via `FetchContent`, ZLIB found system-wide). Only warning was a CMake deprecation notice from the vendored `mysofa` `CMakeLists.txt` (`Compatibility with CMake < 3.10 will be removed`) — not a SpatialCore issue.

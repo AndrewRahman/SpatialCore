@@ -14,18 +14,18 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 | **Simple Binaural** | 2ch headphones | Woodworth ITD+ILD model (low CPU, no convolution) |
 | **Stereo Variants** | 2ch monitors | 5 mic simulation modes (Equal Power, VBAP, XY, MS, Blumlein) |
 | **Discrete Surround** | 4-16ch speakers | Algorithm-based speaker gain computation (VBAP, VBIP, KNN, DBAP, MDAP) |
-| **Ambisonics Output** | 4-49ch HOA | Spherical harmonic encoding (1st through 6th order, ACN/SN3D) |
+| **Ambisonics Output** | 4-49ch HOA | Spherical harmonic encoding (1st through 6th order, AmbiX: ACN channel order, SN3D, no Condon-Shortley phase) |
 
 ## Components
 
 ### Spatialization Algorithms (8)
 - **Constant Power** — Cosine-distance all-speaker weighting, constant-power normalized (smooth, wide image)
-- **VBAP** — Vector Base Amplitude Panning (Pulkki 1997)
-- **VBIP** — Vector Base Intensity Panning (squared gains for tighter focus)
+- **VBAP** — Vector Base Amplitude Panning (Pulkki 1997); below the horizon on height layouts it uses the ITU-R BS.2127 (EAR) lower-hemisphere construction and matches the EAR reference renderer, except behind the listener on 5.1.4 (see docs/integration-guide.md)
+- **VBIP** — Vector Base Intensity Panning (Pernaux, Boussard & Jot, DAFx-98) — VBAP gains raised to exponent 1/2 and renormalized, aiming the energy vector at the source; wider than VBAP. Single-band: the paper's high-frequency half at all frequencies (dual-band tracked in AndrewRahman/SpatialCore#20).
 - **KNN** — K-Nearest Neighbor (inverse-distance-squared weighting)
-- **DBAP** — Distance-Based Amplitude Panning (Lossius et al., ICMC 2009)
-- **MDAP** — Multiple-Direction Amplitude Panning (Pulkki 2000, source spread)
-- **Ambisonics** — 3rd-order HOA with max-rE weighting (ACN/SN3D)
+- **DBAP** — Distance-Based Amplitude Panning (Lossius et al., ICMC 2009; effective rolloff 12.04 dB, no spatial blur)
+- **MDAP** — Multiple-Direction Amplitude Panning (Pulkki, WASPAA 1999, source spread)
+- **Ambisonics** — 3rd-order HOA with max-rE weighting (ACN/SN3D, no Condon-Shortley phase)
 - **Direct Binaural** — Woodworth ITD+ILD (internal, for Simple profile)
 
 ### HRTF Binaural Rendering
