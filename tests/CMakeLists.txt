@@ -28,8 +28,11 @@ add_executable(SpatialCoreTests
     Binaural/BinauralCueTests.cpp
     Binaural/PartitionedConvolverTests.cpp
     Binaural/BinauralRendererTests.cpp
+    Binaural/ProfileLoudnessTests.cpp
+    Binaural/HRTFEmbeddedTests.cpp
     Engine/RenderEngineTests.cpp
     Engine/TripleBufferIndexTests.cpp
+    Engine/ProfileSwitchTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
