@@ -101,7 +101,20 @@ private:
     float targetITDL[MAX_SOURCES]  = {};    // Target ITD from latest HRIR lookup
     float targetITDR[MAX_SOURCES]  = {};
 
-    // Short delay lines for ITD application (max ITD ~ 0.7ms ~ 34 samples @ 48kHz)
+    // Short delay lines for ITD application.
+    //
+    // KNOWN DEFECT, deliberately deferred (AndrewRahman/SpatialCore#25, review WR-05): the
+    // delays fed to this line are the SOFA delay plus the detected onset from getAlignedHRIR,
+    // so they are mostly a bulk offset, not just the ~0.7 ms (~34 samples at 48 kHz) interaural
+    // difference. The measured SADIE II delays are 66 to 102 samples at 48 kHz (71 to 93 at
+    // 44.1 kHz), and the read pointer masks with (kITDBufferSize - 1), so any delay of 63 or more
+    // wraps modulo 64, and at 88.2 kHz and above it wraps several times. Whether the inter-ear
+    // difference survives the wrap depends on both ears sitting on the same side of a multiple
+    // of 64. That is the sound shipped consumers have today, so the tests pin it
+    // (BinauralRendererTests "the 64-sample ITD line is characterised", D-16) and a change here is
+    // a change to shipped timing that needs a decision. The intended fix: size the line from the
+    // sample rate (a power of two of at least ceil (1.5e-3 * sampleRate) + 2), subtract
+    // min (delayL, delayR) where the delays are derived, and update that table in the same commit.
     static constexpr int kITDBufferSize = 64;
     float itdBufferL[MAX_SOURCES][kITDBufferSize] = {};
     float itdBufferR[MAX_SOURCES][kITDBufferSize] = {};
