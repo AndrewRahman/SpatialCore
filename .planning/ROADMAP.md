@@ -281,5 +281,25 @@ None is dropped — see the REQUIREMENTS.md triage table for the reason on each.
 **Follow-ups:**
 - [ ] Test post-review: Listening checks for the 2026-10-04 code-review behaviour changes: (a) on a front-only rig (e.g. speakers at 0 and +-30 only), move a sound behind and below the listener and confirm it is never silent and moves smoothly across the gap (WR-05 gap bridge); (b) a DBAP source fed a broken distance (NaN/Inf) still plays, panned as distance 0.5 (WR-08) (deferred 2026-10-04)
 
+### Phase 999.3: Custom HRTF import + loudness standard (BACKLOG)
+
+**Goal:** A user imports their own measured `.sofa` HRTF from the plugin, names it, and keeps using it across sessions at the same perceived level as the built-ins
+**Source phase:** 03
+**Deferred at:** 2026-10-04 during /gsd-discuss-phase 3 (user has a custom `.sofa`; chose a later milestone over v1)
+**Follow-ups:**
+- [ ] "Import…" as the last item of the binaural profile dropdown; import copies the file into a personal library and asks for a display name
+- [ ] Session opened without the custom file plays KEMAR + warning and keeps the custom choice
+- [ ] Define a perceived-loudness standard (pink noise, ear-weighted, over all directions), apply it to custom and built-in profiles; OSD release note for the built-in level change. Input: Phase 3 D-14 measurement
+- [ ] Decide shared `SpatialCoreUI` widget vs per-plugin import UI
+- Full decision record: `.planning/phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` § Deferred Ideas
+
+### Phase 999.4: Listening check — Simple-mode height and rear cues (BACKLOG)
+
+**Goal:** Confirm on headphones that Phase 3's new Simple (Woodworth) cues read as above and behind without sounding unnatural
+**Source phase:** 03
+**Deferred at:** 2026-10-04 during /gsd-discuss-phase 3 (D-03: test closes SpatialCore#15; listening is not a gate)
+**Follow-ups:**
+- [ ] After Phase 3 lands: in OSD Simple binaural mode, move a sound from ahead to overhead and from front to back; confirm each is audible and the ear-level front sound is close to before
+
 ---
 *Roadmap rewritten 2026-08-10 against branch `gsd-remap`, after the original was found to have been planned against a branch missing 42 commits.*

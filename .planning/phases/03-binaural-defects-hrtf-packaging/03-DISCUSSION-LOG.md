@@ -136,3 +136,24 @@ v1 behind `SPATIALCORE_EMBED_ALL_HRTF=ON`; shared folder paths; convert-then-emb
 - Headphone listening check of new Simple cues → ROADMAP backlog.
 - OSD-side: release note, delete OSD HRTF glue + BinaryData, check delay/pitch at small blocks.
 - OpenSpatialPanner-side: invert `[binaural][sc12]` assertions.
+
+---
+
+## Follow-up 2026-10-04: deferred items (custom HRTF)
+
+User asked to discuss the deferred items before planning; they have a custom measured HRTF.
+
+| Question | Options | User's choice |
+|----------|---------|---------------|
+| Format of your HRTF? | .sofa / WAV pairs / Not sure | .sofa |
+| When should custom HRTFs work? | Later milestone / New v1 phase / Fold into Phase 3 | Later milestone |
+| Where do custom files go? | Personal folder / System folder / Both | Free text: folder drop is prototype-only; proper flow is a UI import that stores the file for reuse |
+| Menu name? | File name / Name in file | Free text: delivered filenames are unreadable; user names it at import |
+| Session without the file? | Built-in + warning / Simple + warning | Built-in + warning |
+| Level custom files? | Auto-level / As measured | Free text: auto-level, but a normalisation standard must be defined first (none exists across the 5 built-ins) |
+| Where does the import UI live? | Shared SpatialCoreUI widget / Per plugin | Free text: "Import…" as the bottom item of the binaural profile dropdown |
+| Measure built-in level spread in Phase 3? | Measure now, change later / Measure and fix / Leave for later | Measure now, change later → D-14 |
+| What does "same level" mean? | Perceived loudness / Raw energy all directions / You decide | Perceived loudness |
+
+**Finding shared with user:** a cross-profile rule exists (`BinauralRenderer.cpp:43-79`, raw energy over 6 directions to `1/sqrt(irLen)`), but it is not loudness-weighted and no test verifies the built-ins match.
+**Result:** D-14 added to CONTEXT.md; ROADMAP backlog 999.3 (custom HRTF import + loudness standard) and 999.4 (Simple-mode listening check) created.

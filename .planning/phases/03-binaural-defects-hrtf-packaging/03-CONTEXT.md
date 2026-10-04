@@ -107,6 +107,18 @@ folder paths, and the rejection of convert-then-embed are **already locked** (OQ
   still unchecked. Posting is an outward action, so confirm the exact text with the user at the
   time (CLAUDE.md: outward-facing actions are confirmed first).
 
+### Cross-profile level measurement (EXTR-02, added 2026-10-04 follow-up)
+- **D-14:** **Measure now, change later.** Phase 3 adds a test that measures each of the 5 built-in
+  profiles' **perceived loudness** (pink noise rendered through each profile and averaged over
+  directions, ear-weighted loudness in the K-weighted / ITU-R BS.1770 sense) and reports the
+  spread. **No change to the built-ins' level in Phase 3**, so OSD's sound is unchanged. The
+  current rule (`src/Binaural/BinauralRenderer.cpp:43-79`) equalises raw broadband energy over
+  6 reference directions to `targetRMS = 1/sqrt(irLen)`. It is not frequency-weighted, and no
+  test today checks that the built-ins actually land at the same level. The test's pass/fail
+  tolerance is set **after** the first measurement and approved by the user. Until then it
+  records and prints the numbers. The measured spread feeds the future loudness standard
+  (Deferred → custom HRTFs).
+
 ### Claude's Discretion
 - **Filter design and strength for D-01** (user: "you decide"). Pick literature-grounded values
   (e.g. Brown & Duda structural model for head shadow / pinna cues). The test must show a clear
@@ -198,9 +210,25 @@ folder paths, and the rejection of convert-then-embed are **already locked** (OQ
 <deferred>
 ## Deferred Ideas
 
-- **User-supplied HRTFs:** enumerate unknown `.sofa` files in the shared folder as extra profiles. Needs plugin UI and session persistence. Belongs with SUITE-01 / a later milestone.
-- **Per-user HRTF folder** (`~/Library/Application Support/Spatial Media Lab/HRTF/`) for overrides without admin rights. Same timing as the above.
-- **Headphone listening check** of the new Simple-mode cues: add to ROADMAP backlog beside 999.1/999.2.
+- **Custom HRTFs: later milestone (ROADMAP backlog 999.3).** The user has their own measured
+  `.sofa` file. Decisions already made for that phase (2026-10-04):
+  - Import happens through the plugin UI: the **last item in the binaural profile dropdown is
+    "Import…"**. It is not a drop-a-file-in-a-folder workflow, which is only a prototype path.
+  - Import **copies** the file into a personal library so it stays available in future sessions.
+  - The user **types a display name at import**; delivered filenames are unreadable.
+  - Session opened without the custom file: play a built-in (KEMAR) + warning; the session keeps
+    the custom choice so it returns when the file is present.
+  - **Auto-level** custom profiles to a **new perceived-loudness standard** that SpatialCore
+    must define (none exists today; see D-14). Built-ins move onto it in the same phase (an
+    audible change, so it needs an OSD release note).
+  - Open for that phase: whether the dropdown/import widget is a shared `SpatialCoreUI`
+    component or per-plugin (leaning shared so every SML plugin sees the same library).
+  - **Interim prototype path that works after Phase 3:** name the custom file like a built-in
+    (e.g. `hutubs_pp2.sofa`) and place it in `/Library/Application Support/Spatial Media Lab/HRTF/`
+    (D-08). It replaces that profile.
+- **Per-user HRTF folder** (`~/Library/Application Support/Spatial Media Lab/HRTF/`): subsumed by
+  the import library above.
+- **Headphone listening check** of the new Simple-mode cues: ROADMAP backlog 999.4.
 - **OSD-side:** release note for the Simple-mode sound change; delete OSD's HRTF glue and its own `HRTFData` BinaryData at migration; check OSD's delay line and pitch shifter at small block sizes (rest of OSD#234). Track in PROJECT.md External Dependencies.
 - **OpenSpatialPanner-side:** invert (not delete) the `[binaural][sc12]` assertions after the submodule bump.
 
