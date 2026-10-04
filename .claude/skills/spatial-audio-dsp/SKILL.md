@@ -175,7 +175,7 @@ For each sample:
     3. Apply to mono signal → accumulate into L/R
 ```
 
-Per-sample computation, no convolution. Lowest CPU. Each sample first passes the position-blended rear / up / down cue bank (see 1.8), then the Woodworth gains and delays, so front, back, overhead and underfoot are told apart (measured third-octave difference against front: back 4.5 dB RMS, overhead 2.6 dB RMS). It is still a cue bank, not an HRTF: use the SOFA profiles for accurate elevation.
+Per-sample computation, no convolution. Lowest CPU. Each sample first passes the position-blended rear / up / down cue bank (see 1.8), then the Woodworth gains and delays, so front, back, overhead and underfoot are told apart (measured third-octave difference against front: back 4.5 dB RMS, overhead 2.7 dB RMS). It is still a cue bank, not an HRTF: use the SOFA profiles for accurate elevation.
 
 ### Path C: Discrete Surround (>2ch output)
 
