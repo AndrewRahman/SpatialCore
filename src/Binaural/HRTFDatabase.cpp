@@ -72,7 +72,9 @@ namespace
         in.readIntoMemoryBlock (out, static_cast<ssize_t> (cap) + 1);
         return static_cast<juce::int64> (out.getSize()) <= cap;
 #else
-        int flags = O_RDONLY | O_NONBLOCK;
+        // O_NOCTTY: a symlink behind the name may point at a terminal device, and opening one
+        // must not make it this process's controlling terminal before fstat refuses it.
+        int flags = O_RDONLY | O_NONBLOCK | O_NOCTTY;
  #ifdef O_CLOEXEC
         flags |= O_CLOEXEC;
  #endif
