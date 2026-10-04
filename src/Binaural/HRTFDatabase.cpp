@@ -10,7 +10,10 @@ extern "C" {
 #include <limits>
 
 #if ! JUCE_WINDOWS
+ #include <cerrno>
+ #include <fcntl.h>
  #include <sys/stat.h>
+ #include <unistd.h>
 #endif
 
 namespace spatialcore
@@ -46,15 +49,82 @@ bool HRTFDatabase::loadFromBinaryData (int profileIndex, float targetSampleRate)
 
 namespace
 {
-    /** True for a regular file (following symlinks). A FIFO, device node or socket is not: reading
-        one can block forever or never reach EOF, and its reported size is meaningless. */
-    bool isRegularFile (const juce::File& file)
+    /** Read up to `cap` bytes of a regular file into `out`; false for anything else (missing,
+        unreadable, not a regular file, or longer than `cap`). The file is read through ONE open
+        handle: on POSIX the type and size come from fstat on the descriptor that is then read, so
+        nothing can be swapped in between a check and the open (IN-02). A FIFO swapped in for the
+        file would otherwise block open(2) until a writer appears; O_NONBLOCK makes the open of a
+        FIFO return at once, and fstat then refuses it. Reading stops at cap + 1 bytes, so a file
+        that lies about its size or grows during the read is still refused without being buffered. */
+    bool readFileCapped (const juce::File& file, juce::int64 cap, juce::MemoryBlock& out)
     {
 #if JUCE_WINDOWS
-        return file.existsAsFile();
+        // No O_NONBLOCK or fstat equivalent through juce::FileInputStream; existsAsFile excludes
+        // directories, and the cap is still enforced while reading. Not built or run in CI today.
+        if (! file.existsAsFile())
+            return false;
+
+        juce::FileInputStream in (file);
+
+        if (! in.openedOk() || in.getTotalLength() > cap)
+            return false;
+
+        in.readIntoMemoryBlock (out, static_cast<ssize_t> (cap) + 1);
+        return static_cast<juce::int64> (out.getSize()) <= cap;
 #else
+        int flags = O_RDONLY | O_NONBLOCK;
+ #ifdef O_CLOEXEC
+        flags |= O_CLOEXEC;
+ #endif
+        const int fd = ::open (file.getFullPathName().toRawUTF8(), flags);
+
+        if (fd < 0)
+            return false;
+
         struct stat st {};
-        return ::stat (file.getFullPathName().toRawUTF8(), &st) == 0 && S_ISREG (st.st_mode);
+        bool ok = ::fstat (fd, &st) == 0 && S_ISREG (st.st_mode)
+                  && static_cast<juce::int64> (st.st_size) <= cap;
+
+        if (ok)
+        {
+            const juce::int64 limit = cap + 1;   // reading this many bytes means the file is over the cap
+            size_t capacity = static_cast<size_t> (juce::jlimit<juce::int64> (1, limit, static_cast<juce::int64> (st.st_size) + 1));
+            size_t total = 0;
+            out.setSize (capacity);
+
+            for (;;)
+            {
+                if (total == capacity)
+                {
+                    if (static_cast<juce::int64> (capacity) >= limit)
+                        break;
+
+                    capacity = static_cast<size_t> (juce::jmin<juce::int64> (static_cast<juce::int64> (capacity) * 2, limit));
+                    out.setSize (capacity);
+                }
+
+                const ssize_t n = ::read (fd, static_cast<char*> (out.getData()) + total, capacity - total);
+
+                if (n < 0)
+                {
+                    if (errno == EINTR)
+                        continue;
+                    ok = false;
+                    break;
+                }
+
+                if (n == 0)
+                    break;
+
+                total += static_cast<size_t> (n);
+            }
+
+            ok = ok && static_cast<juce::int64> (total) <= cap;
+            out.setSize (ok ? total : 0);
+        }
+
+        ::close (fd);
+        return ok;
 #endif
     }
 }
@@ -77,18 +147,7 @@ bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleR
     const juce::int64 cap = (maxBytes > 0 && maxBytes < kMaxInt) ? maxBytes : kMaxInt;
 
     juce::MemoryBlock fileBytes;
-    bool readOk = false;
-
-    if (isRegularFile (sofaFile))
-    {
-        juce::FileInputStream in (sofaFile);
-
-        if (in.openedOk() && in.getTotalLength() <= cap)
-        {
-            in.readIntoMemoryBlock (fileBytes, static_cast<ssize_t> (cap) + 1);
-            readOk = static_cast<juce::int64> (fileBytes.getSize()) <= cap;
-        }
-    }
+    const bool readOk = readFileCapped (sofaFile, cap, fileBytes);
 
     if (! readOk)
     {
