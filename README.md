@@ -29,10 +29,10 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 - **Direct Binaural** — Woodworth ITD+ILD (internal, for Simple profile)
 
 ### HRTF Binaural Rendering
-- **HRTFDatabase** — SOFA file loading via libmysofa, KD-tree HRIR lookup
+- **HRTFDatabase** — SOFA file loading via libmysofa (from a file, from memory, or `loadFromBinaryData` for the embedded profiles), KD-tree HRIR lookup
 - **PartitionedConvolver** — Real-time FFT overlap-save convolution
 - **BinauralRenderer** — 12 per-source convolvers, double-buffered profile swap
-- **HRTF Profiles:** 5 SOFA HRTF profiles ship; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles. The five SOFA files are MIT KEMAR, SADIE II D2, CIPIC Subject003, HUTUBS PP2, and Bernschuetz KU100.
+- **HRTF Profiles:** 5 SOFA HRTF profiles ship; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles. The five SOFA files are MIT KEMAR, SADIE II D2, CIPIC Subject003, HUTUBS PP2, and Bernschuetz KU100. The files are embedded in the library at build time (`SPATIALCORE_EMBED_ALL_HRTF`, default ON; OFF embeds MIT KEMAR only), so a plugin needs no install step. A file with the same name as a built-in, placed in the system shared folder (`/Library/Application Support/Spatial Media Lab/HRTF/` on macOS, `%ProgramData%\Spatial Media Lab\HRTF\` on Windows), replaces that built-in at the next switch. One engine call, `RenderEngine::setHRTFProfile (profileIndex)`, switches profile click-free in the background and `getHRTFProfileStatus()` reports the result. Profile 0 (Simple) is the Woodworth path with a rear head-shadow and up/down pinna cue bank, so front, back, above and below no longer sound alike.
 
 ### Output Format Support (23 formats)
 - 1 Binaural (HRTF head model)
@@ -96,7 +96,7 @@ See [docs/integration-guide.md](docs/integration-guide.md) for the complete inte
 ## Dependencies
 
 - **JUCE 9.0.0** (C++17) — audio plugin framework
-- **libmysofa** v1.3.2 (FetchContent) — SOFA file parsing
+- **libmysofa** v1.3.5 (FetchContent) — SOFA file parsing
 - **zlib** (system) — compression for SOFA files
 - **Catch2** v3.7.1 (FetchContent, tests only) — unit testing
 

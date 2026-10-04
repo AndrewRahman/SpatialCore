@@ -80,7 +80,7 @@ public:
     // SpatialCore components (from framework)
     spatialcore::BinauralRenderer binauralRenderer;
     spatialcore::SpatializationAlgorithm* algorithms[8];
-    spatialcore::HRTFDatabase hrtfDb;
+    // HRTF profiles: no HRTFDatabase or renderer glue of your own. See "HRTF profiles" below.
 
     // Your effect-specific DSP
     // ... (delay lines, filters, grain engines, etc.)
@@ -271,13 +271,96 @@ output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
   arrives through `CMAKE_CXX_FLAGS` or `add_compile_options` before `add_subdirectory(SpatialCore)`.
   Apply fast-math per consumer target (`target_compile_options`), as OpenSpatialDelay does.
 
+## HRTF profiles
+
+SpatialCore carries its own HRTF data and does its own profile switching. A consumer plugin writes
+no loader, no file path, no timer and no renderer swap.
+
+**Profile numbers.** They are the numbers a plugin stores in saved sessions, so they never change.
+
+| Profile | Name | What it is |
+|---------|------|------------|
+| 0 | Simple (Low CPU) | the Woodworth model, no file and no convolution |
+| 1 | Immersive | SADIE II D2 |
+| 2 | Natural | CIPIC Subject003 |
+| 3 | Precise | HUTUBS PP2 |
+| 4 | Spatial | Bernschuetz KU100 |
+| 5 | Studio Reference | MIT KEMAR large pinna (always embedded) |
+
+**One call.**
+
+```cpp
+engine.setHRTFProfile (3);   // message thread; returns at once
+```
+
+An engine-owned background worker loads the profile into the renderer the audio thread is not using,
+the audio thread picks it up at a block boundary, and the two crossfade (at least 4096 samples, so
+also at 32-sample host blocks). The old profile keeps playing until the new one is ready. If several
+requests arrive, the latest wins. A request made before the first `prepareToPlay` is held and served
+after it. If a request cannot be met (an unknown number, a file that cannot be found) the current
+profile keeps playing and nothing is muted.
+
+**Showing the result.** `engine.getHRTFProfileStatus()` is lock-free and safe from any thread; it
+returns the requested profile, the active profile, the load state, where the data came from (simple
+model, shared folder or built-in) and any problem. Turn it into a line of text for your UI on the
+message thread with the free function `spatialcore::describeHRTFProfileStatus (status)`, for example
+"profile 3 ready (built-in)" or "profile 9 failed: no such profile". It allocates, so never call it on
+the audio thread.
+
+**Let the engine choose the path.** Set `ctx.engineSelectsHRTF = true` together with
+`ctx.engineComputesGains = true` in your `RenderBlockContext`. The engine then decides between the
+Simple path and the HRTF path from the profile that is actually active and, during a switch between
+Simple and an HRTF profile, blends the two, so profile 0 is as click-free as the others. Your own
+`useHRTF` is ignored. Both flags default to `false`, so an existing plugin renders exactly as before.
+Do not mix `setHRTFProfile` with the older `swapActiveRenderer` / `getPrepareRendererIndex` /
+`getBinauralRenderer` loading on the same engine; pick one way.
+
+**Where the data lives.** The five profiles are compiled into SpatialCore (a `SpatialCoreHRTFData`
+library linked privately), so there is no install step and no path to set. The CMake option
+`SPATIALCORE_EMBED_ALL_HRTF` (default `ON`) embeds all five; `OFF` embeds only profile 5 and is meant
+for a future installer that supplies the rest.
+
+**Overriding a built-in.** A file in the system shared folder whose name is exactly a built-in's file
+name replaces that built-in at the next switch to that profile, with no restart:
+
+- macOS: `/Library/Application Support/Spatial Media Lab/HRTF/`
+- Windows: `%ProgramData%\Spatial Media Lab\HRTF\` (implemented, not yet verified on Windows)
+
+The built-in file names are `sadie_d2_ku100.sofa`, `cipic_subject_003.sofa`, `hutubs_pp2.sofa`,
+`bernschuetz_ku100.sofa` and `mit_kemar_large_pinna.sofa`. Any other file in the folder is ignored,
+whether the name match is case-sensitive follows the file system, and no per-user folder is looked at.
+SpatialCore only reads the folder; it never creates or writes it. A missing folder or file falls back
+to the built-in copy silently. A file that is there but unusable (empty, half-copied, a Git LFS stub,
+not a SOFA file, or larger than 256 MB) falls back to the built-in copy and the status says
+"unreadable, used built-in". Until a dedicated custom-file feature exists, this is also how to try your
+own HRTF: name your file like the profile it should replace.
+
+**Git LFS.** The `.sofa` files in `HRTF/` are Git LFS objects. A checkout without them cannot build:
+CMake stops at configure time with "is not a real SOFA/HDF5 file (a Git LFS pointer?). Run: git lfs
+pull". SpatialCore's own tests still read the source-tree files through `SPATIALCORE_HRTF_DIR`.
+
+**Threading.** `setHRTFProfile`, `waitForHRTFProfileIdle` and `setSharedHRTFFolderForTesting` are
+message-thread only. `getHRTFProfileStatus` is safe from any thread. The audio thread only does atomic
+operations (loads, stores, exchanges) for this: no lock, no allocation, no file access.
+
+**Moving an existing plugin over.** Delete your HRTF loading glue and any HRTF BinaryData of your own,
+call `setHRTFProfile` from your profile parameter, and set `engineSelectsHRTF` and
+`engineComputesGains`. While a plugin still embeds its own copy as well, both sets are linked (about
+2 x 58 MB); the plugin's own copy goes when its glue does.
+
+**The Simple profile sounds different.** Profile 0 now applies a position-blended rear head-shadow and
+a pinna elevation cue bank before the Woodworth gains, so a source behind, above or below the listener
+no longer sounds the same as one in front. Ear-level sources in the front half are unchanged. If your
+plugin has regression recordings of the Simple path, expect them to differ for sources outside the
+front half at ear level, and say so in your release notes.
+
 ## What to Keep vs Replace
 
 | Keep from SpatialCore | Replace with Your DSP |
 |----------------------|----------------------|
 | Output format detection & bus negotiation | Your effect engine |
 | Algorithm selection & dispatch | Your per-object processing |
-| HRTF profile loading & convolution | Your modulation/feedback/filters |
+| HRTF profile loading & convolution (one call: `setHRTFProfile`) | Your modulation/feedback/filters |
 | Speaker layout activation | Your tempo sync / timing |
 | ADM-OSC receive/send | Your effect-specific parameters |
 | Trajectory animation | Your UI controls (right panel, bottom panel) |

@@ -16,8 +16,8 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 | Component | Headers | Description |
 |-----------|---------|-------------|
 | Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural. `AllAlgorithms.h`'s `AllAlgorithmTypes` list is the source of truth for the count |
-| Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
-| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
+| Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa; `loadFromBinaryData` reads the embedded profile set `SpatialCoreHRTFData`), `HRTFProfile.h` (the profile table, indices 0-5, 0 = Simple), `HRTFProfileResolver` (shared folder, then embedded copy, then a reported error), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
+| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, engine-owned HRTF profile switching (`setHRTFProfile`, an engine-owned background loader, a lock-free status) with the opt-in `engineSelectsHRTF` flag, a Simple-path cue bank (rear, up and down filter branches ahead of the Woodworth gains), a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
 | Core | `Core/SpatialMath.h` | `softClip()`, `outputLimiter()` (tanh soft ceiling), `distanceAttenuation()`, plus the shared position/gain types in `Core/Types.h` |
 | I/O | `IO/*.h` | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
@@ -58,6 +58,24 @@ pairs one format's dispatch with another format's layout and renders a torn, sil
 block when a format switch lands mid-block. With the flag left `false` the consumer's
 flags are honoured verbatim, so existing consumers are unaffected.
 
+**HRTF profile switching (DATA-01).** `RenderEngine::setHRTFProfile (int profileIndex)` is the one
+call a consumer makes to change profile (0 = Simple, 1-5 the SOFA profiles of `HRTFProfile.h`). It is
+message-thread-only and returns at once. An engine-owned worker loads the profile into the renderer the
+audio thread is not using, the audio thread claims it at a block boundary and crossfades, and the latest
+request wins. A failed request (unknown index, file nowhere to be found) keeps the current profile playing
+and is reported by `getHRTFProfileStatus()` (lock-free, any thread, returns an `HRTFProfileStatus`);
+turn it into text on the message thread with the free function
+`spatialcore::describeHRTFProfileStatus (status)`. Requests made before the first `prepare()` are held.
+`waitForHRTFProfileIdle (int timeoutMs)` and `setSharedHRTFFolderForTesting (const juce::File&)` exist
+for tests. `RenderBlockContext::engineSelectsHRTF` (default `false`, D-15) lets the engine choose the
+binaural path from its own active renderer and blend Simple and HRTF during a switch, so profile 0 fades
+like any other; the consumer's `useHRTF` is ignored. Set it together with `engineComputesGains`, because
+the Woodworth path can run during an HRTF fade and needs valid `objGains`. Do not mix `setHRTFProfile`
+with `swapActiveRenderer` / `getPrepareRendererIndex` / `getBinauralRenderer` loads on one engine; those
+remain only as the legacy escape hatch. The Simple path (profile 0) is no longer spectrally flat: it
+applies a position-blended rear head-shadow and up/down pinna cue bank (`Core/SimpleBinauralCues.h`)
+before the Woodworth gains, and the ear-level front half is bit-identical to before (BUG-01, D-02).
+
 **`SpatializationAlgorithm` — engine-internal.** Not a consumer-facing interface;
 reached only through `RenderEngine`, never dispatched directly by a consumer:
 ```cpp
@@ -77,14 +95,16 @@ class SpatializationAlgorithm {
 - **Lock-free audio path:** No malloc, locks, or logging in any function called from processBlock
 - **Stateless algorithms:** All computation state in context structs, algorithms are pure functions
 - **Three-slot wait-free layout handoff (SC-16):** `RenderEngine` keeps three `LayoutState` slots and a `TripleBufferIndex` that decides which slot each thread may touch. The audio thread's slot is never written, so any number of back-to-back `setOutputFormat()` calls between blocks is safe and the next block renders the last one. `setOutputFormat()` is single-writer, message-thread-only and allocating. `getActiveLayout()` / `getActiveOutputFormat()` are the writer-thread view (the most recently published slot) and must not be called from the audio thread; the audio thread acquires its layout once per block inside `renderBlock()`
+- **Profile loader and mailbox (DATA-01):** with `setHRTFProfile` the audio thread is the only writer of the active renderer index. The loader thread writes only a renderer the audio thread is not using, and hands it over through a one-slot atomic mailbox that the audio thread claims at the top of a block. No lock, allocation or file access is ever on the audio side. The SOFA load (up to 36 MB) runs on the loader only
+- **Sample-based crossfades with floors:** the convolver crossfade is never shorter than `PartitionedConvolver::kMinCrossfadeSamples` (2048), and the renderer crossfade lasts `max(8 blocks, RenderEngine::kMinRendererXfadeSamples = 4096)` samples, fixed when the fade starts, so a 32-sample host block still gets at least 85 ms at 48 kHz
 - **Per-source HRTF:** 12 independent PartitionedConvolvers for direct binaural rendering
 - **Self-calibrating normalization:** `targetRMS = 1/sqrt(irLen)` ensures consistent levels across HRTF profiles
 - **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — with one stated exception: stereo-variant gains (`objGainL`/`objGainR`) are computed consumer-side always, because that math is not a `SpatializationAlgorithm`
 
 ## Build System
 - **Framework:** JUCE 9.0.0, C++17, CMake 3.22+
-- **Dependencies:** libmysofa v1.3.2 (FetchContent), zlib (system)
-- **HRTF data:** 5 SOFA files (Git LFS tracked), loaded at runtime via `HRTFDatabase::loadFromFile` — no BinaryData compilation step is involved. Consumer plugins resolve the files bundle-relative in shipped builds (e.g. OSD: `<bundle>/Contents/Resources/HRTF/`), with a source-tree fallback for dev/test/CI. See OpenSpatialDelay's `Source/PluginProcessor.cpp` `loadHRTFProfileIntoRenderer` for the reference resolver + its packaging scripts for the release-time file placement.
+- **Dependencies:** libmysofa v1.3.5 (FetchContent; a consumer that already provides a `mysofa-static` target, as OpenSpatialDelay does with its own v1.3.2 pin, keeps its own copy), zlib (system)
+- **HRTF data:** the 5 Git-LFS-tracked SOFA files are embedded at build time as BinaryData (`SpatialCoreHRTFData`, linked privately into `SpatialCore`), so a consumer that links SpatialCore needs no install step and no path. `SPATIALCORE_EMBED_ALL_HRTF` (default ON) embeds all five; OFF embeds only `mit_kemar_large_pinna.sofa` (profile 5) for the future installer (SUITE-01). A file with the same name as a built-in, placed in `/Library/Application Support/Spatial Media Lab/HRTF/` (macOS) or `%ProgramData%\Spatial Media Lab\HRTF\` (Windows, implemented but not verified), overrides that built-in at the next profile switch; no per-user folder is consulted and SpatialCore never creates or writes the folder. Configure stops with "git lfs pull" if an HRTF file is still an LFS pointer. The tests read the source-tree files through `SPATIALCORE_HRTF_DIR`. While OpenSpatialDelay still embeds its own `HRTFData` the two sets are both linked (about 2 x 58 MB) until its migration deletes its copy.
 - **Tests:** Catch2 v3.7.1 via FetchContent
 
 ## Versioning
@@ -109,5 +129,5 @@ A SpatialCore change reaches a consumer only after: commit + push here, then bum
 - NEVER modify the SpatializationAlgorithm interface without bumping the major version
 - ALWAYS maintain backward compatibility with existing plugins when adding features
 - ALWAYS run the full test suite before tagging a release
-- HRTF profiles are Git-LFS-tracked raw `.sofa` files loaded at runtime, not BinaryData — adding/removing profiles updates the consumer plugin's packaging copy step (and the runtime resolver's filename switch), not a BinaryData rebuild
+- HRTF profiles are embedded BinaryData built from the Git-LFS `.sofa` files in `HRTF/`. Adding or removing one means editing `kHRTFProfiles` in `Binaural/HRTFProfile.h` and the source list in the top-level `CMakeLists.txt`. Profile indices are persisted in consumers' saved sessions and are NEVER renumbered, and a display name never changes (D-07)
 - Adding a spatialization algorithm means editing `AllAlgorithmTypes` in `Algorithms/AllAlgorithms.h`, not just adding an `#include`. That type list is the single source of truth for `NUM_ALGORITHMS` — the count is derived from it, so a header that is included but not listed compiles fine and is silently uncounted. Adding to the list moves the count and deliberately fails the build until every doc surface named in the `static_assert` message is updated with it (D-04)
