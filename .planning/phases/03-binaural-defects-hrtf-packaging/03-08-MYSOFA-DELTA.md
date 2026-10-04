@@ -116,3 +116,22 @@ Full suite under v1.3.5: Debug 253 of 253 plus the 1 throwaway probe case (254 o
 - Nothing pinned moved, so there is no number to re-baseline. `keep-upgrade` is the applicable upgrade option and `upgrade-and-update-numbers` would update zero numbers (the two upgrade options would produce the same tree).
 - The upgrade needs the 3-line `CMakeLists.txt` change above plus the pin and a comment edit.
 - SpatialCore's pin only governs builds where SpatialCore fetches libmysofa itself (its own tests and CI, and any consumer that does not supply `mysofa-static`). The CMake comment says OSD fetches its own copy at v1.3.2 under the name `libmysofa`, so for OSD the guard skips SpatialCore's fetch and OSD's own pin decides which parser OSD ships. If the user upgrades here, OSD would need its own pin bumped separately to get the hardened parser (a decision for the OSD repo, not made here).
+
+## Decision
+
+**2026-10-04: the user chose `keep-upgrade`.** SpatialCore now pins libmysofa v1.3.5 (tag resolves to `6cc5b15a73e9bd97810d03767082edda7f315881`; `git -C build/_deps/mysofa-src rev-parse HEAD` prints that commit after the reconfigure).
+
+Applied in the main tree (`CMakeLists.txt` only):
+
+- `GIT_TAG v1.3.2` became `GIT_TAG v1.3.5`; the OSD-coexistence guard comment now names v1.3.5 and keeps the explanation that a consumer supplying its own `mysofa-static` skips this fetch and decides its own version.
+- The 3-line build fix from Finding 1 was added after `target_link_libraries(SpatialCore ...)` (queries `mysofa-static` for its build directory, adds it as a private include folder for `mysofa_export.h`).
+- No test file was edited and no golden, IR length, ITD entry or tolerance moved: the table above shows 0 of 140 pinned values changed.
+
+Verification on the main tree after the change (v1.3.5):
+
+| Build | Result |
+|---|---|
+| Debug (`build/`, `./build/tests/SpatialCoreTests`) | All tests passed, 309062 assertions in 253 test cases, exit 0 (the known `juce_LeakedObjectDetector.h` FFT line prints at exit, as in every earlier plan) |
+| Release (`build-release/`, `ctest`) | 100% tests passed out of 253 |
+
+Follow-up, not done here: OSD pins its own libmysofa (v1.3.2) under the name `libmysofa`, so OSD keeps the old parser until its own pin is bumped. That is a change in the OSD repo and was deliberately not touched.

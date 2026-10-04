@@ -39,15 +39,17 @@ endif()
 
 # --- libmysofa (skip fetch if a consumer already provides the mysofa-static
 # target — e.g. OSD's own top-level FetchContent of the same hoene/libmysofa
-# v1.3.2 tag under the name "libmysofa"; both declarations produce the same
+# tag under the name "libmysofa"; both declarations produce the same
 # "mysofa-static" CMake target, so fetching twice is a duplicate-target error
 # when SpatialCore is add_subdirectory()'d into a consumer that already
-# fetched it) ---
+# fetched it). SpatialCore pins v1.3.5 (malformed-input hardening, D-17, since
+# Phase 3 makes user-supplied SOFA files loadable); a consumer that supplies its
+# own copy decides its own version. ---
 if(NOT TARGET mysofa-static)
     FetchContent_Declare(
         mysofa
         GIT_REPOSITORY https://github.com/hoene/libmysofa.git
-        GIT_TAG v1.3.2
+        GIT_TAG v1.3.5
     )
     set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -196,6 +198,13 @@ target_link_libraries(SpatialCore
         ZLIB::ZLIB
         SpatialCoreHRTFData
 )
+
+# libmysofa v1.3.5's mysofa.h includes the generated mysofa_export.h, which lives in the
+# library's own build directory and is not published on its include path. Ask the target
+# where it was built, so this also works when a consumer supplies its own mysofa-static.
+# Harmless on v1.3.2 (the same generated header exists there).
+get_target_property(_sc_mysofa_bindir mysofa-static BINARY_DIR)
+target_include_directories(SpatialCore PRIVATE "${_sc_mysofa_bindir}")
 
 # 1 when all five profiles are compiled in, 0 when only KEMAR is (SPATIALCORE_EMBED_ALL_HRTF).
 # PUBLIC so consumers and tests can tell which build they linked.
