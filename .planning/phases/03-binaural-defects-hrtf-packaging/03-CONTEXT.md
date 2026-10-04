@@ -83,7 +83,7 @@ folder paths, and the rejection of convert-then-embed are **already locked** (OQ
   silently changes the profile a saved session reopens with.
 
 ### Shared-folder rules (DATA-01, criterion 3)
-- **D-08:** **Same filename wins.** A file in the shared folder whose name exactly matches a built-in
+- **D-08:** **Same filename wins.** A file in the shared folder whose name matches (case rule: see D-18) a built-in
   profile file (e.g. `hutubs_pp2.sofa`) replaces that profile. Any other `.sofa` in the folder is
   ignored in v1. User-supplied extra profiles are deferred.
 - **D-09:** **A broken shared file falls back to embedded and reports it.** If a same-name file
@@ -118,6 +118,25 @@ folder paths, and the rejection of convert-then-embed are **already locked** (OQ
   tolerance is set **after** the first measurement and approved by the user. Until then it
   records and prints the numbers. The measured spread feeds the future loudness standard
   (Deferred → custom HRTFs).
+
+### Post-research decisions (2026-10-04, after 03-RESEARCH.md)
+- **D-15:** **Simple ↔ HRTF switching is smooth too.** Profile 0 (Simple) counts as a profile for
+  criterion 4. Switching between Simple and any HRTF profile crossfades the two render paths, so no
+  click. The dual-path crossfade sits behind a new **default-off** `RenderBlockContext` flag, so
+  existing consumers are unaffected until they opt in.
+- **D-16:** **SADIE ITD wrap: pin, don't fix.** The 64-sample ITD delay line wraps SADIE's absolute
+  delays (up to 123 samples). Phase 3 adds a characterisation test locking today's behaviour at
+  44.1 and 48 kHz and files a GitHub issue for 88.2 kHz and above. No change to shipped timing.
+  (The KEMAR audio-thread resize at `BinauralRenderer.cpp:162` is a separate defect and **is** fixed
+  in Phase 3.)
+- **D-17:** **Upgrade libmysofa to v1.3.5** for its malformed-input hardening, since Phase 3 makes
+  user-supplied SOFA files loadable. If the bump moves any golden checksum, the plan must surface
+  the before/after numbers and get user sign-off before re-baselining — never silently update a
+  golden.
+- **D-18:** **Shared-folder filename matching follows the filesystem.** Supersedes the word
+  "exactly" in D-08: the override check uses a normal file-exists lookup, so it is case-insensitive
+  on default macOS/Windows volumes and case-sensitive on case-sensitive volumes. No directory-listing
+  exact-case comparison.
 
 ### Claude's Discretion
 - **Filter design and strength for D-01** (user: "you decide"). Pick literature-grounded values
