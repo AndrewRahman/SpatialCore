@@ -232,6 +232,16 @@ public:
     // low-pass coefficient set, and sizing the direct-binaural HRTF pass's
     // per-source accumulation + wet buffers. Does NOT touch delay lines,
     // phase vocoder, or any other OSD-owned DSP (out of the engine boundary).
+    //
+    // Thread contract (WR-04): call it from the same thread as setHRTFProfile()
+    // (the message thread; JUCE's prepareToPlay on a host that calls it elsewhere
+    // must not overlap a setHRTFProfile() call), and never while renderBlock() is
+    // running. Once a profile has been requested, prepare() stops the engine's HRTF
+    // loader thread and starts a new one, so it BLOCKS until a load already in
+    // flight finishes (a built-in file is up to 36 MB, a shared-folder file up to
+    // kMaxSharedHRTFFileBytes, 256 MB; the wait gives up after 15 s). It then re-issues the current request; an unclaimed result from
+    // before the call is discarded. An engine that never had a profile requested
+    // starts no thread and never blocks.
     //--------------------------------------------------------------------------
     void prepare (double sampleRate, int maxBlockSize);
 
@@ -360,7 +370,10 @@ public:
     //
     // Thread contract:
     //   - setHRTFProfile(), waitForHRTFProfileIdle(), setSharedHRTFFolderForTesting():
-    //     message thread (or the single test thread). Never the audio thread.
+    //     message thread (or the single test thread). Never the audio thread. prepare()
+    //     shares the loader-thread bookkeeping with setHRTFProfile() and must not overlap it
+    //     (see prepare() above); nothing here is guarded by a lock, by design, so the
+    //     message thread is never made to wait on a join.
     //   - getHRTFProfileStatus(): any thread, lock-free.
     //   - The SOFA load (up to 36 MB) runs on the worker only. setHRTFProfile()
     //     returns at once. The worker is started by the first request after
