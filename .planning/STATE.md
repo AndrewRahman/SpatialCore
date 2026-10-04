@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
 status: executing
-stopped_at: Completed 03-08-PLAN.md
-last_updated: "2026-10-04T15:42:41.869Z"
+stopped_at: Completed 03-09-PLAN.md
+last_updated: "2026-10-04T16:15:58.759Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 03 execution started
-state_head: 85c867fd6547e615e89d30c722ba146d5be444ce
+state_head: f88cbaace17c0d5719da71cefc07232d79d9663f
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 23
+  completed_plans: 24
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 ## Current Position
 
 Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
-Plan: 9 of 11
+Plan: 10 of 11
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 03 execution started
 
@@ -99,6 +99,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 03 P06 | 36 min | 2 tasks | 4 files |
 | Phase 03 P07 | 31 min | 2 tasks | 1 files |
 | Phase 03 P08 | 39 min | 3 tasks | 2 files |
+| Phase 03 P09 | 31 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -138,6 +139,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: 03-07: ThreadSanitizer found no Phase 3 race; the Phase 5 TSAN gate must build with optimization (RelWithDebInfo) because an -O0 instrumented SADIE load exceeds the engine's 15 s stopThread
 - [Phase 03]: 03-08: user chose keep-upgrade (2026-10-04); SpatialCore pins libmysofa v1.3.5, 0 of 140 pinned values moved, nothing re-baselined (D-17)
 - [Phase 03]: 03-08: mysofa_export.h include folder taken from mysofa-static BINARY_DIR; OSD still pins its own libmysofa v1.3.2 (follow-up in OSD repo)
+- [Phase 03]: Renderer crossfade is counted in elapsed samples: max (8 x block at fade start, 4096), fixed when the fade starts; identical to the old fade at 512-sample blocks and above — Below 512-sample blocks the old block-counted fade was shorter than the HRIRs it blends. The step and dip bounds already held at the plan base (03-03 sample-based convolver), so the length is what the tests pin.
+- [Phase 03]: RenderBlockContext::engineSelectsHRTF (default false, D-15): the engine claims a ready profile, derives useHRTF from its active renderer and blends the Woodworth and HRTF paths during a Simple <-> HRTF fade; flag-off and no-switch output is bit-identical — A consumer-derived useHRTF can read a different renderer than the engine claims (the SC-16 tear class). Plain paths call exactly the flag-off dispatch so existing consumers are unchanged; the blend was rebuilt outside the engine and matched to 0 deviation, with once-per-block Woodworth proven by mutation.
 
 ### Pending Todos
 
@@ -174,7 +177,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T15:42:41.821Z
-Stopped at: Completed 03-08-PLAN.md
+Last session: 2026-10-04T16:15:58.707Z
+Stopped at: Completed 03-09-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
