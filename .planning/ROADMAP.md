@@ -272,5 +272,13 @@ None is dropped — see the REQUIREMENTS.md triage table for the reason on each.
 **Follow-ups:**
 - [ ] Test 7: Next listening-review round — in OpenSpatialDelay on 7.1.4, lower a sound from ear height to 30 degrees below at about 60 degrees left; confirm it stays put (no drift toward one speaker, no side flip) (deferred 2026-10-03)
 
+### Phase 999.2: Follow-up — Phase 02 deferred UAT follow-up: Test post-review (BACKLOG)
+
+**Goal:** Resolve the UAT checkpoint deferred during Phase 02 verification
+**Source phase:** 02
+**Deferred at:** 2026-10-04 during /gsd-verify-work 02 session completion
+**Follow-ups:**
+- [ ] Test post-review: Listening checks for the 2026-10-04 code-review behaviour changes: (a) on a front-only rig (e.g. speakers at 0 and +-30 only), move a sound behind and below the listener and confirm it is never silent and moves smoothly across the gap (WR-05 gap bridge); (b) a DBAP source fed a broken distance (NaN/Inf) still plays, panned as distance 0.5 (WR-08) (deferred 2026-10-04)
+
 ---
 *Roadmap rewritten 2026-08-10 against branch `gsd-remap`, after the original was found to have been planned against a branch missing 42 commits.*
