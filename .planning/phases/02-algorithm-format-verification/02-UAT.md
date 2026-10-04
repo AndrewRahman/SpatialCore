@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 02-algorithm-format-verification
 source: [02-VERIFICATION.md]
 started: 2026-10-01T07:55:50Z
-updated: 2026-10-03T22:10:09Z
+updated: 2026-10-04T00:45:00Z
 ---
 
 ## Current Test
 
-number: 11
-name: Accept the 2.5e-5 bound for the [ambi-pin] decode check?
-expected: |
-  Answer yes or no. Yes (recommended): accept the 25-parts-per-million limit. The library decoder is unchanged, so nothing you hear changes. No: keep 1e-6 and force identical rounding with a library-wide compiler flag, which slows the audio code and means re-checking OpenSpatialDelay's sound.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -126,20 +122,20 @@ reverified: "02-10 re-verification (claude-verified): Release ctest --test-dir b
 
 ### 11. Accept the 2.5e-5 bound for the [ambi-pin] decode check?
 expected: Answer yes or no. Yes (recommended): accept the 25-parts-per-million limit in place of 1e-6. The library decoder is unchanged, so nothing you hear changes; the limit is derived from the matrix conditioning, re-checked against a double-precision solve every run, and still fails for a deliberate +0.1% decoder change. No: keep 1e-6 and force identical rounding with a library-wide compiler flag (slows the audio code; OpenSpatialDelay's sound needs re-checking).
-result: [pending]
+result: pass — user: "yes" (accept the 2.5e-5 bound), 2026-10-04
 source: 02-VERIFICATION.md human_verification (02-10 SUMMARY question)
 
 ### 12. Judgment-tier prohibitions from plan 02-10 (4)
 expected: Accept or reject the verifier's non-authoritative judgment that all 4 hold — (1) no change under src/ or include/ and referenceAmbiDecode untouched; (2) no -ffp-contract or other FP flag in either CMakeLists.txt; (3) the tolerance was derived, not tuned to pass; (4) nothing from the mutation worktree committed, and HUTUBS PP2, other tolerances, ci.yml and /tmp/sc-backstop untouched. Evidence: 02-VERIFICATION.md Prohibitions table.
-result: [pending]
+result: pass — user: "accept" (all 4 prohibitions hold), 2026-10-04
 source: 02-VERIFICATION.md human_verification
 
 ## Summary
 
 total: 12
-passed: 9
+passed: 11
 issues: 0
-pending: 2
+pending: 0
 skipped: 1
 blocked: 0
 
@@ -148,6 +144,9 @@ blocked: 0
 - test: 7
   idea: "Listening check in OpenSpatialDelay on 7.1.4: lower a sound from ear height to 30 degrees below at about 60 degrees left; confirm it stays put (no drift, no side flip). User: 'I will check it in the next round of listening reviews. Just add it as a task for the next round.'"
   deferred_at: 2026-10-03
+- test: post-review
+  idea: "Listening checks for the 2026-10-04 code-review behaviour changes: (a) on a front-only rig (e.g. speakers at 0 and +-30 only), move a sound behind and below the listener and confirm it is never silent and moves smoothly across the gap (WR-05 gap bridge: one third on each edge speaker, pan across the middle third); (b) DBAP source fed a broken distance (NaN/Inf) still plays, panned as distance 0.5 (WR-08)."
+  deferred_at: 2026-10-04
 
 ## Gaps
 
