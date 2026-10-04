@@ -22,9 +22,17 @@ public:
 
     /** Set or update the impulse response.
         v1.0.5: Dual-convolver crossfade -- new IR is loaded into the inactive
-        slot and crossfaded over kCrossfadeBlocks blocks using equal-power
-        (cos/sin) gains.  This eliminates overlap-save boundary discontinuities
-        that caused audible pops during HRTF transitions (issue Spatial-Media-Lab/OpenSpatialDelay#50). */
+        slot and crossfaded using equal-power (cos/sin) gains.  This eliminates
+        overlap-save boundary discontinuities that caused audible pops during
+        HRTF transitions (issue Spatial-Media-Lab/OpenSpatialDelay#50).
+
+        BUG-02 (OSD#234 small-block residual): the transition is timed in samples,
+        not calls.  The inactive slot warms up for at least kWarmupBlocks calls and
+        at least irLen samples, then the fade lasts
+        max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples, with
+        callSize taken once when the fade starts.  At 512-sample calls and an IR of
+        512 samples or fewer this is the original one-call warm-up and four-call
+        fade. */
     void setIR (const float* ir, int length);
 
     /** Process one block: convolve input with IR, write to output.
@@ -80,11 +88,22 @@ private:
     enum class State { Idle, Warmup, Crossfading };
     State state = State::Idle;
 
-    static constexpr int kCrossfadeBlocks = 4;   // Equal-power crossfade duration (~21ms)
-    static constexpr int kWarmupBlocks = 1;      // Let inactive slot build overlap before crossfade
+    // BUG-02 (OSD#234 small-block residual): both timings are in samples with a floor.
+    //   Warmup:      lasts at least kWarmupBlocks calls AND at least irLen samples, so the
+    //                inactive slot's overlap accumulator holds the whole IR tail before it
+    //                is faded in.
+    //   Crossfading: lasts max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples.
+    //                callSize is the size of the call that ended Warmup; the length is fixed
+    //                then (crossfadeLengthSamples) and advanced by elapsed samples, so progress
+    //                never runs backwards when call sizes vary.
+    static constexpr int kCrossfadeBlocks = 4;          // Fade length in calls at the call size the fade starts at
+    static constexpr int kWarmupBlocks = 1;             // Minimum calls the inactive slot warms up for
+    static constexpr int kMinCrossfadeSamples = 2048;   // Floor on the fade length (~43 ms at 48 kHz)
 
     int activeSlot = 0;                          // Index of the currently active slot (0 or 1)
-    int stateBlockCount = 0;                     // Blocks elapsed in current state
+    int stateBlockCount = 0;                     // Calls elapsed in current state
+    int stateSampleCount = 0;                    // Samples elapsed in current state
+    int crossfadeLengthSamples = 0;              // Fixed when Warmup ends; the fade's length in samples
 
     // Per-sample gain interpolation for glitch-free crossfade
     float fadeOutGain = 1.0f;                    // Current fade-out gain (active -> old)

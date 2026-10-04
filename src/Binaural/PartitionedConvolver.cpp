@@ -115,6 +115,7 @@ void PartitionedConvolver::setIR (const float* ir, int length)
 
     state = State::Warmup;
     stateBlockCount = 0;
+    stateSampleCount = 0;
 }
 
 void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* out, int numSamples)
@@ -217,10 +218,21 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
             processSlot (slots[static_cast<size_t> (1 - activeSlot)], in, slotOutputB.data(), numSamples);
 
             ++stateBlockCount;
-            if (stateBlockCount >= kWarmupBlocks)
+            stateSampleCount += numSamples;
+
+            // BUG-02 (OSD#234 small-block residual): warm-up is timed in samples. The new
+            // slot must have convolved at least irLen samples (its overlap accumulator then
+            // holds the full IR tail) as well as kWarmupBlocks calls before it is faded in.
+            if (stateBlockCount >= kWarmupBlocks && stateSampleCount >= irLen)
             {
                 state = State::Crossfading;
+
+                // Fade length: fixed once, here, from this call's size, with a sample floor.
+                // Advancing it by elapsed samples keeps progress monotonic when call sizes vary.
+                crossfadeLengthSamples = std::max (kCrossfadeBlocks * numSamples, kMinCrossfadeSamples);
                 stateBlockCount = 0;
+                stateSampleCount = 0;
+
                 // Initialize crossfade gains
                 prevFadeOutGain = 1.0f;
                 prevFadeInGain  = 0.0f;
@@ -235,9 +247,11 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
             processSlot (slots[static_cast<size_t> (1 - activeSlot)], in, slotOutputB.data(), numSamples);
 
             ++stateBlockCount;
+            stateSampleCount += numSamples;
 
-            // Compute equal-power crossfade gains for this block's END
-            float progress = static_cast<float> (stateBlockCount) / static_cast<float> (kCrossfadeBlocks);
+            // Compute equal-power crossfade gains for this block's END. Progress is elapsed
+            // samples over the fade length fixed when Warmup ended (BUG-02).
+            float progress = static_cast<float> (stateSampleCount) / static_cast<float> (crossfadeLengthSamples);
             if (progress > 1.0f) progress = 1.0f;
 
             constexpr float halfPi = juce::MathConstants<float>::halfPi;
@@ -263,12 +277,14 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
             prevFadeInGain  = fadeInGain;
 
             // Check if crossfade is complete
-            if (stateBlockCount >= kCrossfadeBlocks)
+            if (stateSampleCount >= crossfadeLengthSamples)
             {
                 // Swap active slot to the new one
                 activeSlot = 1 - activeSlot;
                 state = State::Idle;
                 stateBlockCount = 0;
+                stateSampleCount = 0;
+                crossfadeLengthSamples = 0;
                 fadeOutGain = 1.0f;
                 fadeInGain  = 0.0f;
                 prevFadeOutGain = 1.0f;
@@ -294,6 +310,8 @@ void PartitionedConvolver::reset()
     state = State::Idle;
     activeSlot = 0;
     stateBlockCount = 0;
+    stateSampleCount = 0;
+    crossfadeLengthSamples = 0;
     fadeOutGain = 1.0f;
     fadeInGain  = 0.0f;
     prevFadeOutGain = 1.0f;
