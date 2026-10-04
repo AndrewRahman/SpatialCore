@@ -390,7 +390,23 @@ private:
     // renderBlock() is the only public entry point, matching the pre-move
     // shape where these were private OpenSpatialDelayProcessor members.
     //--------------------------------------------------------------------------
-    void renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh);
+    // activeIdx is the one acquire-load of activeRendererIndex for this block. With simpleCtx
+    // null this is the legacy path, bit for bit: both renderers are treated as HRTF renderers.
+    // With simpleCtx set (engineSelectsHRTF, D-15) it also handles a fade in which exactly one
+    // side is a Simple (profile 0) renderer: that side is the Woodworth path, run once into
+    // simpleWetL_/simpleWetR_. Returns true when the Woodworth path ran this block.
+    bool renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh,
+                                    int activeIdx, const RenderBlockContext* simpleCtx = nullptr);
+    // D-15: the one function a binaural block goes through when engineSelectsHRTF is set. Plain
+    // Simple and plain HRTF (including HRTF <-> HRTF) call exactly the path the flag-off dispatch
+    // would, so the output is bit-identical; only a Simple <-> HRTF fade blends the two paths.
+    // Returns true when the Woodworth path ran this block.
+    bool renderBinauralWithProfileFade (const RenderSources& sources, const RenderBlockContext& ctx,
+                                         float* outL, float* outR, int numOutCh);
+    // Starts the renderer crossfade when the active renderer changed since the last block.
+    void beginRendererFadeIfSwapped (int activeIdx, int numSamples);
+    // Ends the renderer crossfade and hands the faded-out renderer back to the loader.
+    void endRendererFade();
     // Simple binaural path: applies the position-blended rear/up/down cue bank
     // from SimpleBinauralCues.h before the Woodworth pan gains (BUG-01); the
     // front half at ear level is unchanged. Cue filter state is engine-owned
@@ -476,6 +492,9 @@ private:
     float prevRxFadeOut_ = 1.0f;
     float prevRxFadeIn_  = 0.0f;
     std::vector<float> xfadeWetL_, xfadeWetR_;
+    // D-15: the Woodworth path's output during a Simple <-> HRTF fade. Sized in prepare() like
+    // the buffers above, so the fade allocates nothing on the audio thread (DR-1).
+    std::vector<float> simpleWetL_, simpleWetR_;
     std::atomic<bool> rendererXfadeActive_ { false };
 
     // --- Engine-owned profile switching (see setHRTFProfile above). The worker

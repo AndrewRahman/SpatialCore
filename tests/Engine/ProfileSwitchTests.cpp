@@ -987,6 +987,16 @@ namespace
                          static_cast<size_t> (RenderEngine::kMinRendererXfadeSamples));
     }
 
+    /** Copies the real SOFA file of each listed profile into `dir` under the name the shared-folder
+        lookup expects, so a case does not depend on which profiles this build embeds. */
+    bool copyProfilesInto (const juce::File& dir, std::initializer_list<int> profiles)
+    {
+        for (const int profile : profiles)
+            if (! getSofaFile (testProfileFile (profile)).copyFileTo (dir.getChildFile (kHRTFProfiles[profile].fileName)))
+                return false;
+        return true;
+    }
+
     SwitchRun runProfileSwitch (int blockSize, bool noiseInput, int fromProfile, int toProfile,
                                 bool engineSelectsHRTF, const juce::File& sharedFolder)
     {
@@ -1081,12 +1091,15 @@ namespace
 TEST_CASE ("Profile switch: setHRTFProfile KEMAR to SADIE is click-free and dropout-free at every block size",
            "[hrtf-switch][click]")
 {
-    const TempFolder nonExistent ("click");
+    // SADIE (1) is copied into a temporary shared folder, so the case also runs in a build that
+    // embeds only KEMAR. KEMAR (5) is embedded in every build.
+    const TempFolder folder ("click", true);
+    REQUIRE (copyProfilesInto (folder.dir, { 1 }));
 
     for (const int blockSize : { 32, 64, 128, 512 })
     {
         INFO ("block size " << blockSize);
-        const SwitchMetrics m = measureProfileSwitch (blockSize, 5, 1, false, nonExistent.dir);
+        const SwitchMetrics m = measureProfileSwitch (blockSize, 5, 1, false, folder.dir);
         REQUIRE (m.ok);
         reportSwitch ("setHRTFProfile", blockSize, 5, 1, m);
 
@@ -1100,7 +1113,8 @@ TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 sam
 {
     // The length is fixed when the fade starts and counted in elapsed samples, so at 512-sample
     // blocks and above it is the old 8-block fade (4096 samples) and below that it is 4096 samples.
-    const TempFolder nonExistent ("xfade-length");
+    const TempFolder folder ("xfade-length", true);
+    REQUIRE (copyProfilesInto (folder.dir, { 1 }));   // SADIE, so a KEMAR-only build can load it too
 
     // Counts the blocks a fade runs for: the first block on which the engine reports a crossfade
     // is the claim block, and the block on which it stops reporting is the last one.
@@ -1127,7 +1141,7 @@ TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 sam
             RenderEngine engine;
             engine.prepare (kRate, 512);
             engine.setOutputFormat (OutputFormat::Binaural);
-            engine.setSharedHRTFFolderForTesting (nonExistent.dir);
+            engine.setSharedHRTFFolderForTesting (folder.dir);
             LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, kRate), blockSize, kRate);
 
             // Settle on KEMAR first (this runs the Simple -> KEMAR fade to its end).
@@ -1160,16 +1174,6 @@ TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 sam
 // ============================================================================
 namespace
 {
-    /** Copies the real SOFA file of each listed profile into `dir` under the name the shared-folder
-        lookup expects, so a case does not depend on which profiles this build embeds. */
-    bool copyProfilesInto (const juce::File& dir, std::initializer_list<int> profiles)
-    {
-        for (const int profile : profiles)
-            if (! getSofaFile (testProfileFile (profile)).copyFileTo (dir.getChildFile (kHRTFProfiles[profile].fileName)))
-                return false;
-        return true;
-    }
-
     /** Appends both channels of the block `live` just rendered. */
     void appendBlock (const LiveRender& live, std::vector<float>& left, std::vector<float>& right)
     {
@@ -1387,6 +1391,11 @@ TEST_CASE ("Profile switch: during a Simple <-> HRTF fade the Woodworth path run
                 gInPrev = gInEnd;
             }
         }
+
+        // Not two silences: the engine output and both rebuilt sides carry real signal.
+        CHECK (*std::max_element (aL.begin() + kLead * kB, aL.end()) > 1.0e-3f);
+        CHECK (*std::max_element (oldL.begin() + kLead * kB, oldL.end()) > 1.0e-3f);
+        CHECK (*std::max_element (newL.begin(), newL.end()) > 1.0e-3f);
 
         char line[160];
         std::snprintf (line, sizeof (line), "blend %s: worst deviation from the rebuilt blend %.3g",

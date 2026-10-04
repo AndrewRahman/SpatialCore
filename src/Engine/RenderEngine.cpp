@@ -375,13 +375,7 @@ void RenderEngine::claimReadyRenderer (bool hrtfPathThisBlock)
     // switching is in use, so a legacy consumer keeps its crossfade state exactly as before.
     if (rendererXfading_ && ! hrtfPathThisBlock
         && requestSerial_.load (std::memory_order_relaxed) != 0)
-    {
-        rendererXfading_ = false;
-        rendererXfadeSamplesDone_ = 0;
-        rendererXfadeLengthSamples_ = 0;
-        rendererXfadeActive_.store (false, std::memory_order_release);
-        rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
-    }
+        endRendererFade();
 
     if (rendererXfading_)
         return;
@@ -470,6 +464,10 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     // Pre-allocate renderer crossfade buffers (issue Spatial-Media-Lab/OpenSpatialDelay#131: avoid audio-thread allocation)
     xfadeWetL_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
     xfadeWetR_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
+
+    // D-15: scratch for the Woodworth path while it is blended with an HRTF renderer.
+    simpleWetL_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
+    simpleWetR_.resize (static_cast<size_t> (maxBlockSize), 0.0f);
 
     // v0.5: Contiguous per-source accumulation buffers for direct binaural
     sourceAccumStorage_.resize (static_cast<size_t> (MAX_SOURCES * maxBlockSize), 0.0f);
@@ -654,13 +652,24 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // unchanged (selected once via pointer so it is never duplicated or
     // reordered, per D-09).
     const RenderBlockContext* dispatchCtx = &blockCtx;
-    if (blockCtx.engineComputesGains || blockCtx.engineDerivesDispatch)
+    bool claimed = false;
+    if (blockCtx.engineComputesGains || blockCtx.engineDerivesDispatch || blockCtx.engineSelectsHRTF)
     {
         gainScratch_ = blockCtx;
         if (blockCtx.engineDerivesDispatch)
             deriveDispatchFromLayout (layout, gainScratch_);
         if (blockCtx.engineComputesGains)
             computeObjectGains (src, layout, gainScratch_);
+        if (blockCtx.engineSelectsHRTF)
+        {
+            // D-15: claim any ready profile first, then read the path off the renderer that is
+            // active for this block. A binaural block is renderer-crossfade-capable on both
+            // paths (the fade blends Simple and HRTF too), so the claim must not switch at once.
+            claimReadyRenderer (! gainScratch_.isStereoVariant && gainScratch_.isBinaural);
+            gainScratch_.useHRTF = ! binauralRenderers[static_cast<size_t> (
+                activeRendererIndex.load (std::memory_order_acquire))].isSimpleMode();
+            claimed = true;
+        }
         dispatchCtx = &gainScratch_;
     }
     const RenderBlockContext& ctx = *dispatchCtx;
@@ -670,7 +679,8 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 
     // Engine-owned profile switching: pick up a ready renderer from the mailbox before the
     // dispatch. hrtfPath mirrors the dispatch chain below exactly.
-    claimReadyRenderer (! ctx.isStereoVariant && ctx.isBinaural && ctx.useHRTF);
+    if (! claimed)
+        claimReadyRenderer (! ctx.isStereoVariant && ctx.isBinaural && ctx.useHRTF);
 
     // BUG-01: the Simple path's cue filters hold state, which is only valid
     // while that path runs every block. Every other branch clears the flag so
@@ -681,9 +691,14 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     {
         renderStereoVariant (src, ctx, outL, outR, numOutCh);
     }
+    else if (ctx.isBinaural && ctx.engineSelectsHRTF)
+    {
+        // D-15: the engine owns the path choice and the Simple <-> HRTF blend.
+        ranSimple = renderBinauralWithProfileFade (src, ctx, outL, outR, numOutCh);
+    }
     else if (ctx.isBinaural && ctx.useHRTF)
     {
-        renderDirectBinauralHRTF (src, outL, outR, numOutCh);
+        renderDirectBinauralHRTF (src, outL, outR, numOutCh, activeRendererIndex.load (std::memory_order_acquire));
     }
     else if (ctx.isBinaural)
     {
@@ -741,21 +756,12 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
 }
 
 //==============================================================================
-// renderDirectBinauralHRTF — verbatim-transplanted from
-// OpenSpatialDelayProcessor::renderDirectBinauralHRTF. Engine-boundary change
-// only: reads pre-delayed/pre-fed-back/pre-Doppler-pitched mono buffers from
-// RenderSources instead of calling readObjectSample()/writeDelayLine()/
-// processFeedbackSample() itself (those stay OSD-side, D-02).
+// Renderer crossfade bookkeeping (shared by the legacy and the D-15 paths).
 //==============================================================================
-void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh)
+void RenderEngine::beginRendererFadeIfSwapped (int activeIdx, int numSamples)
 {
-    const int numSamples = sources.numSamples;
-
-    int currentActiveIdx = activeRendererIndex.load (std::memory_order_acquire);
-    auto& activeRenderer = binauralRenderers[static_cast<size_t> (currentActiveIdx)];
-
     // Detect renderer swap -> start crossfade.
-    if (currentActiveIdx != prevActiveRendererIdx_ && ! rendererXfading_)
+    if (activeIdx != prevActiveRendererIdx_ && ! rendererXfading_)
     {
         rendererXfading_ = true;
         rendererXfadeActive_.store (true, std::memory_order_release);
@@ -765,13 +771,53 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         rendererXfadeFromIdx_ = prevActiveRendererIdx_;
         prevRxFadeOut_ = 1.0f;
         prevRxFadeIn_ = 0.0f;
-        prevActiveRendererIdx_ = currentActiveIdx;
-        activeHRTFProfile_.store (activeRenderer.getActiveProfile(), std::memory_order_release);
+        prevActiveRendererIdx_ = activeIdx;
+        activeHRTFProfile_.store (binauralRenderers[static_cast<size_t> (activeIdx)].getActiveProfile(),
+                                  std::memory_order_release);
     }
+}
+
+void RenderEngine::endRendererFade()
+{
+    rendererXfading_ = false;
+    rendererXfadeSamplesDone_ = 0;
+    rendererXfadeLengthSamples_ = 0;
+    rendererXfadeActive_.store (false, std::memory_order_release);
+    // The renderer faded out is neither active nor fading any more: the worker may use it.
+    rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
+}
+
+//==============================================================================
+// renderDirectBinauralHRTF — verbatim-transplanted from
+// OpenSpatialDelayProcessor::renderDirectBinauralHRTF. Engine-boundary change
+// only: reads pre-delayed/pre-fed-back/pre-Doppler-pitched mono buffers from
+// RenderSources instead of calling readObjectSample()/writeDelayLine()/
+// processFeedbackSample() itself (those stay OSD-side, D-02).
+//
+// D-15 addition: with simpleCtx set, a Simple-mode renderer on either side of a fade is the
+// Woodworth path (see the header declaration); with it null nothing changes. A caller that sets
+// simpleCtx must have a fade running (renderBinauralWithProfileFade guarantees it).
+//==============================================================================
+bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh,
+                                              int activeIdx, const RenderBlockContext* simpleCtx)
+{
+    const int numSamples = sources.numSamples;
+
+    auto& activeRenderer = binauralRenderers[static_cast<size_t> (activeIdx)];
+
+    beginRendererFadeIfSwapped (activeIdx, numSamples);
+
+    // D-15: with simpleCtx set, a renderer in Simple mode is the Woodworth path, not a (silent)
+    // convolver. At most one side of a fade is Simple here (see renderBinauralWithProfileFade).
+    const bool activeIsSimple = simpleCtx != nullptr && activeRenderer.isSimpleMode();
+    const bool fromIsSimple = simpleCtx != nullptr && rendererXfading_
+                              && binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].isSimpleMode();
+    bool ranSimple = false;
 
     // Update per-source HRIRs at block boundary for any taps that moved
-    // (new renderer only — old renderer keeps its existing HRIRs during crossfade)
-    for (int t = 0; t < MAX_SOURCES; ++t)
+    // (new renderer only — old renderer keeps its existing HRIRs during crossfade).
+    // A Simple-mode active renderer has no HRIRs to update.
+    for (int t = 0; t < MAX_SOURCES && ! activeIsSimple; ++t)
     {
         if (sources.objectLive[t])
         {
@@ -842,18 +888,53 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     for (int t = 0; t < MAX_SOURCES; ++t)
         srcBufPtrs[t] = sourceAccumBufPtrs[t];
 
-    activeRenderer.renderSourceBuffers (srcBufPtrs, sourceEnabled, MAX_SOURCES,
-                                        numSamples, wetBufL_.data(), wetBufR_.data());
+    // The Woodworth path's destination when a side is Simple. simpleWetL_/R_ cover every block up
+    // to the prepared size; an oversized block is a prepare-contract violation (flagged above for
+    // the wet buffers), and then the Woodworth output goes straight into the buffer of its own
+    // side, which that violation path has already sized -- never an allocation here (DR-1).
+    const size_t ns = static_cast<size_t> (numSamples);
+    const bool simpleScratchFits = simpleWetL_.size() >= ns && simpleWetR_.size() >= ns;
+
+    // Active (new) side.
+    const float* newL = wetBufL_.data();
+    const float* newR = wetBufR_.data();
+    if (activeIsSimple)
+    {
+        float* dstL = simpleScratchFits ? simpleWetL_.data() : wetBufL_.data();
+        float* dstR = simpleScratchFits ? simpleWetR_.data() : wetBufR_.data();
+        renderSimpleBinauralWoodworth (sources, *simpleCtx, dstL, dstR, 2);
+        ranSimple = true;
+        newL = dstL;
+        newR = dstR;
+    }
+    else
+    {
+        activeRenderer.renderSourceBuffers (srcBufPtrs, sourceEnabled, MAX_SOURCES,
+                                            numSamples, wetBufL_.data(), wetBufR_.data());
+    }
 
     // Renderer-level crossfade.
     if (rendererXfading_)
     {
-        auto ns = static_cast<size_t> (numSamples);
         if (xfadeWetL_.size() < ns) { xfadeWetL_.resize (ns, 0.0f); xfadeWetR_.resize (ns, 0.0f); }
 
-        auto& oldRenderer = binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)];
-        oldRenderer.renderSourceBuffers (srcBufPtrs, sourceEnabled, MAX_SOURCES,
-                                          numSamples, xfadeWetL_.data(), xfadeWetR_.data());
+        const float* oldL = xfadeWetL_.data();
+        const float* oldR = xfadeWetR_.data();
+        if (fromIsSimple)
+        {
+            float* dstL = simpleScratchFits ? simpleWetL_.data() : xfadeWetL_.data();
+            float* dstR = simpleScratchFits ? simpleWetR_.data() : xfadeWetR_.data();
+            renderSimpleBinauralWoodworth (sources, *simpleCtx, dstL, dstR, 2);
+            ranSimple = true;
+            oldL = dstL;
+            oldR = dstR;
+        }
+        else
+        {
+            auto& oldRenderer = binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)];
+            oldRenderer.renderSourceBuffers (srcBufPtrs, sourceEnabled, MAX_SOURCES,
+                                              numSamples, xfadeWetL_.data(), xfadeWetR_.data());
+        }
 
         // End-of-block progress from elapsed samples, so the fade length does not depend on how
         // the host splits the stream into blocks.
@@ -875,22 +956,15 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         {
             gOut += fadeOutInc;
             gIn  += fadeInInc;
-            wetBufL_[static_cast<size_t> (i)] = xfadeWetL_[static_cast<size_t> (i)] * gOut
-                                              + wetBufL_[static_cast<size_t> (i)]     * gIn;
-            wetBufR_[static_cast<size_t> (i)] = xfadeWetR_[static_cast<size_t> (i)] * gOut
-                                              + wetBufR_[static_cast<size_t> (i)]     * gIn;
+            wetBufL_[static_cast<size_t> (i)] = oldL[i] * gOut + newL[i] * gIn;
+            wetBufR_[static_cast<size_t> (i)] = oldR[i] * gOut + newR[i] * gIn;
         }
 
         prevRxFadeOut_ = fadeOutGain;
         prevRxFadeIn_  = fadeInGain;
 
         if (rendererXfadeSamplesDone_ >= rendererXfadeLengthSamples_)
-        {
-            rendererXfading_ = false;
-            rendererXfadeActive_.store (false, std::memory_order_release);
-            // The renderer faded out is neither active nor fading any more: the worker may use it.
-            rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
-        }
+            endRendererFade();
     }
 
     // === PASS 3: Write raw wet signal to output (dry/wet mix handled by consumer) ===
@@ -901,6 +975,47 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     // them exactly as the pre-move code did (`buffer.clear(ch, ...)` on a
     // juce::AudioBuffer is a consumer-side concern, not engine state).
     (void) numOutCh;
+    return ranSimple;
+}
+
+//==============================================================================
+// renderBinauralWithProfileFade -- D-15. Called for every binaural block of a consumer that
+// set engineSelectsHRTF. The path is chosen from the engine's own active renderer, never from
+// the consumer's useHRTF:
+//   * Simple active, no fade       -> renderSimpleBinauralWoodworth, exactly the flag-off path
+//   * HRTF active, no fade         -> renderDirectBinauralHRTF, exactly the flag-off path
+//   * HRTF <-> HRTF fade           -> renderDirectBinauralHRTF, exactly the flag-off path
+//   * Simple <-> HRTF fade         -> renderDirectBinauralHRTF in blend mode: the Woodworth path
+//                                     runs once into simpleWetL_/R_ and is crossfaded with the
+//                                     convolution output on the renderer crossfade's ramp
+//==============================================================================
+bool RenderEngine::renderBinauralWithProfileFade (const RenderSources& sources, const RenderBlockContext& ctx,
+                                                   float* outL, float* outR, int numOutCh)
+{
+    const int activeIdx = activeRendererIndex.load (std::memory_order_acquire);
+    beginRendererFadeIfSwapped (activeIdx, sources.numSamples);
+
+    const bool activeSimple = binauralRenderers[static_cast<size_t> (activeIdx)].isSimpleMode();
+    const bool fromSimple = rendererXfading_
+                            && binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].isSimpleMode();
+
+    if (activeSimple && (! rendererXfading_ || fromSimple))
+    {
+        // Two Simple renderers render the same signal, so there is nothing to blend: end the fade
+        // and run the Woodworth path once.
+        if (rendererXfading_)
+            endRendererFade();
+        renderSimpleBinauralWoodworth (sources, ctx, outL, outR, numOutCh);
+        return true;
+    }
+
+    if (! rendererXfading_ || (! activeSimple && ! fromSimple))
+    {
+        renderDirectBinauralHRTF (sources, outL, outR, numOutCh, activeIdx);
+        return false;
+    }
+
+    return renderDirectBinauralHRTF (sources, outL, outR, numOutCh, activeIdx, &ctx);
 }
 
 //==============================================================================
