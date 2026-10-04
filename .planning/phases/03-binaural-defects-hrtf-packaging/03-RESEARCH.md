@@ -583,29 +583,36 @@ Not a rename/refactor/migration phase in the data sense, but DATA-01 moves where
 | A7 | Release-build tolerances will be no looser than Debug's | Code Examples | Re-measure in `build-release`; bounds above carry 3-10x margin |
 | A8 | The Simple<->HRTF dual-path crossfade is in scope of criterion 4 | Pattern 4 | If the user scopes criterion 4 to numbered profiles only, drop the dual-path render and the `engineSelectsHRTF` flag |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Is Simple (profile 0) part of "switching HRTF profile" for criterion 4?**
+All six were answered after this research by the user (CONTEXT.md D-13, D-15..D-18) or by the
+plans; each carries its resolution below.
+
+1. **Is Simple (profile 0) part of "switching HRTF profile" for criterion 4?** — **RESOLVED by D-15**
    - What we know: D-07 numbers Simple as profile 0; consumers' dropdown includes it; today Simple->HRTF steps 15-20x and HRTF->Simple dips ~5 dB.
    - Unclear: whether the user wants the dual-path crossfade (extra render work for ~85 ms per transition, a new opt-in flag).
    - Recommendation: include it (A8). It is the only way the roadmap sentence "no click, pop, or dropout" is true for every entry in the dropdown.
+   - **Resolution:** D-15 — yes, Simple <-> HRTF switching crossfades the two render paths behind a new default-off `RenderBlockContext` flag (`engineSelectsHRTF`, Plan 03-09).
 
-2. **The 64-sample ITD line (Pitfall 5) and KEMAR's audio-thread allocation (Pitfall 4).**
+2. **The 64-sample ITD line (Pitfall 5) and KEMAR's audio-thread allocation (Pitfall 4).** — **RESOLVED by D-16**
    - Known: ITD wrap is pre-existing OSD behaviour; fixing it changes shipped timing. The allocation fix is internal and safe.
    - Recommendation: fix the allocation here; pin the ITD behaviour with a 44.1/48 kHz characterisation test and file a SpatialCore issue for >= 88.2 kHz (Phase 5 or v2). Needs the user's yes/no.
+   - **Resolution:** D-16 — the user said yes: pin, don't fix (characterisation test in Plan 03-01, issue filed after approval in Plan 03-11); the KEMAR audio-thread resize is fixed in Plan 03-03.
 
-3. **Loader worker and the Phase 5 `easyHandle` race (RTSF-03).**
+3. **Loader worker and the Phase 5 `easyHandle` race (RTSF-03).** — **RESOLVED by the Plan 03-06 invariant and the Plan 03-07 proof**
    - Known: the worker writes only a free renderer's `HRTFDatabase`, and the audio thread reads it only after the mailbox acquire, so the race is not widened. The *pre-existing* race (a legacy consumer calling `setProfile` on the active renderer) is untouched.
    - Recommendation: state this invariant in the header and test it under TSAN if available (Phase 5 owns the TSAN gate).
+   - **Resolution:** adopted as recommended, within D-05 ("must not widen the existing easyHandle race"): Plan 03-06 makes the loader write only a free renderer (must-have truth and header doc), and Plan 03-07 proves it with a live render thread and a ThreadSanitizer run; the pre-existing race stays with Phase 5.
 
-4. **libmysofa v1.3.2 vs v1.3.5.**
+4. **libmysofa v1.3.2 vs v1.3.5.** — **RESOLVED by D-17**
    - Known: v1.3.5 hardens the parser against malformed input; DATA-01 makes user files reachable (admin-installed in v1).
    - Unclear: whether a bump moves any golden. 
    - Recommendation: keep v1.3.2 in Phase 3 (zero-regressions), add the bump as a separate evaluated task or a Phase 5 item, and record the exposure.
+   - **Resolution:** D-17 supersedes the recommendation — upgrade to v1.3.5 in Phase 3, evaluated in a disposable copy, with user sign-off on any moved golden before re-baselining (Plan 03-08).
 
-5. **Case sensitivity of "same filename wins" (D-08).** Pick: compare case-sensitively against the directory listing (`findChildFiles`) for identical behaviour on macOS and Windows, or accept the filesystem's rules. Recommendation: exact case via directory listing, since D-08 says "exactly matches".
+5. **Case sensitivity of "same filename wins" (D-08).** Pick: compare case-sensitively against the directory listing (`findChildFiles`) for identical behaviour on macOS and Windows, or accept the filesystem's rules. Recommendation: exact case via directory listing, since D-08 says "exactly matches". — **RESOLVED by D-18:** follow the filesystem (a normal file-exists lookup; no directory-listing exact-case comparison), superseding the recommendation and the word "exactly" in D-08 (Plan 03-05).
 
-6. **OSD#234 comment (D-13).** Text must be confirmed with the user at posting time. Draft: "SpatialCore's PartitionedConvolver is verified clean at 32/64/128 and irregular block sizes (direct-convolution oracle, 2e-7), and its IR warm-up/crossfade is now sample-based. The delay line and pitch shifter named above are still unchecked."
+6. **OSD#234 comment (D-13).** — **RESOLVED by D-13 and the Plan 03-11 approval gate:** the exact text is shown to the user and posted only on approval; the issue stays open. Text must be confirmed with the user at posting time. Draft: "SpatialCore's PartitionedConvolver is verified clean at 32/64/128 and irregular block sizes (direct-convolution oracle, 2e-7), and its IR warm-up/crossfade is now sample-based. The delay line and pitch shifter named above are still unchecked."
 
 ## Environment Availability
 

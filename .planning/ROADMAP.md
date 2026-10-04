@@ -149,7 +149,41 @@ proves it does not have.
 **Corrected premise**: the original roadmap said "no `.sofa` file and no BinaryData target exists
 anywhere in the tree, so DATA-01 is unstarted." Half wrong: 5 real HDF5 files (1.2–36.6 MB) are
 present and LFS-tracked with a CI guard against pointer stubs. Only the embedding is absent.
-**Plans**: TBD
+**Plans**: 11 plans (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+
+Plans:
+**Wave 1**
+- [ ] 03-01-PLAN.md — Test foundation: shared metrics header, dedicated PartitionedConvolver and BinauralRenderer test files, HRTF-path cue test on all 5 profiles, D-14 loudness record, D-16 ITD characterisation, signature and legacy-swap baselines; sole owner of tests/CMakeLists.txt *(wave 1)*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 03-02-PLAN.md — Binaural goldens as tolerance fingerprints (HUTUBS Debug failure closed), with negative controls *(wave 2)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 03-03-PLAN.md — BUG-02: sample-based convolver warm-up/crossfade (moving source at 32 as smooth as 512), steady-state block-plan match, KEMAR scratch sized off the audio thread *(wave 3)*
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 03-04-PLAN.md — BUG-01: Simple-path rear/up/down cue bank (D-01), ear-level front half bit-identical, no legacy switch (D-02) *(wave 4)*
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 03-05-PLAN.md — DATA-01 data side: SpatialCoreHRTFData embedding, SPATIALCORE_EMBED_ALL_HRTF, LFS guard, loadFromBinaryData, shared folder → embedded → error resolver (D-06..D-11, D-18) *(wave 5)*
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 03-06-PLAN.md — Engine-owned switching: setHRTFProfile, background loader, mailbox claim, status, latest-wins, prepare during load (D-04, D-05, D-06) *(wave 6)*
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 03-07-PLAN.md — Concurrency proof of engine-owned switching: render thread plus switching thread, shutdown mid-load, ThreadSanitizer run with every report classified (D-05) *(wave 7)*
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 03-08-PLAN.md — libmysofa v1.3.5 evaluated in a disposable copy; the pin moves only after the user's choice, and the user signs off before any reference number moves (D-17) *(wave 8)*
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 03-09-PLAN.md — Click-free switching at 32/64/128/512: sample-based renderer crossfade and the opt-in engineSelectsHRTF Simple ↔ HRTF crossfade (D-15) *(wave 9)*
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 03-10-PLAN.md — Docs truth (CLAUDE.md, README, guide, skills, PROJECT.md follow-ups) and phase gate: Debug + Release, KEMAR-only build, consumer-mode proof, DR-3 OSD build *(wave 10)*
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 03-11-PLAN.md — Outward actions after user approval: OSD#234 comment (D-13), ITD-wrap issue (D-16), close SpatialCore#15 (D-03), loudness tolerance (D-14); ends with the full suite in both build types *(wave 11)*
 
 ### Phase 4: Control Surface & UI
 
@@ -230,7 +264,7 @@ External Dependencies.
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
-| 3. Binaural Defects & HRTF Packaging | 0/TBD | Not started | - |
+| 3. Binaural Defects & HRTF Packaging | 0/11 | Planned | - |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
