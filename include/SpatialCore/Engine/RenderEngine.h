@@ -8,6 +8,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <SpatialCore/Core/Types.h>
+#include <SpatialCore/Engine/TripleBufferIndex.h>
 #include <SpatialCore/Algorithms/AllAlgorithms.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
@@ -26,8 +27,8 @@ namespace spatialcore
 // Wraps the 5 render paths formerly living as OpenSpatialDelayProcessor member
 // functions (renderDirectBinauralHRTF, renderSimpleBinauralWoodworth,
 // renderStereoVariant, renderAmbisonicsOutput, renderDiscreteSurround) into a
-// single renderBlock(...) entry point, and owns the glitch-free double-buffered
-// output-format switching machinery (locked IO-ownership decision — engine owns
+// single renderBlock(...) entry point, and owns the glitch-free three-slot
+// (wait-free TripleBufferIndex) output-format switching machinery (locked IO-ownership decision — engine owns
 // format switching, consumers just call setOutputFormat(...)).
 //
 // ENGINE BOUNDARY (D-02, locked): the engine receives per-object mono buffers
@@ -149,11 +150,14 @@ struct RenderBlockContext
     int ambiOrder = 0;
     double sampleRate = 48000.0;
 
-    // Active output format + resolved surround layout for this block
-    // (already resolved via getActiveLayout() by the consumer — the format-
-    // setting API below is what POPULATES this state across blocks; the
-    // per-block snapshot is still handed in explicitly to keep renderBlock
-    // a pure function of its inputs for testability).
+    // Active output format + dispatch flags for this block. By default the
+    // consumer resolves these itself (the format-setting API below is what
+    // POPULATES the engine's layout state across blocks; the per-block
+    // snapshot is still handed in explicitly to keep renderBlock a pure
+    // function of its inputs for testability). When engineDerivesDispatch is
+    // set (SC-16, below), the engine overwrites activeFormat, isStereoVariant,
+    // isBinaural, isAmbiOutput and ambiOrder from its own layout snapshot and
+    // the consumer's values for those five fields are ignored.
     OutputFormat activeFormat = OutputFormat::Binaural;
     bool isStereoVariant = false;
     bool isBinaural = false;
@@ -169,6 +173,17 @@ struct RenderBlockContext
     // Scoped strictly to objChannelGains/objGains: objGainL/objGainR (stereo-
     // variant gains) stay consumer-side per the comment above (D-06).
     bool engineComputesGains = false;
+
+    // SC-16: when true, renderBlock() acquires the engine's layout once for
+    // the block and derives activeFormat, isStereoVariant, isBinaural,
+    // isAmbiOutput and ambiOrder from that snapshot's format, so the dispatch
+    // and the layout it renders against can never come from two different
+    // output-format switches. The consumer's values for those five fields are
+    // ignored. useHRTF, stereoMode, sampleRate, objGainL and objGainR stay
+    // consumer-supplied. Defaults false so every existing caller — including
+    // SpatialCore's own RenderEngineTests — sees byte-for-byte unchanged
+    // behaviour; this is additive, not a major bump.
+    bool engineDerivesDispatch = false;
 };
 
 //==============================================================================
@@ -221,11 +236,24 @@ public:
                        int numOutCh);
 
     //--------------------------------------------------------------------------
-    // Format-setting API — owns the glitch-free double-buffered atomic-swap
-    // machinery moved from OSD's OutputLayoutState/activateLayout (locked
-    // IO-ownership decision: the engine owns glitch-free format switching so
-    // every future consumer, e.g. OSP, gets it for free). Mirrors the
-    // pre-move activateLayout(OutputFormat) + getActiveLayout() shape.
+    // Format-setting API — owns the glitch-free three-slot layout handoff
+    // (a wait-free TripleBufferIndex, SC-16) that replaced the two-slot swap
+    // moved from OSD's OutputLayoutState/activateLayout (locked IO-ownership
+    // decision: the engine owns glitch-free format switching so every future
+    // consumer, e.g. OSP, gets it for free).
+    //
+    // setOutputFormat() thread contract:
+    //   - message thread only, and single-writer: never call it from two
+    //     threads at once;
+    //   - allocating (it builds the speaker layout, decode matrix and VBAP
+    //     triplets), so never from the audio thread;
+    //   - safe to call any number of times between two blocks: the layout is
+    //     filled in a slot the audio thread does not hold, superseded calls are
+    //     skipped whole, and the next block renders the last call.
+    //
+    // getActiveOutputFormat() / getActiveLayout() are the WRITER-thread view:
+    // the most recently published layout, callable only from the thread that
+    // calls setOutputFormat(), never from the audio thread.
     //--------------------------------------------------------------------------
     void setOutputFormat (OutputFormat format);
     OutputFormat getActiveOutputFormat() const;
@@ -249,6 +277,10 @@ public:
         // (VBAPTriplet::kind(); empty for flat and non-speaker formats).
         std::vector<VBAPTriplet> vbapTriplets;
     };
+    // Writer-thread view: the most recently published layout, callable only
+    // from the thread that calls setOutputFormat(). Not a per-block snapshot —
+    // the audio thread obtains its layout once per block inside renderBlock()
+    // (SC-16) and must never use this accessor.
     const LayoutState& getActiveLayout() const;
 
     //--------------------------------------------------------------------------
@@ -290,6 +322,7 @@ private:
     void renderAmbisonicsOutput (const RenderSources& sources, const RenderBlockContext& blockCtx,
                                   float* const* outChannels, int numOutCh);
     void renderDiscreteSurround (const RenderSources& sources, const RenderBlockContext& blockCtx,
+                                  const LayoutState& layout,
                                   float* const* outChannels, int numOutCh);
 
     void activateLayout (OutputFormat format);
@@ -301,7 +334,22 @@ private:
     // live object. Does not touch objGainL/objGainR/stereoMode (D-06 — those
     // stay consumer-side, not a SpatializationAlgorithm concern).
     //--------------------------------------------------------------------------
-    void computeObjectGains (const RenderSources& sources, RenderBlockContext& ctx);
+    void computeObjectGains (const RenderSources& sources, const LayoutState& layout,
+                              RenderBlockContext& ctx);
+
+    //--------------------------------------------------------------------------
+    // SC-16: the one place a block obtains its layout. renderBlock() calls
+    // this exactly once and passes the same snapshot to the dispatch
+    // derivation, the SC-13 gain computation and the discrete-surround
+    // speaker routing; no render path reads the active-layout state again.
+    //--------------------------------------------------------------------------
+    const LayoutState& acquireBlockLayout();
+
+    // SC-16: overwrites the five dispatch fields in ctx from layout.format.
+    // The format is clamped into [0, NUM_OUTPUT_FORMATS - 1] before it is
+    // used as an OutputFormatRegistry index (the registry subscript has no
+    // bounds check of its own).
+    static void deriveDispatchFromLayout (const LayoutState& layout, RenderBlockContext& ctx);
 
     //--------------------------------------------------------------------------
     // D-06(a), extended by D-19(ii): hold-last-good position sanitiser.
@@ -384,14 +432,18 @@ private:
     float cachedMaxrE[kMaxAmbiOrder + 1] = {};
 
     // --- Discrete-surround LFE generation filter (stateful IIR — persists
-    //     across blocks, must live with the render path that uses it) ---
-    juce::dsp::IIR::Filter<float> lfeFilter;
+    //     across blocks, must live with the render path that uses it).
+    //     Double precision: a float32 120 Hz biquad enters a platform-dependent
+    //     rounding limit cycle (see prepare()). ---
+    juce::dsp::IIR::Filter<double> lfeFilter;
 
-    // --- Output-format double-buffered layout state (glitch-free swap,
-    //     moved INTO the engine per the locked IO-ownership decision) ---
-    LayoutState layoutBuffers[2];
-    std::atomic<int> activeLayoutIndex { 0 };
-    int prepareLayoutIndex = 1;
+    // --- Output-format layout state (glitch-free three-slot handoff, moved
+    //     INTO the engine per the locked IO-ownership decision). The message
+    //     thread fills layoutBuffers[layoutSlots_.writeSlot()] then publishes;
+    //     the audio thread reads layoutBuffers[layoutSlots_.acquireLatest()]
+    //     once per block. The writer never holds the reader's slot (SC-16). ---
+    LayoutState layoutBuffers[TripleBufferIndex::kNumSlots];
+    TripleBufferIndex layoutSlots_;
 
     // --- SC-13: engine-owned gain computation state ---
     // Algorithms are stateless per the project convention, so a plain member

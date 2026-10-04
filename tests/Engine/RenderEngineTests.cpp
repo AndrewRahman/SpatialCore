@@ -361,6 +361,254 @@ TEST_CASE ("RenderEngine: escape hatches expose the underlying BinauralRenderer 
     CHECK (engine.getActiveRendererIndexAtomic().load() == prepareIdx);
 }
 
+// ============================================================================
+// SC-16 -- per-block layout snapshot, opt-in dispatch derivation and the
+// three-slot layout handoff. Single-threaded on purpose: these pin the
+// contract's semantics (which path renders, which layout wins), not the
+// concurrency, which OpenSpatialPanner's [switchstress] test and ThreadSanitizer
+// recipe cover. No std::thread here, so no thread-library link is needed.
+// ============================================================================
+namespace
+{
+    constexpr int kSc16MaxCh = MAX_SPEAKERS;
+
+    // A Quad rear-left speaker (azimuth +135 deg, channel 2 in the Quad layout;
+    // positive azimuth = left in SpatialCore). An object placed there lands
+    // mostly on that speaker, so energy on channel 2 proves a surround render
+    // against the Quad layout.
+    constexpr float kQuadRearLeftAzimuthDeg = 135.0f;
+    constexpr int kQuadRearLeftChannel = 2;
+
+    struct Sc16Output
+    {
+        std::vector<std::vector<float>> storage = std::vector<std::vector<float>> (
+            static_cast<size_t> (kSc16MaxCh), std::vector<float> (kBlockSize, 0.0f));
+        float* ptrs[kSc16MaxCh] = {};
+
+        Sc16Output()
+        {
+            for (int c = 0; c < kSc16MaxCh; ++c)
+                ptrs[c] = storage[static_cast<size_t> (c)].data();
+        }
+
+        void clear()
+        {
+            for (auto& ch : storage)
+                for (float& v : ch)
+                    v = 0.0f;
+        }
+
+        // True when every channel from firstCh up is exactly zero.
+        bool silentFrom (int firstCh) const
+        {
+            for (int c = firstCh; c < kSc16MaxCh; ++c)
+                for (float v : storage[static_cast<size_t> (c)])
+                    if (v != 0.0f)
+                        return false;
+            return true;
+        }
+
+        bool channelHasSignal (int ch) const
+        {
+            for (float v : storage[static_cast<size_t> (ch)])
+                if (v != 0.0f)
+                    return true;
+            return false;
+        }
+
+        bool allChannelsFinite() const
+        {
+            for (const auto& ch : storage)
+                for (float v : ch)
+                    if (! std::isfinite (v))
+                        return false;
+            return true;
+        }
+    };
+
+    // Renders two consecutive blocks so the gain ramp from zero has settled,
+    // leaving the second block's output in `out`.
+    void renderTwoBlocks (RenderEngine& engine, const RenderSources& sources,
+                          const RenderBlockContext& ctx, Sc16Output& out)
+    {
+        for (int block = 0; block < 2; ++block)
+        {
+            out.clear();
+            engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+        }
+    }
+
+    RenderBlockContext makeSc16Context (bool derivesDispatch)
+    {
+        RenderBlockContext ctx;
+        ctx.sampleRate = kSampleRate;
+        ctx.engineComputesGains = true;   // surround and binaural paths need real gains
+        ctx.engineDerivesDispatch = derivesDispatch;
+        return ctx;
+    }
+}
+
+TEST_CASE ("RenderEngine: engineDerivesDispatch renders the active layout's path even when the consumer's flags disagree",
+           "[engine][format-switch][sc16]")
+{
+    SourceFixture fixture;
+
+    SECTION ("Binaural layout, consumer claims discrete surround: only channels 0 and 1 carry signal")
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Binaural);
+
+        RenderSources sources = fixture.makeSources();
+        RenderBlockContext ctx = makeSc16Context (true);
+        // Consumer's dispatch flags all false == "discrete surround", which
+        // the Binaural layout (no speakers) cannot render.
+        ctx.isBinaural = false;
+        ctx.isStereoVariant = false;
+        ctx.isAmbiOutput = false;
+
+        Sc16Output out;
+        renderTwoBlocks (engine, sources, ctx, out);
+
+        CHECK (out.allChannelsFinite());
+        CHECK (out.channelHasSignal (0));
+        CHECK (out.channelHasSignal (1));
+        CHECK (out.silentFrom (2));
+    }
+
+    SECTION ("Quad layout, consumer claims binaural: a rear-placed object reaches a Quad rear channel")
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Quad);
+
+        RenderSources sources = fixture.makeSources();
+        sources.objects[0].azimuthDeg = kQuadRearLeftAzimuthDeg;
+
+        RenderBlockContext ctx = makeSc16Context (true);
+        ctx.isBinaural = true;            // wrong for Quad; must be overwritten
+        ctx.activeFormat = OutputFormat::Binaural;
+
+        Sc16Output out;
+        renderTwoBlocks (engine, sources, ctx, out);
+
+        CHECK (out.allChannelsFinite());
+        CHECK (out.channelHasSignal (kQuadRearLeftChannel));
+    }
+}
+
+TEST_CASE ("RenderEngine: with engineDerivesDispatch false the consumer's dispatch flags are honoured verbatim",
+           "[engine][format-switch][sc16]")
+{
+    SourceFixture fixture;
+
+    SECTION ("Quad layout, consumer claims binaural: output lands only on channels 0 and 1")
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Quad);
+
+        RenderSources sources = fixture.makeSources();
+        sources.objects[0].azimuthDeg = kQuadRearLeftAzimuthDeg;
+
+        RenderBlockContext ctx = makeSc16Context (false);
+        ctx.isBinaural = true;
+        ctx.activeFormat = OutputFormat::Binaural;
+
+        Sc16Output out;
+        renderTwoBlocks (engine, sources, ctx, out);
+
+        CHECK (out.allChannelsFinite());
+        CHECK (out.channelHasSignal (0));
+        CHECK (out.silentFrom (2));
+        CHECK_FALSE (out.channelHasSignal (kQuadRearLeftChannel));
+    }
+
+    SECTION ("Binaural layout, consumer claims discrete surround: the Binaural layout has no speakers, so nothing renders")
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Binaural);
+
+        RenderSources sources = fixture.makeSources();
+        RenderBlockContext ctx = makeSc16Context (false);
+        ctx.isBinaural = false;
+        ctx.isStereoVariant = false;
+        ctx.isAmbiOutput = false;
+
+        Sc16Output out;
+        renderTwoBlocks (engine, sources, ctx, out);
+
+        CHECK (out.allChannelsFinite());
+        CHECK (out.silentFrom (0));
+    }
+}
+
+TEST_CASE ("RenderEngine: several setOutputFormat calls with no block between them render the last one",
+           "[engine][format-switch][sc16]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    sources.objects[0].azimuthDeg = kQuadRearLeftAzimuthDeg;
+
+    // The consumer's flags are deliberately left at their defaults: the
+    // engine must derive the dispatch from whichever layout it acquires.
+    const RenderBlockContext ctx = makeSc16Context (true);
+
+    // Back-to-back switches with no block rendered in between (the sequence
+    // that used to rewrite the slot being rendered).
+    engine.setOutputFormat (OutputFormat::Quad);
+    engine.setOutputFormat (OutputFormat::Binaural);
+    engine.setOutputFormat (OutputFormat::Surround5_1);
+    engine.setOutputFormat (OutputFormat::Binaural);
+
+    CHECK (engine.getActiveOutputFormat() == OutputFormat::Binaural);
+    CHECK (engine.getActiveLayout().format == OutputFormat::Binaural);
+
+    Sc16Output out;
+    renderTwoBlocks (engine, sources, ctx, out);
+
+    CHECK (out.allChannelsFinite());
+    CHECK (out.channelHasSignal (0));
+    CHECK (out.channelHasSignal (1));
+    CHECK (out.silentFrom (2));
+
+    // And again from a rendered state: Binaural -> Quad is picked up by the
+    // next block, which carries energy on a Quad rear channel.
+    engine.setOutputFormat (OutputFormat::Quad);
+    CHECK (engine.getActiveOutputFormat() == OutputFormat::Quad);
+
+    renderTwoBlocks (engine, sources, ctx, out);
+
+    CHECK (out.allChannelsFinite());
+    CHECK (out.channelHasSignal (kQuadRearLeftChannel));
+}
+
+TEST_CASE ("RenderEngine: a block rendered before any setOutputFormat uses the default binaural layout",
+           "[engine][format-switch][sc16]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    // No setOutputFormat() call at all.
+    CHECK (engine.getActiveOutputFormat() == OutputFormat::Binaural);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+
+    Sc16Output out;
+    renderTwoBlocks (engine, sources, ctx, out);
+
+    CHECK (out.allChannelsFinite());
+    CHECK (out.channelHasSignal (0));
+    CHECK (out.channelHasSignal (1));
+    CHECK (out.silentFrom (2));
+}
+
 // ----------------------------------------------------------------------------
 // D-06(a) extended by D-19(ii): RenderEngine holds the last finite azimuth,
 // elevation and distance per object slot, field by field, and substitutes it for

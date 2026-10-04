@@ -28,10 +28,22 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
 {
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (maxBlockSize), 1 };
 
-    // v0.2: Configure LFE low-pass filter (120 Hz, 2nd order Butterworth)
+    // v0.2: Configure LFE low-pass filter (120 Hz, 2nd order Butterworth).
+    // Double precision state/coefficients: at 120 Hz / 48 kHz the poles sit
+    // very close to z=1 and a float32 biquad amplifies rounding noise to ~1e-6,
+    // which under block-periodic input falls into a rounding limit cycle whose
+    // shape is compiler/platform dependent (macOS vs MSVC differ). Double keeps
+    // the LFE deterministic across platforms; output is still rounded to float.
+    //
+    // Order matters: a default-constructed Filter holds order-1 coefficients,
+    // makeLowPass is order 2. Filter::check() (run on every processSample)
+    // calls reset() -> memory.malloc() whenever the coefficient order differs
+    // from the state order. Assigning the order-2 coefficients FIRST means
+    // prepare()/reset() size the state for order 2 here, so the audio thread
+    // never reallocates on its first block.
+    *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<double>::makeLowPass (sampleRate, 120.0);
     lfeFilter.prepare (spec);
     lfeFilter.reset();
-    *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<float>::makeLowPass (sampleRate, 120.0f);
 
     // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
     for (int obj = 0; obj < MAX_SOURCES; ++obj)
@@ -129,15 +141,25 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // computeGains directly (RESEARCH F7); this does not replace them.
     const RenderSources& src = sanitizeSources (sources);
 
-    // SC-13: when the consumer opts in, compute objChannelGains/objGains
-    // internally into a scratch copy and dispatch on that instead — the
-    // dispatch chain itself is unchanged (selected once via pointer so it is
-    // never duplicated or reordered, per D-09).
+    // SC-16: one layout snapshot per block. It feeds the dispatch derivation,
+    // the SC-13 gain computation and the discrete-surround speaker routing
+    // below, so a message-thread format switch landing mid-block cannot pair
+    // one format's dispatch with another format's layout.
+    const LayoutState& layout = acquireBlockLayout();
+
+    // SC-13 / SC-16: when the consumer opts in to either, work on a scratch
+    // copy of the context (an assignment into an existing member, no
+    // allocation) and dispatch on that instead. The dispatch chain itself is
+    // unchanged (selected once via pointer so it is never duplicated or
+    // reordered, per D-09).
     const RenderBlockContext* dispatchCtx = &blockCtx;
-    if (blockCtx.engineComputesGains)
+    if (blockCtx.engineComputesGains || blockCtx.engineDerivesDispatch)
     {
         gainScratch_ = blockCtx;
-        computeObjectGains (src, gainScratch_);
+        if (blockCtx.engineDerivesDispatch)
+            deriveDispatchFromLayout (layout, gainScratch_);
+        if (blockCtx.engineComputesGains)
+            computeObjectGains (src, layout, gainScratch_);
         dispatchCtx = &gainScratch_;
     }
     const RenderBlockContext& ctx = *dispatchCtx;
@@ -163,7 +185,7 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     }
     else
     {
-        renderDiscreteSurround (src, ctx, outChannels, numOutCh);
+        renderDiscreteSurround (src, ctx, layout, outChannels, numOutCh);
     }
 }
 
@@ -174,9 +196,9 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 // sets RenderBlockContext::engineComputesGains. Does not read or write
 // objGainL/objGainR/stereoMode — those stay consumer-side (D-06).
 //==============================================================================
-void RenderEngine::computeObjectGains (const RenderSources& sources, RenderBlockContext& ctx)
+void RenderEngine::computeObjectGains (const RenderSources& sources, const LayoutState& ls,
+                                        RenderBlockContext& ctx)
 {
-    const auto& ls = getActiveLayout();
     LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
 
     for (int t = 0; t < MAX_SOURCES; ++t)
@@ -565,10 +587,11 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
 //==============================================================================
 void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
                                              const RenderBlockContext& blockCtx,
+                                             const LayoutState& layout,
                                              float* const* outChannels, int numOutCh)
 {
     const int numSamples = sources.numSamples;
-    const auto& surLayout = getActiveLayout().layout;
+    const auto& surLayout = layout.layout;
     const int numSpeakers = surLayout.numSpeakers;
     const int lfeIdx = surLayout.lfeChannelIndex;
 
@@ -606,7 +629,7 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 
         // LFE generation — low-pass filtered mono sum at -10 dB (raw, no dw/outGain)
         if (lfeIdx >= 0 && lfeIdx < numOutCh && outChannels[lfeIdx] != nullptr)
-            outChannels[lfeIdx][s] = lfeFilter.processSample (wetMono) * 0.316f;
+            outChannels[lfeIdx][s] = static_cast<float> (lfeFilter.processSample (static_cast<double> (wetMono))) * 0.316f;
     }
 
     // Store current channel gains as previous for next block (distGain
@@ -617,8 +640,8 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 }
 
 //==============================================================================
-// Output-format double-buffered switching (glitch-free swap, moved INTO the
-// engine per the locked IO-ownership decision). Verbatim-transplanted from
+// Output-format three-slot switching (glitch-free handoff via TripleBufferIndex,
+// moved INTO the engine per the locked IO-ownership decision). Verbatim-transplanted from
 // OpenSpatialDelayProcessor::activateLayout; the order-3 speaker decode now
 // comes from AmbisonicsCodec::getDecodeMatrix, the library's one decoder
 // (D-09), pinned to the transplanted original by the [ambi-pin] test.
@@ -635,12 +658,35 @@ OutputFormat RenderEngine::getActiveOutputFormat() const
 
 const RenderEngine::LayoutState& RenderEngine::getActiveLayout() const
 {
-    return layoutBuffers[static_cast<size_t> (activeLayoutIndex.load (std::memory_order_acquire))];
+    // Writer-thread view: the slot most recently published. Never reached from
+    // the audio thread.
+    return layoutBuffers[static_cast<size_t> (layoutSlots_.lastPublishedSlot())];
+}
+
+const RenderEngine::LayoutState& RenderEngine::acquireBlockLayout()
+{
+    // The one audio-thread entry into the handoff: wait-free, at most one
+    // atomic exchange per block.
+    return layoutBuffers[static_cast<size_t> (layoutSlots_.acquireLatest())];
+}
+
+void RenderEngine::deriveDispatchFromLayout (const LayoutState& layout, RenderBlockContext& ctx)
+{
+    // T-02-23 / ASVS V5: bound the format before it indexes the registry.
+    const int clamped = juce::jlimit (0, NUM_OUTPUT_FORMATS - 1, static_cast<int> (layout.format));
+    const auto fmt = static_cast<OutputFormat> (clamped);
+    const auto& info = OutputFormatRegistry::getInfo (fmt);
+
+    ctx.activeFormat = fmt;
+    ctx.ambiOrder = info.ambiOrder;
+    ctx.isStereoVariant = info.isStereoVariant;
+    ctx.isBinaural = (fmt == OutputFormat::Binaural);
+    ctx.isAmbiOutput = info.isAmbisonicsOutput;
 }
 
 void RenderEngine::activateLayout (OutputFormat format)
 {
-    auto& buf = layoutBuffers[static_cast<size_t> (prepareLayoutIndex)];
+    auto& buf = layoutBuffers[static_cast<size_t> (layoutSlots_.writeSlot())];
     buf.format = format;
 
     switch (format)
@@ -676,8 +722,7 @@ void RenderEngine::activateLayout (OutputFormat format)
             buf.layout.totalChannels = OutputFormatRegistry::table[static_cast<size_t> (fmtIdx)].requiredChannels;
             buf.ambiNumSpeakers = 0;
             buf.vbapTriplets.clear();
-            activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
-            prepareLayoutIndex = 1 - prepareLayoutIndex;
+            layoutSlots_.publish();
             return;
         }
 
@@ -690,8 +735,7 @@ void RenderEngine::activateLayout (OutputFormat format)
             buf.layout.totalChannels = 2;
             buf.ambiNumSpeakers = 0;
             buf.vbapTriplets.clear();
-            activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
-            prepareLayoutIndex = 1 - prepareLayoutIndex;
+            layoutSlots_.publish();
             return;
     }
 
@@ -737,9 +781,9 @@ void RenderEngine::activateLayout (OutputFormat format)
     // Message/prepare thread: allocation is fine here.
     appendLowerHemisphereTriplets (buf.layout, buf.vbapTriplets);
 
-    // Atomic swap: audio thread now reads the fully-populated buffer
-    activeLayoutIndex.store (prepareLayoutIndex, std::memory_order_release);
-    prepareLayoutIndex = 1 - prepareLayoutIndex;
+    // Publish: the audio thread picks up the fully-populated slot at its next
+    // block; a publish superseded before then is skipped whole.
+    layoutSlots_.publish();
 }
 
 } // namespace spatialcore
