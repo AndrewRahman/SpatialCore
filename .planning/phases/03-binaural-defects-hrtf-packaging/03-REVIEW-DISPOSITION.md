@@ -5,83 +5,83 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
-    title: "Decoded IR size is not bounded, so a file under the 256 MB cap can force a multi-GB allocation"
+    disposition: fixed
+    title: "The decoded-size bound runs after libmysofa has already resampled, so a file's declared sample rate still drives an unbounded allocation"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The loader thread has no failure path, so one throwing load leaves the engine \"Loading\" forever"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The size cap is a stat-then-read check, so special files and symlinks bypass it"
   - id: WR-04
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`prepare()` changed contract (stops and restarts a thread, can block 15 s) but is undocumented and unsynchronised with `setHRTFProfile`"
   - id: WR-05
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The 64-sample ITD line wraps real SOFA delays, and the characterisation tests pin the defect"
   - id: WR-06
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`engineSelectsHRTF` without `engineComputesGains` renders silence on the Simple path, with no guard"
   - id: WR-07
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Legacy (flag-off) consumers see output changes, which sits uneasily with the \"ALWAYS maintain backward compatibility\" rule"
   - id: IN-01
     severity: info
-    disposition: open
-    title: "Docs state \"SOFA load up to 36 MB\" but the code accepts shared files up to 256 MB"
+    disposition: fixed
+    title: "Custom-file limits documentation misstates the shipped IR length and omits the combined float budget"
   - id: IN-02
     severity: info
-    disposition: open
-    title: "\"No lock, allocation or file access is ever on the audio side\" is stronger than the code"
+    disposition: fixed
+    title: "POSIX open lacks O_NOCTTY"
   - id: IN-03
     severity: info
-    disposition: open
-    title: "Worker polls every 2 ms indefinitely when the audio thread is not rendering"
+    disposition: fixed
+    title: "The throw hook sits in the consumer-facing header, and two tests have no watchdog"
   - id: IN-04
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`loadFromFile` read failure leaves a stale handle behind `loaded = false`"
   - id: IN-05
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Test provenance comment names libmysofa v1.3.2; the tree pins v1.3.5"
   - id: IN-06
     severity: info
-    disposition: open
+    disposition: fixed
     title: "`SKILL.md` and `SimpleBinauralCues.h` disagree on the measured overhead figure"
   - id: IN-07
     severity: info
-    disposition: open
+    disposition: fixed
     title: "Test reliability, wall-clock assertions and CMake edge case"
-open: 14
+open: 0
 total: 14
-recorded: 2026-10-04T17:44:48.495Z
+recorded: 2026-10-04T21:27:14.687Z
 ---
 
 # Phase 03: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
-| WR-04 | warning | open | - |
-| WR-05 | warning | open | - |
-| WR-06 | warning | open | - |
-| WR-07 | warning | open | - |
-| IN-01 | info | open | - |
-| IN-02 | info | open | - |
-| IN-03 | info | open | - |
-| IN-04 | info | open | - |
-| IN-05 | info | open | - |
-| IN-06 | info | open | - |
-| IN-07 | info | open | - |
+| WR-01 | warning | fixed | 03-REVIEW-FIX.iter4.md (not in the current review) |
+| WR-02 | warning | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| WR-03 | warning | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| WR-04 | warning | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| WR-05 | warning | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| WR-06 | warning | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| WR-07 | warning | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| IN-01 | info | fixed | 03-REVIEW-FIX.md (not in the current review) |
+| IN-02 | info | fixed | 03-REVIEW-FIX.md (not in the current review) |
+| IN-03 | info | fixed | 03-REVIEW-FIX.iter4.md (not in the current review) |
+| IN-04 | info | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| IN-05 | info | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| IN-06 | info | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
+| IN-07 | info | fixed | 03-REVIEW-FIX.iter2.md (not in the current review) |
 
 Dispositions: `open` (recorded, not yet triaged), `fixed`, `skipped`, `deferred`.
 Set `deferred` by hand and put the reason in the Source cell; both are preserved. A `|` in the reason is kept as prose and escaped on the next run.
