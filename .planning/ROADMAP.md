@@ -149,7 +149,7 @@ proves it does not have.
 **Corrected premise**: the original roadmap said "no `.sofa` file and no BinaryData target exists
 anywhere in the tree, so DATA-01 is unstarted." Half wrong: 5 real HDF5 files (1.2–36.6 MB) are
 present and LFS-tracked with a CI guard against pointer stubs. Only the embedding is absent.
-**Plans**: 6/11 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 7/11 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -171,7 +171,7 @@ Plans:
 - [x] 03-06-PLAN.md — Engine-owned switching: setHRTFProfile, background loader, mailbox claim, status, latest-wins, prepare during load (D-04, D-05, D-06) *(wave 6)*
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 03-07-PLAN.md — Concurrency proof of engine-owned switching: render thread plus switching thread, shutdown mid-load, ThreadSanitizer run with every report classified (D-05) *(wave 7)*
+- [x] 03-07-PLAN.md — Concurrency proof of engine-owned switching: render thread plus switching thread, shutdown mid-load, ThreadSanitizer run with every report classified (D-05) *(wave 7)*
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 03-08-PLAN.md — libmysofa v1.3.5 evaluated in a disposable copy; the pin moves only after the user's choice, and the user signs off before any reference number moves (D-17) *(wave 8)*
@@ -264,7 +264,7 @@ External Dependencies.
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
-| 3. Binaural Defects & HRTF Packaging | 6/11 | In Progress|  |
+| 3. Binaural Defects & HRTF Packaging | 7/11 | In Progress|  |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
