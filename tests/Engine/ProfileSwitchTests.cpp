@@ -1006,7 +1006,7 @@ namespace
         }
 
         RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);
-        (void) engineSelectsHRTF;   // wired to RenderBlockContext::engineSelectsHRTF in the Simple <-> HRTF cases
+        ctx.engineSelectsHRTF = engineSelectsHRTF;
 
         const std::vector<float> input = noiseInput ? pinkNoise (kSwitchRunTotal, 5, 0.25f)
                                                     : sineWave (kSwitchRunTotal, 440.0, kRate, 0.5f);
@@ -1152,4 +1152,382 @@ TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 sam
             CHECK (static_cast<size_t> (blocks) * static_cast<size_t> (blockSize) == expectedTransition (blockSize));
         }
     }
+}
+
+// ============================================================================
+// engineSelectsHRTF (D-15): the engine picks the render path itself and crossfades
+// Simple and HRTF. Plan 03-09, Task 2.
+// ============================================================================
+namespace
+{
+    /** Copies the real SOFA file of each listed profile into `dir` under the name the shared-folder
+        lookup expects, so a case does not depend on which profiles this build embeds. */
+    bool copyProfilesInto (const juce::File& dir, std::initializer_list<int> profiles)
+    {
+        for (const int profile : profiles)
+            if (! getSofaFile (testProfileFile (profile)).copyFileTo (dir.getChildFile (kHRTFProfiles[profile].fileName)))
+                return false;
+        return true;
+    }
+
+    /** Appends both channels of the block `live` just rendered. */
+    void appendBlock (const LiveRender& live, std::vector<float>& left, std::vector<float>& right)
+    {
+        left.insert (left.end(), live.out[0].begin(), live.out[0].end());
+        right.insert (right.end(), live.out[1].begin(), live.out[1].end());
+    }
+
+    /** Number of samples that differ (compared with ==) and the first one, for the failure message. */
+    size_t countMismatches (const std::vector<float>& a, const std::vector<float>& b, size_t& first)
+    {
+        size_t count = 0;
+        first = 0;
+        if (a.size() != b.size())
+            return std::max (a.size(), b.size());
+        for (size_t i = 0; i < a.size(); ++i)
+            if (! (a[i] == b[i]))
+            {
+                if (count == 0)
+                    first = i;
+                ++count;
+            }
+        return count;
+    }
+
+    RenderBlockContext selectsHRTFContext (bool consumerUseHRTF)
+    {
+        RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        ctx.engineSelectsHRTF = true;
+        ctx.useHRTF = consumerUseHRTF;   // ignored by the engine; the tests set it wrong on purpose
+        return ctx;
+    }
+
+    void prepareLegacy (RenderEngine& engine)
+    {
+        engine.prepare (kRate, 512);
+        engine.setOutputFormat (OutputFormat::Binaural);
+    }
+}
+
+TEST_CASE ("Profile switch: with engineSelectsHRTF a switch between Simple and an HRTF profile is click-free and dropout-free",
+           "[hrtf-switch][simple]")
+{
+    // The real files go into a temporary shared folder, so every profile works in every build.
+    const TempFolder folder ("simple", true);
+    REQUIRE (copyProfilesInto (folder.dir, { 3, 5 }));
+
+    for (const int profile : { 5, 3 })
+    {
+        for (const int blockSize : { 32, 64, 128, 512 })
+        {
+            INFO ("profile " << profile << " block size " << blockSize);
+
+            const SwitchMetrics toHRTF = measureProfileSwitch (blockSize, 0, profile, true, folder.dir);
+            REQUIRE (toHRTF.ok);
+            reportSwitch ("engineSelectsHRTF", blockSize, 0, profile, toHRTF);
+            CHECK (toHRTF.stepRatio <= 1.5);
+            CHECK (toHRTF.noiseRmsRatio >= 0.7);
+
+            const SwitchMetrics fromHRTF = measureProfileSwitch (blockSize, profile, 0, true, folder.dir);
+            REQUIRE (fromHRTF.ok);
+            reportSwitch ("engineSelectsHRTF", blockSize, profile, 0, fromHRTF);
+            CHECK (fromHRTF.stepRatio <= 1.5);
+            CHECK (fromHRTF.noiseRmsRatio >= 0.7);
+        }
+    }
+}
+
+TEST_CASE ("Profile switch: with engineSelectsHRTF Simple to and from each of profiles 1, 2 and 4 is click-free at 32 samples",
+           "[hrtf-switch][simple]")
+{
+    const TempFolder folder ("simple-rest", true);
+    REQUIRE (copyProfilesInto (folder.dir, { 1, 2, 4 }));
+
+    for (const int profile : { 1, 2, 4 })
+    {
+        INFO ("profile " << profile);
+
+        const SwitchMetrics toHRTF = measureProfileSwitch (32, 0, profile, true, folder.dir);
+        REQUIRE (toHRTF.ok);
+        reportSwitch ("engineSelectsHRTF", 32, 0, profile, toHRTF);
+        CHECK (toHRTF.stepRatio <= 1.5);
+        CHECK (toHRTF.noiseRmsRatio >= 0.7);
+
+        const SwitchMetrics fromHRTF = measureProfileSwitch (32, profile, 0, true, folder.dir);
+        REQUIRE (fromHRTF.ok);
+        reportSwitch ("engineSelectsHRTF", 32, profile, 0, fromHRTF);
+        CHECK (fromHRTF.stepRatio <= 1.5);
+        CHECK (fromHRTF.noiseRmsRatio >= 0.7);
+    }
+}
+
+TEST_CASE ("Profile switch: during a Simple <-> HRTF fade the Woodworth path runs once per block and the two are blended equal-power",
+           "[hrtf-switch][simple][blend]")
+{
+    // The blend is rebuilt outside the engine: the Simple side from a flag-off Simple engine, the HRTF
+    // side from a flag-off HRTF engine, and the ramp from the renderer crossfade's published law
+    // (cos / sin of the end-of-block progress, linear across the block, length 4096 samples). If the
+    // Woodworth path ran twice per block its cue filters and gain interpolation would diverge from the
+    // flag-off Simple engine and the match would fail. A source at 150 degrees azimuth drives the
+    // rear cue so the filter state matters.
+    constexpr int kB = 64;
+    constexpr int kLead = 10;
+    constexpr float kAz = 150.0f;
+    constexpr int kFadeBlocks = RenderEngine::kMinRendererXfadeSamples / kB;
+    constexpr int kTail = 8;
+    constexpr int kTotal = kLead + kFadeBlocks + kTail;
+    constexpr double kPhasePerSample = 2.0 * 3.14159265358979323846 * 440.0 / kRate;
+
+    for (const bool towardsHRTF : { true, false })
+    {
+        INFO ("direction " << (towardsHRTF ? "Simple -> HRTF" : "HRTF -> Simple"));
+
+        std::vector<float> aL, aR;           // the engine under test
+        {
+            RenderEngine engine;
+            prepareLegacy (engine);
+            if (! towardsHRTF)
+                REQUIRE (loadProfileIntoActiveRenderer (engine, 5, kRate));
+            LiveRender live (engine, selectsHRTFContext (true), kB, kRate);
+            for (int b = 0; b < kLead; ++b)
+            {
+                live.renderOne (kAz);
+                appendBlock (live, aL, aR);
+            }
+            REQUIRE (loadProfileIntoRenderer (engine.getBinauralRenderer (engine.getPrepareRendererIndex()),
+                                              towardsHRTF ? 5 : 0, kRate));
+            engine.swapActiveRenderer();
+            for (int b = kLead; b < kTotal; ++b)
+            {
+                live.renderOne (kAz);
+                appendBlock (live, aL, aR);
+            }
+        }
+
+        // Reference signals: `oldSide` runs the whole time, `newSide` starts at the swap block.
+        std::vector<float> oldL, oldR, newL, newR;
+        {
+            RenderEngine engine;
+            prepareLegacy (engine);
+            if (! towardsHRTF)
+                REQUIRE (loadProfileIntoActiveRenderer (engine, 5, kRate));
+            LiveRender live (engine, makeBinauralContext (towardsHRTF ? BinauralPath::Simple : BinauralPath::HRTF, kRate),
+                             kB, kRate);
+            for (int b = 0; b < kTotal; ++b)
+            {
+                live.renderOne (kAz);
+                appendBlock (live, oldL, oldR);
+            }
+        }
+        {
+            RenderEngine engine;
+            prepareLegacy (engine);
+            if (towardsHRTF)
+                REQUIRE (loadProfileIntoActiveRenderer (engine, 5, kRate));
+            LiveRender live (engine, makeBinauralContext (towardsHRTF ? BinauralPath::HRTF : BinauralPath::Simple, kRate),
+                             kB, kRate);
+            live.phase = static_cast<double> (kLead * kB) * kPhasePerSample;
+            for (int b = kLead; b < kTotal; ++b)
+            {
+                live.renderOne (kAz);
+                appendBlock (live, newL, newR);
+            }
+        }
+
+        REQUIRE (aL.size() == static_cast<size_t> (kTotal * kB));
+        REQUIRE (oldL.size() == aL.size());
+        REQUIRE (newL.size() == static_cast<size_t> ((kTotal - kLead) * kB));
+
+        // Before the swap the engine is the plain path it replaces, bit for bit.
+        size_t first = 0;
+        const std::vector<float> aLeadL (aL.begin(), aL.begin() + kLead * kB);
+        const std::vector<float> oldLeadL (oldL.begin(), oldL.begin() + kLead * kB);
+        CHECK (countMismatches (aLeadL, oldLeadL, first) == 0);
+
+        // From the swap on: out = old * cos + new * sin, ramped linearly across each block.
+        constexpr float halfPi = juce::MathConstants<float>::halfPi;
+        float gOutPrev = 1.0f, gInPrev = 0.0f;
+        double worst = 0.0;
+        int samplesDone = 0;
+        for (int b = 0; b < kTotal - kLead; ++b)
+        {
+            samplesDone += kB;
+            float progress = static_cast<float> (static_cast<double> (samplesDone) / static_cast<double> (RenderEngine::kMinRendererXfadeSamples));
+            progress = std::min (progress, 1.0f);
+            const float gOutEnd = std::cos (progress * halfPi);
+            const float gInEnd = std::sin (progress * halfPi);
+            const float outInc = (gOutEnd - gOutPrev) / static_cast<float> (kB);
+            const float inInc = (gInEnd - gInPrev) / static_cast<float> (kB);
+            float gOut = gOutPrev, gIn = gInPrev;
+            const bool fading = samplesDone - kB < RenderEngine::kMinRendererXfadeSamples;
+
+            for (int i = 0; i < kB; ++i)
+            {
+                const size_t n = static_cast<size_t> ((kLead + b) * kB + i);
+                const size_t m = static_cast<size_t> (b * kB + i);
+                float expectL, expectR;
+                if (fading)
+                {
+                    gOut += outInc;
+                    gIn += inInc;
+                    expectL = oldL[n] * gOut + newL[m] * gIn;
+                    expectR = oldR[n] * gOut + newR[m] * gIn;
+                }
+                else
+                {
+                    expectL = newL[m];
+                    expectR = newR[m];
+                }
+                worst = std::max ({ worst, static_cast<double> (std::abs (aL[n] - expectL)),
+                                    static_cast<double> (std::abs (aR[n] - expectR)) });
+            }
+            if (fading)
+            {
+                gOutPrev = gOutEnd;
+                gInPrev = gInEnd;
+            }
+        }
+
+        char line[160];
+        std::snprintf (line, sizeof (line), "blend %s: worst deviation from the rebuilt blend %.3g",
+                       towardsHRTF ? "Simple -> HRTF" : "HRTF -> Simple", worst);
+        WARN (line);
+        CHECK (worst < 2.0e-6);
+    }
+}
+
+TEST_CASE ("Profile switch: engineSelectsHRTF with no switch is bit-identical to the path the active renderer implies",
+           "[hrtf-switch][flag-identity]")
+{
+    constexpr int kB = 64;
+    constexpr int kBlocks = 20;
+
+    SECTION ("Simple active equals the flag-off Simple path")
+    {
+        RenderEngine flagOn, flagOff;
+        prepareLegacy (flagOn);
+        prepareLegacy (flagOff);
+        LiveRender onLive (flagOn, selectsHRTFContext (true), kB, kRate);    // the consumer's useHRTF is wrong
+        LiveRender offLive (flagOff, makeBinauralContext (BinauralPath::Simple, kRate), kB, kRate);
+
+        std::vector<float> onL, onR, offL, offR;
+        for (int b = 0; b < kBlocks; ++b)
+        {
+            const float az = 20.0f + 9.0f * static_cast<float> (b);
+            onLive.renderOne (az);
+            offLive.renderOne (az);
+            appendBlock (onLive, onL, onR);
+            appendBlock (offLive, offL, offR);
+        }
+
+        size_t first = 0;
+        CHECK (countMismatches (onL, offL, first) == 0);
+        CHECK (countMismatches (onR, offR, first) == 0);
+        CHECK (*std::max_element (onL.begin(), onL.end()) > 1.0e-4f);   // not comparing two silences
+    }
+
+    SECTION ("HRTF active equals the flag-off useHRTF = true path")
+    {
+        RenderEngine flagOn, flagOff;
+        prepareLegacy (flagOn);
+        prepareLegacy (flagOff);
+        REQUIRE (loadProfileIntoActiveRenderer (flagOn, 5, kRate));
+        REQUIRE (loadProfileIntoActiveRenderer (flagOff, 5, kRate));
+        LiveRender onLive (flagOn, selectsHRTFContext (false), kB, kRate);   // wrong: HRTF is active
+        LiveRender offLive (flagOff, makeBinauralContext (BinauralPath::HRTF, kRate), kB, kRate);
+
+        std::vector<float> onL, onR, offL, offR;
+        for (int b = 0; b < kBlocks; ++b)
+        {
+            const float az = 20.0f + 9.0f * static_cast<float> (b);
+            onLive.renderOne (az);
+            offLive.renderOne (az);
+            appendBlock (onLive, onL, onR);
+            appendBlock (offLive, offL, offR);
+        }
+
+        size_t first = 0;
+        CHECK (countMismatches (onL, offL, first) == 0);
+        CHECK (countMismatches (onR, offR, first) == 0);
+        CHECK (*std::max_element (onL.begin(), onL.end()) > 1.0e-4f);
+    }
+
+    SECTION ("a switch between two HRTF profiles equals the same switch with the flag off")
+    {
+        RenderEngine flagOn, flagOff;
+        prepareLegacy (flagOn);
+        prepareLegacy (flagOff);
+        LiveRender onLive (flagOn, selectsHRTFContext (false), kB, kRate);
+        LiveRender offLive (flagOff, makeBinauralContext (BinauralPath::HRTF, kRate), kB, kRate);
+
+        for (RenderEngine* engine : { &flagOn, &flagOff })
+            REQUIRE (loadProfileIntoActiveRenderer (*engine, 5, kRate));
+
+        std::vector<float> onL, onR, offL, offR;
+        const auto renderBoth = [&] (int blocks)
+        {
+            for (int b = 0; b < blocks; ++b)
+            {
+                onLive.renderOne (40.0f);
+                offLive.renderOne (40.0f);
+                appendBlock (onLive, onL, onR);
+                appendBlock (offLive, offL, offR);
+            }
+        };
+
+        renderBoth (10);
+        for (RenderEngine* engine : { &flagOn, &flagOff })
+        {
+            REQUIRE (loadProfileIntoRenderer (engine->getBinauralRenderer (engine->getPrepareRendererIndex()), 1, kRate));
+            engine->swapActiveRenderer();
+        }
+        renderBoth (RenderEngine::kMinRendererXfadeSamples / kB + 8);   // the whole fade and a little more
+
+        size_t first = 0;
+        CHECK (countMismatches (onL, offL, first) == 0);
+        CHECK (countMismatches (onR, offR, first) == 0);
+    }
+}
+
+TEST_CASE ("Profile switch: engineSelectsHRTF ignores the consumer's useHRTF on every block, through a switch",
+           "[hrtf-switch][flag-identity]")
+{
+    constexpr int kB = 64;
+    const TempFolder nonExistent ("ignore");
+
+    std::vector<float> lL, lR;   // consumer value always false
+    std::vector<float> mL, mR;   // consumer value changes pseudo-randomly every block
+
+    for (const bool varying : { false, true })
+    {
+        RenderEngine engine;
+        prepareBinaural (engine, nonExistent.dir);
+        LiveRender live (engine, selectsHRTFContext (false), kB, kRate);
+        std::mt19937 rng (0x0309u);
+        auto& left = varying ? mL : lL;
+        auto& right = varying ? mR : lR;
+
+        const auto renderBlocks = [&] (int count)
+        {
+            for (int b = 0; b < count; ++b)
+            {
+                live.ctx.useHRTF = varying ? ((rng() & 1u) != 0) : false;
+                live.renderOne (35.0f);
+                appendBlock (live, left, right);
+            }
+        };
+
+        renderBlocks (10);                                  // Simple
+        engine.setHRTFProfile (kProbeProfile);
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
+        renderBlocks (RenderEngine::kMinRendererXfadeSamples / kB + 20);   // Simple -> HRTF, then HRTF
+        engine.setHRTFProfile (0);
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
+        renderBlocks (RenderEngine::kMinRendererXfadeSamples / kB + 20);   // HRTF -> Simple, then Simple
+    }
+
+    size_t first = 0;
+    CHECK (countMismatches (lL, mL, first) == 0);
+    CHECK (countMismatches (lR, mR, first) == 0);
+    CHECK (*std::max_element (lL.begin(), lL.end()) > 1.0e-4f);
 }

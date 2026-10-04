@@ -195,6 +195,20 @@ struct RenderBlockContext
     // SpatialCore's own RenderEngineTests — sees byte-for-byte unchanged
     // behaviour; this is additive, not a major bump.
     bool engineDerivesDispatch = false;
+
+    // D-15, engineSelectsHRTF: when true, renderBlock() sets useHRTF itself from its own active renderer
+    // (useHRTF = ! isSimpleMode()) after claiming any ready profile, and the consumer's
+    // useHRTF is ignored. While a switch between Simple (profile 0) and an HRTF profile is
+    // fading, the engine renders the Woodworth path and the HRTF path and blends them with
+    // the renderer crossfade's equal-power ramp, so a Simple <-> HRTF switch is as click-free
+    // as an HRTF <-> HRTF one. The Woodworth path may therefore run during an HRTF fade, so
+    // this flag needs valid objGains: set engineComputesGains or supply them every block.
+    // Only a binaural, non-stereo-variant block is affected; every other format renders as it
+    // always did. Defaults false so every existing caller -- including OpenSpatialDelay's
+    // derive-useHRTF-itself flow -- sees byte-for-byte unchanged behaviour (apart from the
+    // sample-based renderer crossfade, kMinRendererXfadeSamples); this is additive, not a
+    // major bump.
+    bool engineSelectsHRTF = false;
 };
 
 //==============================================================================
