@@ -111,8 +111,9 @@ Requirements and success criteria served:
   overrides):** (b) still picks the largest-min-gain triplet, but if that candidate clamps to all
   zeros the nearest speaker now gets unity instead of silence. (c) is withdrawn: JUCE's assert path
   logs and allocates, so no assert runs in `computeGains` (VBAP/VBIP/MDAP or `computeVBAPGains3D`).
-  Both cases are reachable only with a hand-built partial triplet list, never through RenderEngine,
-  whose layout build enforces coverage with the D-02(a) abort on the message thread.
+  Both cases are reachable only with a hand-built partial triplet list, never through RenderEngine:
+  the shipped layouts are fully covered ([ear][coverage]), and the layout build aborts on the message
+  thread if a height layout yields no triplets (D-02(a)).
 
 - **D-07:** **Do NOT widen the triplet tolerance to -1e-5.** It flips the triplet choice in 38-111
   per 1M directions, with gain jumps up to 0.96. D-06(b) is the safety net; the tolerance stays
@@ -388,7 +389,7 @@ above come from the research findings named in brackets; the research is the sou
 - **P1 D-04:** 8 algorithms / 23 formats / 15 layouts / 5 HRTF profiles. Nothing here changes a count;
   the D-04 virtual speakers are internal and are not layouts.
 - **DR-1:** no alloc, lock or log on the audio path. D-02(a)'s crash is on the message thread and D-04's
-  storage is preallocated; D-06(c)'s `jassertfalse` is Debug-only and is the one diagnostic permitted. *(Amended 2026-10-04: D-06(c) withdrawn, so no audio-path diagnostic remains; see D-06.)*
+  storage is preallocated; D-06(c)'s `jassertfalse` is Debug-only and is the one diagnostic permitted. *(Amended 2026-10-04: D-06(c) withdrawn, so no Phase 2 audio-path diagnostic remains; older Debug checks on the audio path belong to Phases 3 and 5; see D-06.)*
 - **DR-2 / DR-7:** the `SpatializationAlgorithm` interface is frozen. Dual-band VBIP is deferred
   precisely because it cannot be expressed through `computeGains`.
 - **DR-3:** OSD must keep building. Both `evalSH` and `AmbisonicsCodec::evaluateSH` survive as public

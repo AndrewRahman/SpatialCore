@@ -74,7 +74,7 @@ named gaps, it does not rebuild the modules.
 
   1. `AmbisonicsCodec`'s channel order and normalisation is confirmed ACN/SN3D or FuMa, stated in code and docs. *(SpatialCore#11)*
   2. The 3D triplet fallback in VBAP/VBIP/MDAP either no longer exists or fails loudly instead of silently degrading to nearest-speaker.
-     *Amended 2026-10-04 (user decision, Phase 2 re-verification): holds for every layout RenderEngine builds (the layout build aborts on missing coverage). A hand-built partial triplet list may snap to the nearest speaker without a diagnostic, because an audio-thread assert allocates.*
+     *Amended 2026-10-04 (user decision, Phase 2 re-verification): holds for every layout RenderEngine builds: the shipped layouts are fully covered ([ear][coverage]), and the layout build aborts if a height layout yields no triplets (D-02a). A hand-built partial triplet list may snap to the nearest speaker without a diagnostic, because an audio-thread assert allocates.*
   3. All 23 `OutputFormat` entries resolve to correct info; all 15 layouts return populated channel indices and LFE placement.
   4. Ambisonics encode/decode round-trips a source position within tolerance at every order up to 6.
 

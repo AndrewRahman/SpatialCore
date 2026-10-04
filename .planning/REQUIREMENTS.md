@@ -135,7 +135,7 @@ doc-counting errors, answerable from the tree without a user decision.
 **Reframed.** The 2026-08-09 requirements assumed these were unwritten. The test suite proves
 otherwise. What remains is verifying the named gaps, not building the modules.
 
-- [ ] **EXTR-01**: Every public algorithm computes correct gains
+- [x] **EXTR-01**: Every public algorithm computes correct gains
   - Acceptance: the existing algorithm tests continue to pass, and the 3D triplet fallback
     (`jassertfalse` → nearest-speaker heuristic in VBAP/VBIP/MDAP) is either eliminated or fails
     loudly rather than silently degrading.
@@ -145,7 +145,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     the Woodworth fallback. Remaining gap: `PartitionedConvolver.cpp` and `BinauralRenderer.cpp`
     have **no dedicated test files** — they are only exercised indirectly.
 
-- [ ] **EXTR-03**: Layouts, format registry, and Ambisonics codec return real data
+- [x] **EXTR-03**: Layouts, format registry, and Ambisonics codec return real data
   - Acceptance: all 23 `OutputFormat` entries resolve; all 15 layouts return populated channel
     indices and LFE placement; Ambisonics encodes/decodes to order 6.
 
