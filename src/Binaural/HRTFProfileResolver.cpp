@@ -56,10 +56,12 @@ HRTFResolveResult resolveHRTFProfile (int profileIndex,
 
         if (sharedFile.existsAsFile())
         {
-            // The size cap is checked before any byte is read (T-03-09).
+            // The size cap is checked before any byte is read (T-03-09), and loadFromFile
+            // enforces it again while reading, so a file that grows or lies about its size, or
+            // a FIFO or device behind the name, is refused rather than read without a limit.
             if (sharedFile.getSize() > maxSharedFileBytes)
                 sharedFileBroken = true;
-            else if (database.loadFromFile (sharedFile, sampleRate))
+            else if (database.loadFromFile (sharedFile, sampleRate, maxSharedFileBytes))
                 return { true, HRTFProfileSource::SharedFolder, HRTFProfileProblem::None };
             else
                 sharedFileBroken = true;

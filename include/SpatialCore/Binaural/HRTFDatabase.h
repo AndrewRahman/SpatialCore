@@ -27,8 +27,14 @@ public:
         libmysofa parsing body used by loadFromMemory — the SOFA-parsing logic
         itself stays byte-identical; only the byte source differs (D-09,
         minimum-diff). Returns false if the file cannot be read or is not a
-        valid SOFA file (e.g. an unresolved Git LFS pointer stub). */
-    bool loadFromFile (const juce::File& sofaFile, float targetSampleRate);
+        valid SOFA file (e.g. an unresolved Git LFS pointer stub).
+
+        Only a regular file is read (a FIFO, a device node or a symlink to one is refused, since
+        reading it can block forever or never reach EOF). With maxBytes > 0 the cap is enforced
+        while reading, from one open handle: a file longer than maxBytes, or one that grows past
+        it between a size check and the read, is refused without being buffered (T-03-09).
+        maxBytes <= 0 means no cap beyond what fits in an int. */
+    bool loadFromFile (const juce::File& sofaFile, float targetSampleRate, juce::int64 maxBytes = 0);
 
     /** The compiled-in SOFA bytes for profile 1..5 (see HRTFProfile.h), or nullptr with
         sizeInBytes = 0 when that profile is not embedded (a build with

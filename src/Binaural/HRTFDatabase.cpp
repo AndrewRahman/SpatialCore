@@ -5,6 +5,12 @@ extern "C" {
 #include "mysofa.h"
 }
 
+#include <limits>
+
+#if ! JUCE_WINDOWS
+ #include <sys/stat.h>
+#endif
+
 namespace spatialcore
 {
 
@@ -36,14 +42,48 @@ bool HRTFDatabase::loadFromBinaryData (int profileIndex, float targetSampleRate)
     return loadFromBytes (data, size, targetSampleRate);
 }
 
-bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleRate)
+namespace
+{
+    /** True for a regular file (following symlinks). A FIFO, device node or socket is not: reading
+        one can block forever or never reach EOF, and its reported size is meaningless. */
+    bool isRegularFile (const juce::File& file)
+    {
+#if JUCE_WINDOWS
+        return file.existsAsFile();
+#else
+        struct stat st {};
+        return ::stat (file.getFullPathName().toRawUTF8(), &st) == 0 && S_ISREG (st.st_mode);
+#endif
+    }
+}
+
+bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleRate, juce::int64 maxBytes)
 {
     // Read the LFS-tracked raw .sofa bytes from disk. A checkout that returned
     // LFS pointer text instead of real bytes (T-08-05b) fails mysofa_open_data's
     // parse below (or the checksum assertion in the per-profile tests), never
     // silently succeeds with garbage HRIR data.
+    //
+    // The byte cap is enforced while reading, from one open handle, so a file that lies about
+    // its size, grows after a size check, or is not a regular file cannot bypass it (T-03-09).
+    constexpr juce::int64 kMaxInt = std::numeric_limits<int>::max();
+    const juce::int64 cap = (maxBytes > 0 && maxBytes < kMaxInt) ? maxBytes : kMaxInt;
+
     juce::MemoryBlock fileBytes;
-    if (! sofaFile.loadFileAsData (fileBytes))
+    bool readOk = false;
+
+    if (isRegularFile (sofaFile))
+    {
+        juce::FileInputStream in (sofaFile);
+
+        if (in.openedOk() && in.getTotalLength() <= cap)
+        {
+            in.readIntoMemoryBlock (fileBytes, static_cast<ssize_t> (cap) + 1);
+            readOk = static_cast<juce::int64> (fileBytes.getSize()) <= cap;
+        }
+    }
+
+    if (! readOk)
     {
         DBG ("HRTFDatabase: Failed to read SOFA file: " + sofaFile.getFullPathName());
         loaded = false;

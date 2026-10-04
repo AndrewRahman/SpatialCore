@@ -8,6 +8,10 @@
 
 #include <cstdint>
 
+#if JUCE_MAC || JUCE_LINUX
+ #include <sys/stat.h>
+#endif
+
 using namespace spatialcore;
 using namespace spatialcore::test;
 
@@ -612,3 +616,53 @@ TEST_CASE ("HRTF database: a decoded IR longer than the bound is refused and lea
         CHECK (db.getNumPositions() == 0);
     }
 }
+
+// ============================================================================
+// The size cap is enforced while reading, from one open handle, and only a regular file is read
+// (T-03-09, review WR-03). A stat-then-read check let a FIFO, a device node or a symlink to one
+// bypass it: their size reads as 0, and the read then blocks or never ends.
+// ============================================================================
+TEST_CASE ("HRTF database: loadFromFile enforces the byte cap while reading",
+           "[hrtf-resolve][read-cap]")
+{
+    const juce::File file = getSofaFile (testProfileFile (kProbeProfile));
+    REQUIRE (file.existsAsFile());
+
+    HRTFDatabase db;
+    CHECK_FALSE (db.loadFromFile (file, 48000.0f, 1000));                 // larger than the cap
+    CHECK_FALSE (db.isLoaded());
+    CHECK (db.loadFromFile (file, 48000.0f, file.getSize()));             // exactly at the cap
+    CHECK (db.isLoaded());
+    CHECK (db.loadFromFile (file, 48000.0f));                             // no cap given
+    CHECK_FALSE (db.loadFromFile (file.getSiblingFile ("does-not-exist.sofa"), 48000.0f, 1000));
+}
+
+#if JUCE_MAC || JUCE_LINUX
+TEST_CASE ("HRTF resolve: a FIFO or a symlink to a device behind the profile name is refused, not read",
+           "[hrtf-resolve][read-cap][special-file]")
+{
+    const TempFolder folder ("special");
+    const juce::File probe = folder.dir.getChildFile (kHRTFProfiles[kProbeProfile].fileName);
+
+    SECTION ("a FIFO")
+    {
+        // Opening a FIFO for reading blocks until a writer appears, so an unguarded read hangs here.
+        REQUIRE (::mkfifo (probe.getFullPathName().toRawUTF8(), 0600) == 0);
+    }
+    SECTION ("a symlink to /dev/zero")
+    {
+        // Reads forever, and its size reads as 0, so a size check passes it.
+        REQUIRE (juce::File ("/dev/zero").createSymbolicLink (probe, true));
+    }
+
+    HRTFDatabase db;
+    const HRTFResolveResult r = resolveHRTFProfile (kProbeProfile, db, 48000.0f, folder.dir);
+
+    if (profileIsEmbedded (kProbeProfile))
+    {
+        CHECK (r.loaded);
+        CHECK (r.source == HRTFProfileSource::Embedded);
+        CHECK (r.problem == HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn);
+    }
+}
+#endif
