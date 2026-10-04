@@ -25,6 +25,7 @@ add_executable(SpatialCoreTests
     Binaural/BernschuetzKU100Tests.cpp
     Binaural/MitKemarLargePinnaTests.cpp
     Binaural/WoodworthFallbackTests.cpp
+    Binaural/BinauralCueTests.cpp
     Engine/RenderEngineTests.cpp
     Engine/TripleBufferIndexTests.cpp
 )
