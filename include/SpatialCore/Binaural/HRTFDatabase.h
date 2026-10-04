@@ -57,6 +57,16 @@ public:
                          float* irL, float* irR,
                          float& delayL, float& delayR) const;
 
+    /** Sanity bounds on a decoded SOFA database, applied to every load path. A file within
+        the shared-folder byte cap can still declare a huge filter length or a very low sample
+        rate (which libmysofa resamples up); BinauralRenderer::setProfile then sizes 24
+        convolvers from the IR length, which is how a file under the cap could ask for
+        gigabytes (T-03-09). A database outside these bounds is rejected like an unreadable
+        file. The largest shipped profile is 558 samples at its native rate and 16020
+        positions; at 192 kHz the longest shipped IR is about 2.4k samples. */
+    static constexpr int kMaxIRLength   = 16384;
+    static constexpr int kMaxPositions  = 65536;
+
     int  getIRLength() const { return irLength; }
     int  getNumPositions() const { return numPositions; }
     bool isLoaded() const { return loaded; }

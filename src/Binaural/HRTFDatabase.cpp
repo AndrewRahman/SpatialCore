@@ -74,6 +74,19 @@ bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSa
         return false;
     }
 
+    // T-03-09: bound the decoded size before anything sizes buffers from it. The byte cap on
+    // a shared file does not bound the filter length (libmysofa has no ceiling on N and
+    // scales it by targetSampleRate / fileSampleRate), so an out-of-range database is
+    // refused here, which the resolver reports as an unreadable file.
+    if (filterLength < 1 || filterLength > kMaxIRLength
+        || easyHandle->hrtf == nullptr
+        || easyHandle->hrtf->M < 1 || easyHandle->hrtf->M > static_cast<unsigned> (kMaxPositions))
+    {
+        DBG ("HRTFDatabase: SOFA data out of bounds (IR length " + juce::String (filterLength) + ")");
+        unload();
+        return false;
+    }
+
     // Note: mysofa_open_data() already normalizes via mysofa_loudness(), which
     // scales all HRIRs so the frontal HRIR has consistent energy (factor = sqrt(2/E)).
     // This provides cross-profile normalization at the source level.

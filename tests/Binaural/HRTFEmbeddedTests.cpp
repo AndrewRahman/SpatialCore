@@ -579,3 +579,35 @@ TEST_CASE ("HRTF resolve: in a KEMAR-only build profiles 1-4 come from the share
     CHECK_FALSE (db.isLoaded());
 }
 #endif
+
+// ============================================================================
+// Decoded-size bound (T-03-09, review WR-01). The byte cap on a shared file does not bound the
+// filter length: libmysofa scales it by targetSampleRate / fileSampleRate. A database whose
+// decoded IR is longer than HRTFDatabase::kMaxIRLength would make BinauralRenderer::setProfile
+// size 24 convolvers into the gigabytes, so loadFromBytes refuses it. A real file asked for an
+// absurd rate is the cheapest way to produce one without hand-building an HDF5 file.
+// ============================================================================
+TEST_CASE ("HRTF database: a decoded IR longer than the bound is refused and leaves the database unloaded",
+           "[hrtf-resolve][ir-bound]")
+{
+    const juce::File file = getSofaFile (testProfileFile (3));   // hutubs_pp2: 440 positions, the smallest decoded size
+    REQUIRE (file.existsAsFile());
+
+    HRTFDatabase db;
+
+    SECTION ("an in-range rate loads")
+    {
+        REQUIRE (db.loadFromFile (file, 192000.0f));
+        CHECK (db.getIRLength() >= 1);
+        CHECK (db.getIRLength() <= HRTFDatabase::kMaxIRLength);
+    }
+
+    SECTION ("a rate that scales the IR past the bound is refused")
+    {
+        // 44.1 kHz source at 3 MHz: about 64x, so the IR would be well over 16384 samples.
+        CHECK_FALSE (db.loadFromFile (file, 3000000.0f));
+        CHECK_FALSE (db.isLoaded());
+        CHECK (db.getIRLength() == 0);
+        CHECK (db.getNumPositions() == 0);
+    }
+}
