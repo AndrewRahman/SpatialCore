@@ -149,14 +149,14 @@ proves it does not have.
 **Corrected premise**: the original roadmap said "no `.sofa` file and no BinaryData target exists
 anywhere in the tree, so DATA-01 is unstarted." Half wrong: 5 real HDF5 files (1.2–36.6 MB) are
 present and LFS-tracked with a CI guard against pointer stubs. Only the embedding is absent.
-**Plans**: 1/11 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 2/11 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
 - [x] 03-01-PLAN.md — Test foundation: shared metrics header, dedicated PartitionedConvolver and BinauralRenderer test files, HRTF-path cue test on all 5 profiles, D-14 loudness record, D-16 ITD characterisation, signature and legacy-swap baselines; sole owner of tests/CMakeLists.txt *(wave 1)*
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 03-02-PLAN.md — Binaural goldens as tolerance fingerprints (HUTUBS Debug failure closed), with negative controls *(wave 2)*
+- [x] 03-02-PLAN.md — Binaural goldens as tolerance fingerprints (HUTUBS Debug failure closed), with negative controls *(wave 2)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 03-03-PLAN.md — BUG-02: sample-based convolver warm-up/crossfade (moving source at 32 as smooth as 512), steady-state block-plan match, KEMAR scratch sized off the audio thread *(wave 3)*
@@ -264,7 +264,7 @@ External Dependencies.
 |-------|----------------|--------|-----------|
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
-| 3. Binaural Defects & HRTF Packaging | 1/11 | In Progress|  |
+| 3. Binaural Defects & HRTF Packaging | 2/11 | In Progress|  |
 | 4. Control Surface & UI | 0/TBD | Not started | - |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
