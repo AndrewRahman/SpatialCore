@@ -1,11 +1,21 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/Binaural/HRTFProfileResolver.h>
 #include "../Binaural/BinauralMetrics.h"
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <future>
+#include <memory>
+#include <random>
+#include <thread>
 #include <vector>
 
 using namespace spatialcore;
@@ -606,4 +616,326 @@ TEST_CASE ("Profile switch: a crossfade abandoned by a path change frees its ren
     REQUIRE (engine.waitForHRTFProfileIdle (30000));   // needs the abandoned renderer back
     CHECK (live.renderUntilActive (next, 10) > 0);
     CHECK (live.lastFinite);
+}
+
+// ============================================================================
+// Real concurrency (D-05, T-03-26, T-03-27): a render thread and a switching thread
+// running together, and an engine destroyed while its loader is working.
+// ============================================================================
+namespace
+{
+    /** SPATIALCORE_TEST_TIMEOUT_SCALE: an integer of at least 1 (default 1; anything else counts
+        as 1). It stretches watchdogs, idle waits and polls only. The 50 ms call bound, the 4.0
+        sample bound and the 15 s shutdown bound are never scaled. */
+    int timeoutScale()
+    {
+        const char* text = std::getenv ("SPATIALCORE_TEST_TIMEOUT_SCALE");
+        if (text == nullptr)
+            return 1;
+
+        char* end = nullptr;
+        const long value = std::strtol (text, &end, 10);
+        if (end == text || *end != '\0' || value < 1 || value > 1000)
+            return 1;
+        return static_cast<int> (value);
+    }
+
+    /** Runs `body` on a std::async task and waits seconds x scale. On timeout it prints a named
+        message and aborts, so a deadlock ends the test binary with a non-zero exit instead of
+        hanging the suite. A plain wait_for timeout would not do: the future returned by
+        std::async blocks in its destructor until the task finishes. The body only measures;
+        the test asserts on its own thread afterwards (Catch2 assertions stay single-threaded). */
+    void runWithWatchdog (const char* name, int seconds, std::function<void()> body)
+    {
+        const int limit = seconds * timeoutScale();
+        std::future<void> done = std::async (std::launch::async, std::move (body));
+
+        if (done.wait_for (std::chrono::seconds (limit)) == std::future_status::timeout)
+        {
+            std::fprintf (stderr, "WATCHDOG: %s exceeded %d s\n", name, limit);
+            std::fflush (stderr);
+            std::abort();
+        }
+
+        done.get();   // rethrows anything the body threw
+    }
+
+    struct ThreadsResult
+    {
+        bool idleReached = false;
+        int finalActive = -1;
+        long nonFinite = 0;
+        float largestSample = 0.0f;
+        long blocksRendered = 0;
+        double slowestCallMs = 0.0;
+        int callsMade = 0;
+        float peakByProfile[6] {};
+        long blocksByProfile[6] {};
+    };
+
+    struct ShutdownResult
+    {
+        double destroyMs = -1.0;
+    };
+}
+
+TEST_CASE ("Profile switch: switching while another thread renders never deadlocks or produces non-finite audio",
+           "[hrtf-switch][threads]")
+{
+    ThreadsResult result;
+
+    runWithWatchdog ("[hrtf-switch][threads]", 60, [&result]
+    {
+        const TempFolder nonExistent ("threads");   // a path that is never created
+
+        // On the heap: a std::async thread has a small stack, and the engine is large.
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, 512);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+        std::atomic<bool> stop { false };
+        std::atomic<long> blocksSoFar { 0 };
+        long nonFinite = 0;
+        float largest = 0.0f;
+        long blocks = 0;
+        float peakByProfile[6] {};
+        long blocksByProfile[6] {};
+
+        // The render thread stands in for the audio thread: 64-sample blocks of a 440 Hz sine on
+        // the HRTF path, azimuth stepping 1 degree per block, as fast as it can go.
+        std::thread renderThread ([&]
+        {
+            LiveRender live (*engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                live.renderOne (static_cast<float> (block % 360) - 180.0f);
+                if (! live.lastFinite)
+                    ++nonFinite;
+                largest = std::max (largest, live.lastPeak);
+                const int active = std::clamp (engine->getHRTFProfileStatus().activeProfile, 0, 5);
+                peakByProfile[active] = std::max (peakByProfile[active], live.lastPeak);
+                ++blocksByProfile[active];
+                ++block;
+                blocksSoFar.store (static_cast<long> (block), std::memory_order_release);
+            }
+            blocks = static_cast<long> (block);
+        });
+
+        // Let the render thread get going before the first request.
+        while (blocksSoFar.load (std::memory_order_acquire) < 50)
+            juce::Thread::sleep (1);
+
+        const int order[] = { 5, 3, 0, 4, 2, 5, 3, 0 };
+        std::mt19937 rng (0x0307u);
+        std::uniform_int_distribution<int> gapMs (20, 120);
+
+        int next = 0;
+        for (int call = 0; call < 24; ++call)
+        {
+            const int profile = (call == 12) ? 1 : order[next++ % 8];
+
+            const auto t0 = std::chrono::steady_clock::now();
+            engine->setHRTFProfile (profile);
+            result.slowestCallMs = std::max (result.slowestCallMs, elapsedMs (t0));
+            ++result.callsMade;
+
+            juce::Thread::sleep (gapMs (rng));
+        }
+
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            engine->setHRTFProfile (5);
+            result.slowestCallMs = std::max (result.slowestCallMs, elapsedMs (t0));
+            ++result.callsMade;
+        }
+
+        result.idleReached = engine->waitForHRTFProfileIdle (30000 * timeoutScale());
+
+        // The audio thread claims the last result at a block boundary, still rendering.
+        const auto pollStart = std::chrono::steady_clock::now();
+        while (engine->getHRTFProfileStatus().activeProfile != 5
+               && elapsedMs (pollStart) < 10000.0 * timeoutScale())
+            juce::Thread::sleep (2);
+        result.finalActive = engine->getHRTFProfileStatus().activeProfile;
+
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.largestSample = largest;
+        result.blocksRendered = blocks;
+        for (int i = 0; i < 6; ++i)
+        {
+            result.peakByProfile[i] = peakByProfile[i];
+            result.blocksByProfile[i] = blocksByProfile[i];
+        }
+    });
+
+    INFO ("slowest setHRTFProfile call " << result.slowestCallMs << " ms over " << result.callsMade << " calls");
+    INFO ("largest sample " << result.largestSample << " over " << result.blocksRendered << " blocks");
+    char line[200];
+    std::snprintf (line, sizeof (line), "threads: slowest call %.3f ms, largest sample %.4f, %ld blocks, %ld non-finite",
+                   result.slowestCallMs, static_cast<double> (result.largestSample), result.blocksRendered, result.nonFinite);
+    WARN (line);
+    for (int i = 0; i < 6; ++i)
+    {
+        std::snprintf (line, sizeof (line), "threads: active profile %d: %ld blocks, peak %.4f", i,
+                       result.blocksByProfile[i], static_cast<double> (result.peakByProfile[i]));
+        WARN (line);
+    }
+
+    CHECK (result.callsMade == 25);
+    CHECK (result.idleReached);
+    CHECK (result.finalActive == 5);
+    CHECK (result.nonFinite == 0);
+    CHECK (result.largestSample < 4.0f);
+    CHECK (result.blocksRendered > 0);
+    CHECK (result.slowestCallMs < 50.0);
+}
+
+TEST_CASE ("Profile switch: every switch completes while a paced render thread runs, claims and frees included",
+           "[hrtf-switch][churn]")
+{
+    // The [threads] case above fires requests faster than a SOFA load finishes, so almost every
+    // result is superseded before it is published and only the last switch reaches the audio
+    // thread. This case makes every switch complete: it waits for each profile to become active,
+    // but not for the crossfade to end, so the next request has to wait for the faded-out renderer
+    // to come back free while the render thread keeps rendering at a paced rate (250 us a block).
+    struct Result
+    {
+        int switchesDone = 0;
+        int switchesWanted = 0;
+        long nonFinite = 0;
+        float largestSample = 0.0f;
+        float peakByProfile[6] {};
+        double slowestCallMs = 0.0;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][churn]", 120, [&result]
+    {
+        const TempFolder nonExistent ("churn");
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, 512);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+#if SPATIALCORE_EMBEDS_ALL_HRTF
+        const std::vector<int> sequence { 5, 2, 3, 4, 5, 0, 2, 5, 3, 0, 4, 5, 2, 3, 5, 1 };
+#else
+        const std::vector<int> sequence { 5, 0, 5, 0, 5, 0, 5, 0, 5, 0, 5, 0, 5, 0, 5, 0 };
+#endif
+        result.switchesWanted = static_cast<int> (sequence.size());
+
+        std::atomic<bool> stop { false };
+        long nonFinite = 0;
+        float largest = 0.0f;
+        float peakByProfile[6] {};
+
+        std::thread renderThread ([&]
+        {
+            LiveRender live (*engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                live.renderOne (static_cast<float> (block % 360) - 180.0f);
+                if (! live.lastFinite)
+                    ++nonFinite;
+                largest = std::max (largest, live.lastPeak);
+                const int active = std::clamp (engine->getHRTFProfileStatus().activeProfile, 0, 5);
+                peakByProfile[active] = std::max (peakByProfile[active], live.lastPeak);
+                ++block;
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+        });
+
+        std::mt19937 rng (0x0308u);
+        std::uniform_int_distribution<int> dwellMs (0, 30);
+
+        for (const int profile : sequence)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            engine->setHRTFProfile (profile);
+            result.slowestCallMs = std::max (result.slowestCallMs, elapsedMs (t0));
+
+            const auto waitStart = std::chrono::steady_clock::now();
+            while (engine->getHRTFProfileStatus().activeProfile != profile
+                   && elapsedMs (waitStart) < 20000.0 * timeoutScale())
+                juce::Thread::sleep (1);
+
+            if (engine->getHRTFProfileStatus().activeProfile != profile)
+                break;
+
+            ++result.switchesDone;
+            juce::Thread::sleep (dwellMs (rng));
+        }
+
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.largestSample = largest;
+        for (int i = 0; i < 6; ++i)
+            result.peakByProfile[i] = peakByProfile[i];
+    });
+
+    char line[200];
+    std::snprintf (line, sizeof (line), "churn: %d of %d switches, slowest call %.3f ms, largest sample %.4f, %ld non-finite",
+                   result.switchesDone, result.switchesWanted, result.slowestCallMs,
+                   static_cast<double> (result.largestSample), result.nonFinite);
+    WARN (line);
+    for (int i = 0; i < 6; ++i)
+    {
+        std::snprintf (line, sizeof (line), "churn: profile %d peak %.4f", i, static_cast<double> (result.peakByProfile[i]));
+        WARN (line);
+    }
+
+    CHECK (result.switchesDone == result.switchesWanted);
+    CHECK (result.nonFinite == 0);
+    CHECK (result.largestSample < 4.0f);
+    CHECK (result.slowestCallMs < 50.0);
+    for (int profile = 1; profile <= 5; ++profile)
+        if (std::find (kEmbeddedProfiles.begin(), kEmbeddedProfiles.end(), profile) != kEmbeddedProfiles.end())
+        {
+            INFO ("profile " << profile << " peak " << result.peakByProfile[profile]);
+            CHECK (result.peakByProfile[profile] > 1.0e-4f);   // audio kept playing on every SOFA profile
+        }
+}
+
+TEST_CASE ("Profile switch: destroying the engine during a load returns promptly",
+           "[hrtf-switch][shutdown]")
+{
+    // Section 0 destroys the engine at once. Section 1 waits until the loader has certainly
+    // started on the SOFA parse first, which is the case the shutdown contract is about.
+    const int delayBeforeDestroyMs = GENERATE (0, 40);
+
+    ShutdownResult result;
+
+    runWithWatchdog ("[hrtf-switch][shutdown]", 15, [&result, delayBeforeDestroyMs]
+    {
+        const TempFolder nonExistent ("shutdown");
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, 512);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+        engine->setHRTFProfile (1);   // SADIE, the slowest load
+        if (delayBeforeDestroyMs > 0)
+            juce::Thread::sleep (delayBeforeDestroyMs);
+
+        const auto t0 = std::chrono::steady_clock::now();
+        engine.reset();
+        result.destroyMs = elapsedMs (t0);
+    });
+
+    INFO ("destroy after " << delayBeforeDestroyMs << " ms took " << result.destroyMs << " ms");
+    char line[160];
+    std::snprintf (line, sizeof (line), "shutdown: delay %d ms, destruction %.1f ms", delayBeforeDestroyMs, result.destroyMs);
+    WARN (line);
+
+    CHECK (result.destroyMs >= 0.0);
+    CHECK (result.destroyMs < 15000.0);
 }
