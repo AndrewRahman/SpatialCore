@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-10-04T13:16:34.882Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-10-04T13:25:56.542Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 03 execution started
-state_head: 5dd8622e15d6cd9121a16b23e345025b3b9aa4ba
+state_head: 1948f9fe0d967e113d8151bfab650f70b24c5444
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 17
+  completed_plans: 18
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 ## Current Position
 
 Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
-Plan: 3 of 11
+Plan: 4 of 11
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 03 execution started
 
@@ -93,6 +93,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 02 P10 | wall 4h50m (incl. usage-limit pause) | 2 tasks | 5 files |
 | Phase 03 P01 | 12 min | 3 tasks | 8 files |
 | Phase 03 P02 | 6 min | 2 tasks | 6 files |
+| Phase 03 P03 | 8 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: 03-01: convolver oracle signals use IR amplitude 0.05 so output scale matches the research measurement behind the unchanged 2e-6 bound
 - [Phase 03]: 03-01: ITD line characterised not fixed (D-16): 20-row table pinned, wrap mechanism holds on SADIE and KEMAR at 44.1/48 kHz, Debug equals Release; D-14 loudness recorded (spread 2.48 LU), no tolerance asserted
 - [Phase 03]: 03-02: Binaural goldens compare a tolerance fingerprint (length/peak index exact, delays 1e-4 samples, energy/peak 1e-5 relative) instead of an FNV hash; values captured from the tree, Debug and Release agree
+- [Phase 03]: 03-03: convolver warm-up ends at max(1 call, irLen samples); fade is max(4 x call size at fade start, 2048) samples, fixed once and advanced by elapsed samples
+- [Phase 03]: 03-03: BinauralRenderer scratch is grow-only max(block, 512, IR length), sized in prepare() and setProfile(); the RTSF-01 audio-thread resize guard is left for Phase 5
 
 ### Pending Todos
 
@@ -156,7 +159,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T13:16:34.826Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-10-04T13:25:56.490Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
