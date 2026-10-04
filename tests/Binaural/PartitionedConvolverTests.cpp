@@ -182,3 +182,237 @@ TEST_CASE ("BUG-02: a moving source is as smooth at 32, 64 and 128-sample blocks
     CHECK (step64 <= 1.2 * step512);
     CHECK (step32 <= 1.2 * step512);
 }
+
+// ============================================================================
+// Transition timing is sample-based (BUG-02). Three pins:
+//   1. 512-sample calls, IR 256: identical to the original call-counted scheme (one warm-up
+//      call, then a four-call fade on cos/sin quarter steps).
+//   2. 32-sample calls, IR 256: warm-up is irLen samples, the fade is the 2048-sample floor.
+//   3. 512-sample calls, IR 558 (> one call): warm-up lasts two calls. This is the one
+//      stated change at 512 and above.
+// Expected signals come from the double-precision oracle. The incoming slot starts empty at
+// setIR(), so its output is the direct convolution of the input from the setIR point; every
+// comparison below is made at least one IR length after that point, where it equals the
+// convolution of the whole input.
+// ============================================================================
+
+TEST_CASE ("PartitionedConvolver: transition timing is sample-based and unchanged at 512",
+           "[convolver][transition]")
+{
+    constexpr size_t kNumSamples = 16384;
+    constexpr size_t kSwitchAt = 4096;            // a multiple of 32 and of 512
+    constexpr double kHalfPi = 1.57079632679489661923;
+
+    auto makeInput = [] { return whiteNoise (kNumSamples, 31, 0.5f); };
+
+    SECTION ("512-sample calls, IR 256: one warm-up call, then a four-call cos/sin fade")
+    {
+        constexpr int kIRLength = 256;
+        constexpr size_t kCall = 512;
+        const std::vector<float> irA = whiteNoise (kIRLength, 32, 0.05f);
+        const std::vector<float> irB = whiteNoise (kIRLength, 33, 0.05f);
+        const std::vector<float> input = makeInput();
+        const std::vector<double> convA = directConvolve (input, irA);
+        const std::vector<double> convB = directConvolve (input, irB);
+
+        PartitionedConvolver conv;
+        conv.prepare (512, kIRLength);
+        conv.setIR (irA.data(), kIRLength);
+
+        std::vector<float> out (kNumSamples, 0.0f);
+        convolveInChunks (conv, input, { 512 }, 0, kSwitchAt, &out);
+        conv.setIR (irB.data(), kIRLength);
+        convolveInChunks (conv, input, { 512 }, kSwitchAt, kNumSamples, &out);
+
+        // Call 1 after setIR: warm-up, output is still the old IR.
+        double worstWarmup = 0.0;
+        for (size_t i = kSwitchAt; i < kSwitchAt + kCall; ++i)
+            worstWarmup = std::max (worstWarmup, std::abs (static_cast<double> (out[i]) - convA[i]));
+        INFO ("warm-up call vs conv(A): " << worstWarmup);
+        CHECK (worstWarmup <= 2.0e-6);
+
+        // Calls 2-5: per-sample gains ramp linearly between cos/sin of (k-1)/4 and k/4. The
+        // expectation repeats the convolver's own float arithmetic (the gain is accumulated one
+        // increment per sample, which drifts about 4e-6 from an exact double ramp at 512 samples)
+        // so that this pins the timing and the gain law, not float rounding.
+        double worstFade = 0.0;
+        for (int k = 1; k <= 4; ++k)
+        {
+            const float halfPi = static_cast<float> (kHalfPi);
+            float gOut = std::cos (static_cast<float> (k - 1) / 4.0f * halfPi);
+            float gIn = std::sin (static_cast<float> (k - 1) / 4.0f * halfPi);
+            const float outEnd = std::cos (static_cast<float> (k) / 4.0f * halfPi);
+            const float inEnd = std::sin (static_cast<float> (k) / 4.0f * halfPi);
+            const float outInc = (outEnd - gOut) / static_cast<float> (kCall);
+            const float inInc = (inEnd - gIn) / static_cast<float> (kCall);
+            const size_t base = kSwitchAt + static_cast<size_t> (k) * kCall;
+
+            for (size_t i = 0; i < kCall; ++i)
+            {
+                gOut += outInc;
+                gIn += inInc;
+                const double expected = convA[base + i] * static_cast<double> (gOut)
+                                      + convB[base + i] * static_cast<double> (gIn);
+                worstFade = std::max (worstFade, std::abs (static_cast<double> (out[base + i]) - expected));
+            }
+        }
+        INFO ("fade calls vs cos/sin expectation: " << worstFade);
+        CHECK (worstFade <= 1.0e-6);
+
+        // From call 6 on the output is the new IR alone.
+        double worstAfter = 0.0;
+        for (size_t i = kSwitchAt + 5 * kCall; i < kNumSamples; ++i)
+            worstAfter = std::max (worstAfter, std::abs (static_cast<double> (out[i]) - convB[i]));
+        INFO ("after the fade vs conv(B): " << worstAfter);
+        CHECK (worstAfter <= 2.0e-6);
+    }
+
+    SECTION ("32-sample calls, IR 256: warm-up is irLen samples, the fade is the 2048-sample floor")
+    {
+        constexpr int kIRLength = 256;
+        constexpr size_t kWarmup = 256;
+        constexpr size_t kFade = 2048;
+        const std::vector<float> irA = whiteNoise (kIRLength, 34, 0.05f);
+        const std::vector<float> irB = whiteNoise (kIRLength, 35, 0.05f);
+        const std::vector<float> input = makeInput();
+        const std::vector<double> convA = directConvolve (input, irA);
+        const std::vector<double> convB = directConvolve (input, irB);
+
+        PartitionedConvolver conv;
+        conv.prepare (512, kIRLength);
+        conv.setIR (irA.data(), kIRLength);
+
+        std::vector<float> out (kNumSamples, 0.0f);
+        convolveInChunks (conv, input, { 32 }, 0, kSwitchAt, &out);
+        conv.setIR (irB.data(), kIRLength);
+        convolveInChunks (conv, input, { 32 }, kSwitchAt, kNumSamples, &out);
+
+        double worstWarmup = 0.0;
+        for (size_t i = kSwitchAt; i < kSwitchAt + kWarmup; ++i)
+            worstWarmup = std::max (worstWarmup, std::abs (static_cast<double> (out[i]) - convA[i]));
+        INFO ("first irLen samples vs conv(A): " << worstWarmup);
+        CHECK (worstWarmup <= 2.0e-6);
+
+        // Half way through the fade the output is neither IR alone.
+        const size_t mid = kSwitchAt + kWarmup + kFade / 2;
+        double midFromA = 0.0;
+        double midFromB = 0.0;
+        for (size_t i = mid; i < mid + 32; ++i)
+        {
+            midFromA = std::max (midFromA, std::abs (static_cast<double> (out[i]) - convA[i]));
+            midFromB = std::max (midFromB, std::abs (static_cast<double> (out[i]) - convB[i]));
+        }
+        INFO ("mid-fade distance from conv(A): " << midFromA << ", from conv(B): " << midFromB);
+        CHECK (midFromA > 1.0e-3);
+        CHECK (midFromB > 1.0e-3);
+
+        // The new IR alone from irLen + 2048 + 64 samples on.
+        double worstAfter = 0.0;
+        for (size_t i = kSwitchAt + kWarmup + kFade + 64; i < kNumSamples; ++i)
+            worstAfter = std::max (worstAfter, std::abs (static_cast<double> (out[i]) - convB[i]));
+        INFO ("after the fade vs conv(B): " << worstAfter);
+        CHECK (worstAfter <= 2.0e-6);
+    }
+
+    SECTION ("512-sample calls, IR 558: warm-up lasts two calls")
+    {
+        constexpr int kIRLength = 558;
+        constexpr size_t kCall = 512;
+        const std::vector<float> irA = whiteNoise (kIRLength, 36, 0.05f);
+        const std::vector<float> irB = whiteNoise (kIRLength, 37, 0.05f);
+        const std::vector<float> input = makeInput();
+        const std::vector<double> convA = directConvolve (input, irA);
+        const std::vector<double> convB = directConvolve (input, irB);
+
+        PartitionedConvolver conv;
+        conv.prepare (512, kIRLength);
+        conv.setIR (irA.data(), kIRLength);
+
+        std::vector<float> out (kNumSamples, 0.0f);
+        convolveInChunks (conv, input, { 512 }, 0, kSwitchAt, &out);
+        conv.setIR (irB.data(), kIRLength);
+        convolveInChunks (conv, input, { 512 }, kSwitchAt, kNumSamples, &out);
+
+        // Calls 1 and 2: 512 samples is shorter than the 558-sample IR, so call 2 is still warm-up.
+        double worstWarmup = 0.0;
+        for (size_t i = kSwitchAt; i < kSwitchAt + 2 * kCall; ++i)
+            worstWarmup = std::max (worstWarmup, std::abs (static_cast<double> (out[i]) - convA[i]));
+        INFO ("two warm-up calls vs conv(A): " << worstWarmup);
+        CHECK (worstWarmup <= 2.0e-6);
+
+        // Call 3 is the first fade call: neither IR alone.
+        double fromA = 0.0;
+        for (size_t i = kSwitchAt + 2 * kCall; i < kSwitchAt + 3 * kCall; ++i)
+            fromA = std::max (fromA, std::abs (static_cast<double> (out[i]) - convA[i]));
+        INFO ("first fade call distance from conv(A): " << fromA);
+        CHECK (fromA > 1.0e-3);
+
+        // Four fade calls (3-6), then the new IR alone from call 7.
+        double worstAfter = 0.0;
+        for (size_t i = kSwitchAt + 6 * kCall; i < kNumSamples; ++i)
+            worstAfter = std::max (worstAfter, std::abs (static_cast<double> (out[i]) - convB[i]));
+        INFO ("after the fade vs conv(B): " << worstAfter);
+        CHECK (worstAfter <= 2.0e-6);
+    }
+}
+
+// ============================================================================
+// D-12: in steady state the engine's output must not depend on how the host cuts the stream
+// into blocks. Reference: the 512-sample plan; compared after 16384 samples, once gain ramps,
+// HRIR loads and any transition have finished, on the Simple path and on the KEMAR HRTF path.
+// ============================================================================
+
+TEST_CASE ("BUG-02: engine output at small and irregular block plans matches the 512-sample reference",
+           "[bug02][steady]")
+{
+    constexpr double kSampleRate = 48000.0;
+    constexpr size_t kNumSamples = 60000;
+    constexpr size_t kSettle = 16384;
+    const std::vector<float> input = whiteNoise (kNumSamples, 5, 0.25f);
+
+    for (BinauralPath path : { BinauralPath::Simple, BinauralPath::HRTF })
+    {
+        const char* pathName = (path == BinauralPath::Simple) ? "Simple" : "HRTF/KEMAR";
+
+        auto render = [&] (const std::vector<int>& plan)
+        {
+            RenderEngine engine;
+            engine.prepare (kSampleRate, 512);
+            engine.setOutputFormat (OutputFormat::Binaural);
+            if (path == BinauralPath::HRTF)
+                REQUIRE (loadProfileIntoActiveRenderer (engine, 5, kSampleRate));
+
+            const RenderBlockContext ctx = makeBinauralContext (path, kSampleRate);
+            return renderThroughEngine (engine, ctx, input, plan,
+                                        [] (int64_t) { return Direction { 50.0f, 20.0f }; });
+        };
+
+        const StereoSignal reference = render ({ 512 });
+        REQUIRE (signalIsFinite (reference));
+
+        for (const auto& plan : blockPlans())
+        {
+            if (plan.size() == 1 && plan.front() == 512)
+                continue;
+
+            const StereoSignal other = render (plan);
+
+            double worst = 0.0;
+            int nonFinite = 0;
+            for (size_t i = kSettle; i < kNumSamples; ++i)
+            {
+                if (! spatialcore_test::accumulateWorstFinite (worst, static_cast<double> (std::abs (other.left[i] - reference.left[i]))))
+                    ++nonFinite;
+                if (! spatialcore_test::accumulateWorstFinite (worst, static_cast<double> (std::abs (other.right[i] - reference.right[i]))))
+                    ++nonFinite;
+            }
+
+            INFO ("path " << pathName << ", plan starts at " << plan.front() << " (" << plan.size()
+                  << " entries): worst |diff| vs 512 = " << worst);
+            WARN ("steady-state " << pathName << " plan[0]=" << plan.front() << " size " << plan.size()
+                  << ": worst |diff| " << worst);
+            CHECK (nonFinite == 0);
+            CHECK (worst <= 1.0e-4);
+        }
+    }
+}

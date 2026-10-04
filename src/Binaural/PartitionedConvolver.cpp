@@ -125,6 +125,14 @@ void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* 
     // own independent overlap-add block. This never waits across calls to
     // accumulate a full prepared-size block, so it stays glitch-free and
     // latency-neutral for numSamples < blockSize and for variable numSamples.
+    //
+    // This per-call overlap-add is ONE HALF of the OSD#234 small-block fix. The other half
+    // is in process(): the IR warm-up and crossfade are timed in samples, not calls
+    // (BUG-02, Phase 3), so a moving source no longer steps harder at 32-128 samples than at
+    // 512. Both halves are covered by [convolver][blocksize] (this function against a
+    // double-precision direct convolution), [bug02][moving] and [bug02][steady] (through the
+    // engine). Spatial-Media-Lab/OpenSpatialDelay#234 stays open for OSD's own delay line
+    // and pitch shifter, which this library does not contain.
     jassert (numSamples > 0 && numSamples <= blockSize);
     jassert (numSamples + irLen - 1 <= fftSize);  // linear-conv always fits (numSamples <= blockSize by contract)
 

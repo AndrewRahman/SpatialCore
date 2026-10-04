@@ -75,6 +75,12 @@ private:
     // (verified: reduces to the same output/overlap update), and glitch-free /
     // latency-neutral for any numSamples in [1, blockSize] because it never
     // waits across calls to accumulate a full block before producing output.
+    //
+    // That per-call overlap-add is one half of the OSD#234 small-block fix; the
+    // other half is the sample-based warm-up and crossfade above (BUG-02, Phase 3).
+    // Both are covered by [convolver][blocksize], [bug02][moving] and
+    // [bug02][steady]. Spatial-Media-Lab/OpenSpatialDelay#234 stays open for OSD's
+    // delay line and pitch shifter, which this library does not contain.
     struct ConvSlot
     {
         std::vector<float> irFreqDomain;     // IR in frequency domain
