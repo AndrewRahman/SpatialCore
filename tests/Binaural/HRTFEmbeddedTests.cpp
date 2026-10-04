@@ -531,7 +531,8 @@ TEST_CASE ("HRTF resolve: status text comes from the profile table and numbers o
         for (const auto state : { HRTFLoadState::Idle, HRTFLoadState::Loading, HRTFLoadState::Ready, HRTFLoadState::Failed })
             for (const auto source : { HRTFProfileSource::None, HRTFProfileSource::Simple, HRTFProfileSource::SharedFolder, HRTFProfileSource::Embedded })
                 for (const auto problem : { HRTFProfileProblem::None, HRTFProfileProblem::InvalidIndex, HRTFProfileProblem::NotFound,
-                                            HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn, HRTFProfileProblem::SharedFileUnreadableNoBuiltIn })
+                                            HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn, HRTFProfileProblem::SharedFileUnreadableNoBuiltIn,
+                                            HRTFProfileProblem::LoadFailed })
                 {
                     s.requestedProfile = s.activeProfile = profile;
                     s.state = state;

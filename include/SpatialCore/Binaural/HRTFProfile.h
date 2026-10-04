@@ -64,7 +64,8 @@ enum class HRTFProfileProblem : uint8_t
     InvalidIndex,
     NotFound,
     SharedFileUnreadableUsedBuiltIn,
-    SharedFileUnreadableNoBuiltIn
+    SharedFileUnreadableNoBuiltIn,
+    LoadFailed   // the load itself threw (for example out of memory); appended, existing values unchanged
 };
 
 struct HRTFProfileStatus

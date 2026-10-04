@@ -6,6 +6,7 @@
 #include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
 #include <cstdlib>
+#include <new>
 #include <cstring>
 #include <cmath>
 #include <algorithm>
@@ -87,7 +88,27 @@ public:
             }
 
             owner.loaderBusy_.store (true, std::memory_order_release);
-            const bool settled = serveRequest (serial);
+
+            // A load can throw (std::bad_alloc from the decoded SOFA data or the convolver
+            // buffers). Without a handler the exception would end this thread: loaderBusy_ and
+            // the held renderer would never be released and the status would read Loading
+            // forever. Settle the request as failed instead; the current profile keeps
+            // playing and a later request retries (D-06).
+            bool settled = false;
+            try
+            {
+                settled = serveRequest (serial);
+            }
+            catch (...)
+            {
+                releaseHeld();
+                publishStatus (owner.requestedProfile_.load (std::memory_order_acquire),
+                               HRTFLoadState::Failed, HRTFProfileSource::None,
+                               HRTFProfileProblem::LoadFailed);
+                settle (serial);
+                settled = true;
+            }
+
             owner.loaderBusy_.store (false, std::memory_order_release);
             if (settled)
                 lastHandled = serial;
@@ -213,6 +234,9 @@ private:
             auto& renderer = owner.binauralRenderers[static_cast<size_t> (heldIdx)];
             renderer.prepare (owner.preparedSampleRate_, owner.preparedMaxBlock_);
 
+            if (owner.loaderThrowForTesting_.load (std::memory_order_acquire))
+                throw std::bad_alloc();
+
             const HRTFResolveResult result = resolveHRTFProfile (target, renderer.hrtfDatabase,
                                                                   static_cast<float> (owner.preparedSampleRate_),
                                                                   owner.getSharedFolderForLoader());
@@ -291,6 +315,11 @@ void RenderEngine::setSharedHRTFFolderForTesting (const juce::File& folder)
     const juce::ScopedLock lock (sharedFolderLock_);
     sharedFolderOverride_ = folder;
     hasSharedFolderOverride_ = true;
+}
+
+void RenderEngine::setLoaderFailureForTesting (bool enabled)
+{
+    loaderThrowForTesting_.store (enabled, std::memory_order_release);
 }
 
 void RenderEngine::setHRTFProfile (int profileIndex)

@@ -388,6 +388,12 @@ public:
         and shared by the whole machine). Message thread, before or between requests. */
     void setSharedHRTFFolderForTesting (const juce::File& folder);
 
+    /** While enabled, the worker throws std::bad_alloc where a profile load would start, so a
+        test can exercise the failure path that an out-of-memory load takes: the request settles
+        as Failed / HRTFProfileProblem::LoadFailed and the current profile keeps playing. Any
+        thread; the default is off. */
+    void setLoaderFailureForTesting (bool enabled);
+
 private:
     class HRTFProfileLoader;   // defined in RenderEngine.cpp; a nested class sees the private state below
 
@@ -519,6 +525,7 @@ private:
     std::atomic<uint32_t> loaderStatusWord_ { 0u };
     std::atomic<bool>     loaderBusy_ { false };
     std::atomic<bool>     forceReload_ { false };
+    std::atomic<bool>     loaderThrowForTesting_ { false };   // test hook, see setLoaderFailureForTesting()
     double preparedSampleRate_ = 0.0;
     int    preparedMaxBlock_ = 0;
     bool   hrtfEverRequested_ = false;               // message thread only

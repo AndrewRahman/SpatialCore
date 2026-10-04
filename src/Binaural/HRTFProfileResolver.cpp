@@ -109,6 +109,9 @@ juce::String describeHRTFProfileStatus (const HRTFProfileStatus& status)
         case HRTFProfileProblem::SharedFileUnreadableUsedBuiltIn:
             return "shared file " + fileNameOf (status.requestedProfile) + " unreadable, used built-in";
 
+        case HRTFProfileProblem::LoadFailed:
+            return "profile " + requested + " failed: could not load (out of memory?)";
+
         case HRTFProfileProblem::None:
             break;
     }

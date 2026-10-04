@@ -430,6 +430,36 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
         CHECK (live.lastPeak > 1.0e-4f);   // the Simple path keeps sounding
     }
 
+    SECTION ("a load that throws settles as failed, never stays Loading, and a retry recovers (WR-02)")
+    {
+        RenderEngine engine;
+        prepareBinaural (engine, nonExistent.dir);
+        LiveRender live (engine, makeBinauralContext (BinauralPath::Simple, kRate), kBlock, kRate);
+
+        engine.setLoaderFailureForTesting (true);
+        engine.setHRTFProfile (kProbeProfile);
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
+
+        const HRTFProfileStatus status = engine.getHRTFProfileStatus();
+        CHECK (status.state == HRTFLoadState::Failed);
+        CHECK (status.problem == HRTFProfileProblem::LoadFailed);
+        CHECK (status.requestedProfile == kProbeProfile);
+        CHECK (status.activeProfile == 0);
+        CHECK (describeHRTFProfileStatus (status).contains ("failed"));
+
+        live.renderOne();
+        CHECK (live.lastFinite);
+        CHECK (live.lastPeak > 1.0e-4f);   // the current profile keeps playing
+
+        // The worker survived the throw: the same request, retried, now loads.
+        engine.setLoaderFailureForTesting (false);
+        LiveRender hrtfLive (engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+        REQUIRE (switchAndSettle (engine, hrtfLive, kProbeProfile));
+        CHECK (engine.getHRTFProfileStatus().state == HRTFLoadState::Ready);
+        CHECK (engine.getHRTFProfileStatus().activeProfile == kProbeProfile);
+        CHECK_FALSE (activeIsSimple (engine));
+    }
+
     SECTION ("negative index")
     {
         RenderEngine engine;
