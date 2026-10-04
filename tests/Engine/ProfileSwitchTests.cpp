@@ -98,6 +98,22 @@ TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-fre
 // ============================================================================
 namespace
 {
+    /** SPATIALCORE_TEST_TIMEOUT_SCALE: an integer of at least 1 (default 1; anything else counts
+        as 1). It stretches watchdogs, idle waits and polls only. The 50 ms call bound, the 4.0
+        sample bound and the 15 s shutdown bound are never scaled. */
+    int timeoutScale()
+    {
+        const char* text = std::getenv ("SPATIALCORE_TEST_TIMEOUT_SCALE");
+        if (text == nullptr)
+            return 1;
+
+        char* end = nullptr;
+        const long value = std::strtol (text, &end, 10);
+        if (end == text || *end != '\0' || value < 1 || value > 1000)
+            return 1;
+        return static_cast<int> (value);
+    }
+
     /** A unique folder path under the system temp directory, deleted with the object. The
         folder is created only when `create` is true, so a default fixture is a path that
         does not exist (the shared folder the engine must fall back from). */
@@ -233,7 +249,7 @@ TEST_CASE ("Profile switch: one call loads KEMAR from embedded data and the audi
     INFO ("setHRTFProfile took " << callMs << " ms");
     CHECK (callMs < 50.0);
 
-    REQUIRE (engine.waitForHRTFProfileIdle (20000));
+    REQUIRE (engine.waitForHRTFProfileIdle (20000 * timeoutScale()));
 
     LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
     REQUIRE (live.renderUntilActive (5, 400) > 0);
@@ -294,7 +310,7 @@ namespace
     bool switchAndSettle (RenderEngine& engine, LiveRender& live, int profile)
     {
         engine.setHRTFProfile (profile);
-        if (! engine.waitForHRTFProfileIdle (30000))
+        if (! engine.waitForHRTFProfileIdle (30000 * timeoutScale()))
             return false;
         if (live.renderUntilActive (profile, 400) < 0)
             return false;
@@ -338,7 +354,7 @@ TEST_CASE ("Profile switch: every embedded profile becomes active through the en
     // Profile 0 selects the Simple renderer. On the HRTF path a Simple-mode renderer is silent
     // (the consumer flips useHRTF off); the Simple <-> HRTF crossfade is Plan 03-09.
     engine.setHRTFProfile (0);
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
     REQUIRE (live.renderUntilActive (0, 400) > 0);
     live.renderAudible (20);
     const HRTFProfileStatus status = engine.getHRTFProfileStatus();
@@ -361,7 +377,7 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
         REQUIRE (switchAndSettle (engine, live, kProbeProfile));
 
         engine.setHRTFProfile (9);
-        REQUIRE (engine.waitForHRTFProfileIdle (30000));
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
 
         const HRTFProfileStatus status = engine.getHRTFProfileStatus();
         CHECK (status.state == HRTFLoadState::Failed);
@@ -382,7 +398,7 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
         LiveRender live (engine, makeBinauralContext (BinauralPath::Simple, kRate), kBlock, kRate);
 
         engine.setHRTFProfile (9);
-        REQUIRE (engine.waitForHRTFProfileIdle (30000));
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
         live.renderOne();
 
         const HRTFProfileStatus status = engine.getHRTFProfileStatus();
@@ -398,7 +414,7 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
         RenderEngine engine;
         prepareBinaural (engine, nonExistent.dir);
         engine.setHRTFProfile (-1);
-        REQUIRE (engine.waitForHRTFProfileIdle (30000));
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
         CHECK (engine.getHRTFProfileStatus().problem == HRTFProfileProblem::InvalidIndex);
     }
 
@@ -409,7 +425,7 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
         RenderEngine engine;
         prepareBinaural (engine, empty.dir);
         engine.setHRTFProfile (1);
-        REQUIRE (engine.waitForHRTFProfileIdle (30000));
+        REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
 
         const HRTFProfileStatus status = engine.getHRTFProfileStatus();
         CHECK (status.state == HRTFLoadState::Failed);
@@ -438,7 +454,7 @@ TEST_CASE ("Profile switch: the most recent request wins, and a settled request 
     }
     const int last = sequence.back();
 
-    REQUIRE (engine.waitForHRTFProfileIdle (60000));
+    REQUIRE (engine.waitForHRTFProfileIdle (60000 * timeoutScale()));
     CHECK (engine.getHRTFProfileStatus().requestedProfile == last);
 
     LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
@@ -462,13 +478,13 @@ TEST_CASE ("Profile switch: the most recent request wins, and a settled request 
 
     // A failed request, requested again, runs again.
     engine.setHRTFProfile (9);
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
     REQUIRE (engine.getHRTFProfileStatus().state == HRTFLoadState::Failed);
 
     engine.setHRTFProfile (9);
     const HRTFLoadState straightAfter = engine.getHRTFProfileStatus().state;
     CHECK ((straightAfter == HRTFLoadState::Loading || straightAfter == HRTFLoadState::Failed));
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
     CHECK (engine.getHRTFProfileStatus().state == HRTFLoadState::Failed);
     CHECK (engine.getHRTFProfileStatus().problem == HRTFProfileProblem::InvalidIndex);
     CHECK (engine.getHRTFProfileStatus().activeProfile == last);
@@ -492,7 +508,7 @@ TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the n
     engine.setHRTFProfile (kProfile);   // a slow load starts at 48 kHz
     engine.prepare (44100.0, 512);      // must stop it, discard it, and reload at 44.1 kHz
 
-    REQUIRE (engine.waitForHRTFProfileIdle (60000));
+    REQUIRE (engine.waitForHRTFProfileIdle (60000 * timeoutScale()));
 
     LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, 44100.0), kBlock, 44100.0);
     REQUIRE (live.renderUntilActive (kProfile, 400) > 0);
@@ -503,7 +519,7 @@ TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the n
 
     // A second prepare at the same settings must not reload anything.
     engine.prepare (44100.0, 512);
-    REQUIRE (engine.waitForHRTFProfileIdle (60000));
+    REQUIRE (engine.waitForHRTFProfileIdle (60000 * timeoutScale()));
     for (int b = 0; b < 10; ++b)
     {
         live.renderOne();
@@ -580,7 +596,7 @@ TEST_CASE ("Profile switch: switching while a non-binaural format renders comple
     live.renderOne();
 
     engine.setHRTFProfile (5);
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
     const int blocks = live.renderUntilActive (5, 10);
     CHECK (blocks > 0);
     CHECK_FALSE (engine.isRendererCrossfadeActive());
@@ -588,7 +604,7 @@ TEST_CASE ("Profile switch: switching while a non-binaural format renders comple
 
     // The renderer that was active is free again, so a second request completes.
     engine.setHRTFProfile (kProbeProfile == 5 ? 0 : kProbeProfile);
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
     CHECK (live.renderUntilActive (kProbeProfile == 5 ? 0 : kProbeProfile, 10) > 0);
     CHECK_FALSE (engine.isRendererCrossfadeActive());
 }
@@ -603,7 +619,7 @@ TEST_CASE ("Profile switch: a crossfade abandoned by a path change frees its ren
     LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
 
     engine.setHRTFProfile (5);
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
     REQUIRE (live.renderUntilActive (5, 400) > 0);
     REQUIRE (engine.isRendererCrossfadeActive());   // claimed, fading in
 
@@ -613,7 +629,7 @@ TEST_CASE ("Profile switch: a crossfade abandoned by a path change frees its ren
 
     const int next = (kProbeProfile == 5) ? 0 : kProbeProfile;
     engine.setHRTFProfile (next);
-    REQUIRE (engine.waitForHRTFProfileIdle (30000));   // needs the abandoned renderer back
+    REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));   // needs the abandoned renderer back
     CHECK (live.renderUntilActive (next, 10) > 0);
     CHECK (live.lastFinite);
 }
@@ -624,22 +640,6 @@ TEST_CASE ("Profile switch: a crossfade abandoned by a path change frees its ren
 // ============================================================================
 namespace
 {
-    /** SPATIALCORE_TEST_TIMEOUT_SCALE: an integer of at least 1 (default 1; anything else counts
-        as 1). It stretches watchdogs, idle waits and polls only. The 50 ms call bound, the 4.0
-        sample bound and the 15 s shutdown bound are never scaled. */
-    int timeoutScale()
-    {
-        const char* text = std::getenv ("SPATIALCORE_TEST_TIMEOUT_SCALE");
-        if (text == nullptr)
-            return 1;
-
-        char* end = nullptr;
-        const long value = std::strtol (text, &end, 10);
-        if (end == text || *end != '\0' || value < 1 || value > 1000)
-            return 1;
-        return static_cast<int> (value);
-    }
-
     /** Runs `body` on a std::async task and waits seconds x scale. On timeout it prints a named
         message and aborts, so a deadlock ends the test binary with a non-zero exit instead of
         hanging the suite. A plain wait_for timeout would not do: the future returned by
