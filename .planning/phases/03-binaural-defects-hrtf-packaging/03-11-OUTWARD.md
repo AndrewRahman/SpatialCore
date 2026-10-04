@@ -236,6 +236,10 @@ After running, append the comment URL and the closed state to the "Done" section
 - **D applied:** profiles 1-5 pinned to -20.83, -19.80, -20.16, -19.34, -18.34 LKFS within 0.5 LU;
   spread among profiles 1-5 at most 2.98 LU; Simple excluded; WARN table kept; comment "tolerance
   approved by the user on 2026-10-04 from the Phase 3 measurement (D-14)".
-- **A: deferred, not posted.** Spatial-Media-Lab/OpenSpatialDelay#234 untouched (still open).
-- **C: deferred, not posted.** AndrewRahman/SpatialCore#15 untouched (not closed).
-- Nothing was sent to any repository other than AndrewRahman/SpatialCore (issue #25 only).
+- **A posted (UAT go-ahead 2026-10-04):**
+  https://github.com/Spatial-Media-Lab/OpenSpatialDelay/issues/234#issuecomment-5984074066 -
+  issue state OPEN (D-13).
+- **C posted (UAT go-ahead 2026-10-04):**
+  https://github.com/AndrewRahman/SpatialCore/issues/15#issuecomment-5984074231 - issue state
+  CLOSED. It had already been auto-closed at 2026-10-04T20:20:37Z by commit bb8b3d1 when Phase 3
+  was pushed to main (no comment then), so only the comment was added; no separate close was needed.

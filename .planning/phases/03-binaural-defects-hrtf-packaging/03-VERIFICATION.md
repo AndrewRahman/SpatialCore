@@ -1,7 +1,7 @@
 ---
 phase: 03-binaural-defects-hrtf-packaging
 verified: 2026-10-04T20:16:21Z
-status: human_needed
+status: passed
 score: 5/5 roadmap success criteria verified (4/4 requirement IDs satisfied)
 covered_files:
   - .claude/skills/spatial-audio-dsp/SKILL.md
@@ -62,7 +62,7 @@ covered_files:
   - tests/Binaural/SadieD2KU100Tests.cpp
   - tests/CMakeLists.txt
   - tests/Engine/ProfileSwitchTests.cpp
-covered_digest: "v2:sha256:c9f0cb6ff8900bc22c22ac35a71449f9f617bf6cd4138ef5749eeb076a8d0da2"
+covered_digest: "v2:sha256:88b66e28ef0ea8a42fa031b1db5f27408e8cc26f262c71927ab2fa768c507129"
 behavior_unverified: 0
 overrides_applied: 0
 gaps: []
@@ -245,3 +245,15 @@ No gaps. Every roadmap success criterion is met by code that exists, is wired, a
 
 _Verified: 2026-10-04T20:16:21Z_
 _Verifier: Claude (gsd-verifier)_
+
+## Re-verification after UAT (2026-10-04)
+
+- **Human item resolved:** the user gave the go-ahead in `/gsd-verify-work 3` (03-UAT.md, 1/1 pass).
+  Section A posted to Spatial-Media-Lab/OpenSpatialDelay#234 (still OPEN); section C posted to
+  AndrewRahman/SpatialCore#15 (CLOSED - auto-closed by bb8b3d1 on the push to main, so only the
+  comment was added). Links are in 03-11-OUTWARD.md "Done".
+- **Covered-file change since the first verification:** merge 3d8adcf brought in 6977d64 (OSP WR-09,
+  a Debug-only single-writer guard and header note on `RenderEngine::setOutputFormat()`), touching
+  `include/SpatialCore/Engine/RenderEngine.h` and `src/Engine/RenderEngine.cpp`. It does not touch any
+  Phase 3 path. Release suite re-run on the merged tree: 260/260 pass. The digest was recomputed.
+- Status moved from `human_needed` to `passed`.
