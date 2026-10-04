@@ -317,7 +317,13 @@ public:
     }
     bool isRendererCrossfadeActive() const { return rendererXfadeActive_.load (std::memory_order_acquire); }
 
+    // Renderer crossfade length (a profile swap). Counted in elapsed SAMPLES, fixed when the
+    // fade starts: max (kRendererXfadeBlocks x the block size at that moment,
+    // kMinRendererXfadeSamples). A pure block count made the fade 8 x 32 = 256 samples long at
+    // 32-sample blocks, shorter than the HRIRs it blends; the sample floor keeps it at least 85 ms
+    // at 48 kHz at any block size. At 512-sample blocks and above it is the old 8-block fade.
     static constexpr int kRendererXfadeBlocks = 8;
+    static constexpr int kMinRendererXfadeSamples = 4096;
 
     //--------------------------------------------------------------------------
     // Engine-owned HRTF profile switching (DATA-01, D-04, D-05, D-06).
@@ -450,7 +456,8 @@ private:
     int  prepareRendererIndex_ = 1;
     int  prevActiveRendererIdx_ = 0;
     bool rendererXfading_ = false;
-    int  rendererXfadeBlockCount_ = 0;
+    int  rendererXfadeSamplesDone_ = 0;     // samples elapsed since the fade started
+    int  rendererXfadeLengthSamples_ = 0;   // fixed when the fade starts
     int  rendererXfadeFromIdx_ = 0;
     float prevRxFadeOut_ = 1.0f;
     float prevRxFadeIn_  = 0.0f;

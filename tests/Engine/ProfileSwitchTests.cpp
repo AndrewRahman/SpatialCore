@@ -29,19 +29,19 @@ using namespace spatialcore::test;
 // added by Plans 03-06, 03-07 and 03-09.
 // ============================================================================
 
-TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-free at 128 and 512 samples (baseline)",
+TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-free and dropout-free at every block size",
            "[hrtf-switch][click][legacy]")
 {
     // The legacy swap is: load into getPrepareRendererIndex()'s renderer, then swapActiveRenderer().
-    // It crossfades over kRendererXfadeBlocks (8) BLOCKS, so its length in samples depends on the
-    // block size. At 32 and 64 samples it clicks today (worst step / steady step 8.19 and 3.23,
-    // 03-RESEARCH.md); those sizes are added by Plan 03-09 together with the fix. 128 and 512 hold
-    // (research measured 1.15 and 1.00), so they are the baseline the fix must not regress.
+    // The renderer crossfade used to be counted in BLOCKS (8 x the block size), so at 32 and 64
+    // samples it was a 5 ms and 11 ms fade and the swap clicked (worst step / steady step 8.19 and
+    // 3.23, 03-RESEARCH.md). Plan 03-09 made it sample-based: max (8 x block, 4096) samples. All
+    // four sizes are held to the step bound on a sine and to the dropout bound on pink noise.
     constexpr double kRate = 48000.0;
     constexpr size_t kTotal = 72000;
     constexpr size_t kSwitchAt = 24000;
 
-    for (const int blockSize : { 128, 512 })
+    for (const int blockSize : { 32, 64, 128, 512 })
     {
         for (const bool noiseInput : { false, true })
         {
@@ -73,7 +73,8 @@ TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-fre
             REQUIRE (swapped);
             REQUIRE (signalIsFinite (out));
 
-            const size_t transition = static_cast<size_t> (RenderEngine::kRendererXfadeBlocks) * static_cast<size_t> (blockSize);
+            const size_t transition = std::max (static_cast<size_t> (RenderEngine::kRendererXfadeBlocks) * static_cast<size_t> (blockSize),
+                                                static_cast<size_t> (RenderEngine::kMinRendererXfadeSamples));
             const double stepRatio = switchStepRatio (out, switchSample, transition);
             const double rmsRatio = switchMinRmsRatio (out, switchSample, transition);
 
@@ -87,7 +88,11 @@ TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-fre
                 INFO ("block size " << blockSize << " step ratio " << stepRatio);
                 CHECK (stepRatio <= 1.5);
             }
-            // The noise run only records the level dip; Plan 03-09 owns the dip bound.
+            else
+            {
+                INFO ("block size " << blockSize << " min RMS ratio " << rmsRatio);
+                CHECK (rmsRatio >= 0.7);
+            }
         }
     }
 }
@@ -208,6 +213,20 @@ namespace
             return -1;
         }
 
+        /** Renders until the engine reports no renderer crossfade (at most `maxBlocks`). The fade
+            lasts at least kMinRendererXfadeSamples samples, so it spans many small blocks.
+            Returns true when it ended. */
+        bool renderUntilFadeEnds (int maxBlocks = 800)
+        {
+            for (int b = 0; b < maxBlocks; ++b)
+            {
+                renderOne();
+                if (! engine.isRendererCrossfadeActive())
+                    return true;
+            }
+            return false;
+        }
+
         /** Renders `count` blocks and reports whether every one was finite and the last 8 had a
             non-silent peak. */
         bool renderAudible (int count)
@@ -313,6 +332,8 @@ namespace
         if (! engine.waitForHRTFProfileIdle (30000 * timeoutScale()))
             return false;
         if (live.renderUntilActive (profile, 400) < 0)
+            return false;
+        if (! live.renderUntilFadeEnds())
             return false;
         // Profile 0 on the HRTF path is a silent Simple-mode renderer (Plan 03-09 owns that
         // crossfade); only the SOFA profiles are expected to sound here.
@@ -461,6 +482,7 @@ TEST_CASE ("Profile switch: the most recent request wins, and a settled request 
     REQUIRE (live.renderUntilActive (last, 400) > 0);
     CHECK (engine.getHRTFProfileStatus().requestedProfile == last);
     CHECK (engine.getHRTFProfileStatus().state == HRTFLoadState::Ready);
+    REQUIRE (live.renderUntilFadeEnds());
     live.renderAudible (50);
 
     // The same request again, settled and active: no reload, no crossfade, status unchanged.
@@ -512,6 +534,7 @@ TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the n
 
     LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, 44100.0), kBlock, 44100.0);
     REQUIRE (live.renderUntilActive (kProfile, 400) > 0);
+    REQUIRE (live.renderUntilFadeEnds());
     live.renderAudible (50);
 
     CHECK (engine.getHRTFProfileStatus().state == HRTFLoadState::Ready);
@@ -938,4 +961,195 @@ TEST_CASE ("Profile switch: destroying the engine during a load returns promptly
 
     CHECK (result.destroyMs >= 0.0);
     CHECK (result.destroyMs < 15000.0);
+}
+
+// ============================================================================
+// Click-free and dropout-free switching at every block size (criterion 4, Plan 03-09).
+// ============================================================================
+namespace
+{
+    /** One profile switch rendered through the engine: `fromProfile` is settled and playing, then
+        `toProfile` is requested after 24000 samples and the engine renders on. */
+    struct SwitchRun
+    {
+        StereoSignal out;
+        size_t switchSample = 0;   // first block on which the engine claimed the new profile
+        bool ok = false;
+    };
+
+    constexpr size_t kSwitchRunTotal = 72000;
+    constexpr size_t kSwitchRunAt = 24000;
+
+    /** The fade length the engine promises: max (kRendererXfadeBlocks x block, kMinRendererXfadeSamples). */
+    size_t expectedTransition (int blockSize)
+    {
+        return std::max (static_cast<size_t> (RenderEngine::kRendererXfadeBlocks) * static_cast<size_t> (blockSize),
+                         static_cast<size_t> (RenderEngine::kMinRendererXfadeSamples));
+    }
+
+    SwitchRun runProfileSwitch (int blockSize, bool noiseInput, int fromProfile, int toProfile,
+                                bool engineSelectsHRTF, const juce::File& sharedFolder)
+    {
+        SwitchRun run;
+
+        RenderEngine engine;
+        engine.prepare (kRate, 512);
+        engine.setOutputFormat (OutputFormat::Binaural);
+        engine.setSharedHRTFFolderForTesting (sharedFolder);
+
+        // Simple (0) is what a fresh engine plays; every other profile is loaded by the worker.
+        if (fromProfile != 0)
+        {
+            engine.setHRTFProfile (fromProfile);
+            if (! engine.waitForHRTFProfileIdle (30000 * timeoutScale()))
+                return run;
+        }
+
+        RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        (void) engineSelectsHRTF;   // wired to RenderBlockContext::engineSelectsHRTF in the Simple <-> HRTF cases
+
+        const std::vector<float> input = noiseInput ? pinkNoise (kSwitchRunTotal, 5, 0.25f)
+                                                    : sineWave (kSwitchRunTotal, 440.0, kRate, 0.5f);
+
+        bool issued = false;
+        bool detected = false;
+        int64_t lastBlockStart = 0;
+
+        run.out = renderThroughEngine (
+            engine, ctx, input, { blockSize },
+            [] (int64_t) { return Direction { 30.0f, 0.0f }; },
+            [&] (int64_t blockStart)
+            {
+                // The claim happens at the top of the first block after the request has settled,
+                // so the first block after which the crossfade is active (or the new profile is
+                // active) is the block rendered just before this callback.
+                if (issued && ! detected
+                    && (engine.isRendererCrossfadeActive() || engine.getHRTFProfileStatus().activeProfile == toProfile))
+                {
+                    run.switchSample = static_cast<size_t> (lastBlockStart);
+                    detected = true;
+                }
+                lastBlockStart = blockStart;
+
+                if (! issued && blockStart >= static_cast<int64_t> (kSwitchRunAt))
+                {
+                    engine.setHRTFProfile (toProfile);
+                    engine.waitForHRTFProfileIdle (30000 * timeoutScale());
+                    issued = true;
+                }
+            });
+
+        run.ok = issued && detected && signalIsFinite (run.out);
+        return run;
+    }
+
+    struct SwitchMetrics
+    {
+        double stepRatio = 0.0;
+        double noiseRmsRatio = 0.0;
+        double sineRmsRatio = 0.0;
+        bool ok = false;
+    };
+
+    SwitchMetrics measureProfileSwitch (int blockSize, int fromProfile, int toProfile,
+                                        bool engineSelectsHRTF, const juce::File& sharedFolder)
+    {
+        SwitchMetrics m;
+        const size_t transition = expectedTransition (blockSize);
+
+        const SwitchRun sine = runProfileSwitch (blockSize, false, fromProfile, toProfile, engineSelectsHRTF, sharedFolder);
+        const SwitchRun noise = runProfileSwitch (blockSize, true, fromProfile, toProfile, engineSelectsHRTF, sharedFolder);
+        m.ok = sine.ok && noise.ok;
+        if (! m.ok)
+            return m;
+
+        m.stepRatio = switchStepRatio (sine.out, sine.switchSample, transition);
+        m.sineRmsRatio = switchMinRmsRatio (sine.out, sine.switchSample, transition);
+        m.noiseRmsRatio = switchMinRmsRatio (noise.out, noise.switchSample, transition);
+        return m;
+    }
+
+    void reportSwitch (const char* label, int blockSize, int fromProfile, int toProfile, const SwitchMetrics& m)
+    {
+        char line[200];
+        std::snprintf (line, sizeof (line), "%s %d -> %d blk %3d: sine step %.3f, noise RMS %.3f, sine RMS %.3f",
+                       label, fromProfile, toProfile, blockSize, m.stepRatio, m.noiseRmsRatio, m.sineRmsRatio);
+        WARN (line);
+    }
+}
+
+TEST_CASE ("Profile switch: setHRTFProfile KEMAR to SADIE is click-free and dropout-free at every block size",
+           "[hrtf-switch][click]")
+{
+    const TempFolder nonExistent ("click");
+
+    for (const int blockSize : { 32, 64, 128, 512 })
+    {
+        INFO ("block size " << blockSize);
+        const SwitchMetrics m = measureProfileSwitch (blockSize, 5, 1, false, nonExistent.dir);
+        REQUIRE (m.ok);
+        reportSwitch ("setHRTFProfile", blockSize, 5, 1, m);
+
+        CHECK (m.stepRatio <= 1.5);        // the sine: steps are meaningful
+        CHECK (m.noiseRmsRatio >= 0.7);    // the pink noise: a dropout is meaningful
+    }
+}
+
+TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 samples) on both swap paths",
+           "[hrtf-switch][click][xfade-length]")
+{
+    // The length is fixed when the fade starts and counted in elapsed samples, so at 512-sample
+    // blocks and above it is the old 8-block fade (4096 samples) and below that it is 4096 samples.
+    const TempFolder nonExistent ("xfade-length");
+
+    // Counts the blocks a fade runs for: the first block on which the engine reports a crossfade
+    // is the claim block, and the block on which it stops reporting is the last one.
+    const auto fadeBlocks = [] (LiveRender& live) -> int
+    {
+        int blocks = 0;
+        for (int b = 0; b < 2000; ++b)
+        {
+            live.renderOne();
+            if (live.engine.isRendererCrossfadeActive())
+                ++blocks;
+            else if (blocks > 0)
+                return blocks + 1;
+        }
+        return -1;
+    };
+
+    for (const int blockSize : { 32, 64, 128, 512 })
+    {
+        for (const bool legacy : { false, true })
+        {
+            INFO ("block size " << blockSize << (legacy ? " legacy swap" : " setHRTFProfile"));
+
+            RenderEngine engine;
+            engine.prepare (kRate, 512);
+            engine.setOutputFormat (OutputFormat::Binaural);
+            engine.setSharedHRTFFolderForTesting (nonExistent.dir);
+            LiveRender live (engine, makeBinauralContext (BinauralPath::HRTF, kRate), blockSize, kRate);
+
+            // Settle on KEMAR first (this runs the Simple -> KEMAR fade to its end).
+            REQUIRE (loadProfileIntoActiveRenderer (engine, 5, kRate));
+            for (int b = 0; b < 400; ++b)
+                live.renderOne();
+            REQUIRE_FALSE (engine.isRendererCrossfadeActive());
+
+            if (legacy)
+            {
+                REQUIRE (loadProfileIntoRenderer (engine.getBinauralRenderer (engine.getPrepareRendererIndex()), 1, kRate));
+                engine.swapActiveRenderer();
+            }
+            else
+            {
+                engine.setHRTFProfile (1);
+                REQUIRE (engine.waitForHRTFProfileIdle (30000 * timeoutScale()));
+            }
+
+            const int blocks = fadeBlocks (live);
+            REQUIRE (blocks > 0);
+            CHECK (static_cast<size_t> (blocks) * static_cast<size_t> (blockSize) == expectedTransition (blockSize));
+        }
+    }
 }

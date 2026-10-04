@@ -377,6 +377,8 @@ void RenderEngine::claimReadyRenderer (bool hrtfPathThisBlock)
         && requestSerial_.load (std::memory_order_relaxed) != 0)
     {
         rendererXfading_ = false;
+        rendererXfadeSamplesDone_ = 0;
+        rendererXfadeLengthSamples_ = 0;
         rendererXfadeActive_.store (false, std::memory_order_release);
         rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
     }
@@ -499,6 +501,8 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     if (hrtfEverRequested_)
     {
         rendererXfading_ = false;
+        rendererXfadeSamplesDone_ = 0;
+        rendererXfadeLengthSamples_ = 0;
         rendererXfadeActive_.store (false, std::memory_order_release);
         prevActiveRendererIdx_ = activeIdx;
 
@@ -755,7 +759,9 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     {
         rendererXfading_ = true;
         rendererXfadeActive_.store (true, std::memory_order_release);
-        rendererXfadeBlockCount_ = 0;
+        // Sample-based, fixed now: the fade must outlast the HRIRs it blends at any block size.
+        rendererXfadeSamplesDone_ = 0;
+        rendererXfadeLengthSamples_ = std::max (kRendererXfadeBlocks * numSamples, kMinRendererXfadeSamples);
         rendererXfadeFromIdx_ = prevActiveRendererIdx_;
         prevRxFadeOut_ = 1.0f;
         prevRxFadeIn_ = 0.0f;
@@ -849,9 +855,11 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         oldRenderer.renderSourceBuffers (srcBufPtrs, sourceEnabled, MAX_SOURCES,
                                           numSamples, xfadeWetL_.data(), xfadeWetR_.data());
 
-        ++rendererXfadeBlockCount_;
-        float progress = static_cast<float> (rendererXfadeBlockCount_)
-                       / static_cast<float> (kRendererXfadeBlocks);
+        // End-of-block progress from elapsed samples, so the fade length does not depend on how
+        // the host splits the stream into blocks.
+        rendererXfadeSamplesDone_ += numSamples;
+        float progress = static_cast<float> (static_cast<double> (rendererXfadeSamplesDone_)
+                                             / static_cast<double> (rendererXfadeLengthSamples_));
         if (progress > 1.0f) progress = 1.0f;
 
         constexpr float halfPi = juce::MathConstants<float>::halfPi;
@@ -876,7 +884,7 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         prevRxFadeOut_ = fadeOutGain;
         prevRxFadeIn_  = fadeInGain;
 
-        if (rendererXfadeBlockCount_ >= kRendererXfadeBlocks)
+        if (rendererXfadeSamplesDone_ >= rendererXfadeLengthSamples_)
         {
             rendererXfading_ = false;
             rendererXfadeActive_.store (false, std::memory_order_release);
