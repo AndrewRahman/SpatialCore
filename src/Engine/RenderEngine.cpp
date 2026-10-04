@@ -2,6 +2,8 @@
 #include "../Core/FloatSemanticsGuard.h"   // WR-04: no fast-math in this TU
 #include <SpatialCore/Core/SpatialMath.h>
 #include <SpatialCore/Core/SimpleBinauralCues.h>
+#include <SpatialCore/Binaural/HRTFProfile.h>
+#include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
 #include <cstdlib>
 #include <cstring>
@@ -12,12 +14,400 @@
 namespace spatialcore
 {
 
+//==============================================================================
+// Profile-status word (DATA-01, D-06). One 32-bit atomic carries {subject profile,
+// state, source, problem} so a reader on any thread gets a consistent value without a
+// lock. The worker is the only writer. The subject is the profile number clamped into
+// 16 bits; the requested profile itself is reported from its own atomic.
+//==============================================================================
+namespace
+{
+    uint32_t packHRTFStatus (int subjectProfile, HRTFLoadState state,
+                             HRTFProfileSource source, HRTFProfileProblem problem) noexcept
+    {
+        const int clamped = std::max (-32768, std::min (32767, subjectProfile));
+        return (static_cast<uint32_t> (static_cast<uint16_t> (static_cast<int16_t> (clamped))))
+             | (static_cast<uint32_t> (state)   << 16)
+             | (static_cast<uint32_t> (source)  << 20)
+             | (static_cast<uint32_t> (problem) << 24);
+    }
+
+    struct UnpackedHRTFStatus
+    {
+        int subjectProfile;
+        HRTFLoadState state;
+        HRTFProfileSource source;
+        HRTFProfileProblem problem;
+    };
+
+    UnpackedHRTFStatus unpackHRTFStatus (uint32_t word) noexcept
+    {
+        return { static_cast<int> (static_cast<int16_t> (static_cast<uint16_t> (word & 0xFFFFu))),
+                 static_cast<HRTFLoadState> ((word >> 16) & 0xFu),
+                 static_cast<HRTFProfileSource> ((word >> 20) & 0xFu),
+                 static_cast<HRTFProfileProblem> ((word >> 24) & 0xFu) };
+    }
+}
+
+//==============================================================================
+// HRTFProfileLoader -- the one worker thread behind setHRTFProfile (D-05).
+//
+// Protocol (T-03-14, T-03-15): the worker writes only a renderer that is not active and
+// not the source of a running crossfade -- a free renderer (it clears the free flag to
+// claim it) or its own unclaimed result (taken back from the mailbox with an exchange).
+// It hands a finished renderer to the audio thread with a release store into the one-slot
+// mailbox. It never signals the audio thread; when it needs a renderer back it polls.
+//==============================================================================
+class RenderEngine::HRTFProfileLoader : public juce::Thread
+{
+public:
+    explicit HRTFProfileLoader (RenderEngine& engine)
+        : juce::Thread ("SpatialCore HRTF loader"), owner (engine)
+    {
+        // What is playing right now, read from the active renderer's own record. Nothing is
+        // in flight here: prepare() stops the worker and clears the mailbox before a new one starts.
+        const auto active = unpackHRTFStatus (
+            owner.rendererMeta_[owner.activeRendererIndex.load (std::memory_order_acquire)]
+                .load (std::memory_order_acquire));
+        activeProfile = active.subjectProfile;
+        activeSource = active.source;
+        activeProblem = active.problem;
+        lastHandled = owner.handledSerial_.load (std::memory_order_acquire);
+    }
+
+    void run() override
+    {
+        while (! threadShouldExit())
+        {
+            const uint32_t serial = owner.requestSerial_.load (std::memory_order_acquire);
+            if (serial == lastHandled)
+            {
+                wait (200);
+                continue;
+            }
+
+            owner.loaderBusy_.store (true, std::memory_order_release);
+            const bool settled = serveRequest (serial);
+            owner.loaderBusy_.store (false, std::memory_order_release);
+            if (settled)
+                lastHandled = serial;
+        }
+
+        releaseHeld();
+    }
+
+private:
+    RenderEngine& owner;
+
+    uint32_t lastHandled = 0;
+
+    // The renderer this thread currently owns (loaded or not), -1 when none.
+    int heldIdx = -1;
+    int heldProfile = -1;                         // profile loaded into it, -1 when none
+    HRTFProfileSource heldSource = HRTFProfileSource::None;
+    HRTFProfileProblem heldProblem = HRTFProfileProblem::None;
+
+    // The result most recently put into the mailbox and not yet known to be claimed.
+    bool mailboxPending = false;
+    int publishedProfile = 0;
+    HRTFProfileSource publishedSource = HRTFProfileSource::None;
+    HRTFProfileProblem publishedProblem = HRTFProfileProblem::None;
+
+    // This thread's belief about what the audio thread is playing.
+    int activeProfile = 0;
+    HRTFProfileSource activeSource = HRTFProfileSource::Simple;
+    HRTFProfileProblem activeProblem = HRTFProfileProblem::None;
+
+    void releaseHeld()
+    {
+        if (heldIdx >= 0)
+            owner.rendererFree_[static_cast<size_t> (heldIdx)].store (true, std::memory_order_release);
+        heldIdx = -1;
+        heldProfile = -1;
+    }
+
+    /** Settles what happened to the last published result: either the audio thread claimed it
+        (it is now the active profile) or it is still in the mailbox and comes back to us. */
+    void reclaimMailbox()
+    {
+        const int back = owner.readyRenderer_.exchange (-1, std::memory_order_acq_rel);
+
+        if (back >= 0)
+        {
+            releaseHeld();
+            heldIdx = back;
+            heldProfile = publishedProfile;
+            heldSource = publishedSource;
+            heldProblem = publishedProblem;
+            mailboxPending = false;
+        }
+        else if (mailboxPending)
+        {
+            activeProfile = publishedProfile;
+            activeSource = publishedSource;
+            activeProblem = publishedProblem;
+            mailboxPending = false;
+        }
+    }
+
+    void publishStatus (int subject, HRTFLoadState state, HRTFProfileSource source, HRTFProfileProblem problem)
+    {
+        owner.loaderStatusWord_.store (packHRTFStatus (subject, state, source, problem), std::memory_order_release);
+    }
+
+    void settle (uint32_t serial)
+    {
+        owner.handledSerial_.store (serial, std::memory_order_release);
+    }
+
+    /** True when the request is settled (a result or a failure was published), false when the
+        thread should look again (a newer request arrived, or the thread is exiting). */
+    bool serveRequest (uint32_t serial)
+    {
+        const int target = owner.requestedProfile_.load (std::memory_order_acquire);
+
+        // Whatever the answer is, an older unclaimed result is stale now (latest request wins).
+        reclaimMailbox();
+
+        if (! isValidHRTFProfileIndex (target))
+        {
+            releaseHeld();
+            publishStatus (target, HRTFLoadState::Failed, HRTFProfileSource::None, HRTFProfileProblem::InvalidIndex);
+            settle (serial);
+            return true;
+        }
+
+        const bool force = owner.forceReload_.load (std::memory_order_acquire);
+
+        // Already playing it: nothing to load.
+        if (target == activeProfile && ! force)
+        {
+            releaseHeld();
+            publishStatus (target, HRTFLoadState::Ready, activeSource, activeProblem);
+            settle (serial);
+            return true;
+        }
+
+        // Get a renderer to write: our own result (taken back above) or a free one.
+        while (heldIdx < 0)
+        {
+            if (threadShouldExit() || owner.requestSerial_.load (std::memory_order_acquire) != serial)
+                return false;
+
+            for (int i = 0; i < 2 && heldIdx < 0; ++i)
+            {
+                auto& flag = owner.rendererFree_[static_cast<size_t> (i)];
+                if (flag.load (std::memory_order_relaxed) && flag.exchange (false, std::memory_order_acquire))
+                {
+                    heldIdx = i;
+                    heldProfile = -1;
+                }
+            }
+
+            if (heldIdx < 0)
+                sleep (2);
+        }
+
+        if (heldProfile != target)
+        {
+            auto& renderer = owner.binauralRenderers[static_cast<size_t> (heldIdx)];
+            renderer.prepare (owner.preparedSampleRate_, owner.preparedMaxBlock_);
+
+            const HRTFResolveResult result = resolveHRTFProfile (target, renderer.hrtfDatabase,
+                                                                  static_cast<float> (owner.preparedSampleRate_),
+                                                                  owner.getSharedFolderForLoader());
+            if (! result.loaded)
+            {
+                // The current profile keeps playing; only this renderer was touched (D-06).
+                releaseHeld();
+                publishStatus (target, HRTFLoadState::Failed, HRTFProfileSource::None, result.problem);
+                settle (serial);
+                return true;
+            }
+
+            renderer.invalidateSources();
+            renderer.setProfile (target);
+            heldProfile = target;
+            heldSource = result.source;
+            heldProblem = result.problem;
+            owner.forceReload_.store (false, std::memory_order_release);
+        }
+
+        // A newer request arrived while loading: keep the renderer and look again.
+        if (threadShouldExit() || owner.requestSerial_.load (std::memory_order_acquire) != serial)
+            return false;
+
+        // Hand it over. The meta record is written first so the release store below carries it.
+        owner.rendererMeta_[static_cast<size_t> (heldIdx)].store (
+            packHRTFStatus (target, HRTFLoadState::Ready, heldSource, heldProblem), std::memory_order_relaxed);
+        owner.readyRenderer_.store (heldIdx, std::memory_order_release);
+
+        mailboxPending = true;
+        publishedProfile = target;
+        publishedSource = heldSource;
+        publishedProblem = heldProblem;
+        heldIdx = -1;
+        heldProfile = -1;
+
+        publishStatus (target, HRTFLoadState::Ready, publishedSource, publishedProblem);
+        settle (serial);
+        return true;
+    }
+};
+
 RenderEngine::RenderEngine()
 {
     resetLastGoodPositions();
+
+    // A fresh engine is playing profile 0 (Simple); both renderers start as that.
+    const uint32_t simple = packHRTFStatus (0, HRTFLoadState::Ready, HRTFProfileSource::Simple, HRTFProfileProblem::None);
+    rendererMeta_[0].store (simple, std::memory_order_relaxed);
+    rendererMeta_[1].store (simple, std::memory_order_relaxed);
+    loaderStatusWord_.store (packHRTFStatus (0, HRTFLoadState::Idle, HRTFProfileSource::Simple, HRTFProfileProblem::None),
+                             std::memory_order_relaxed);
 }
 
-RenderEngine::~RenderEngine() = default;
+RenderEngine::~RenderEngine()
+{
+    if (hrtfLoader_ != nullptr)
+    {
+        hrtfLoader_->signalThreadShouldExit();
+        hrtfLoader_->notify();
+        hrtfLoader_->stopThread (15000);
+    }
+}
+
+//==============================================================================
+// Engine-owned profile switching: message-thread side (D-04, D-05, D-06)
+//==============================================================================
+juce::File RenderEngine::getSharedFolderForLoader() const
+{
+    const juce::ScopedLock lock (sharedFolderLock_);
+    return hasSharedFolderOverride_ ? sharedFolderOverride_ : getSharedHRTFFolder();
+}
+
+void RenderEngine::setSharedHRTFFolderForTesting (const juce::File& folder)
+{
+    const juce::ScopedLock lock (sharedFolderLock_);
+    sharedFolderOverride_ = folder;
+    hasSharedFolderOverride_ = true;
+}
+
+void RenderEngine::setHRTFProfile (int profileIndex)
+{
+    hrtfEverRequested_ = true;
+
+    // Settled on this very profile and playing it: nothing to do (no reload, no crossfade,
+    // status unchanged). A request after a failure always goes through (retry).
+    if (profileIndex == requestedProfile_.load (std::memory_order_acquire)
+        && profileIndex == activeHRTFProfile_.load (std::memory_order_acquire)
+        && requestSerial_.load (std::memory_order_acquire) == handledSerial_.load (std::memory_order_acquire)
+        && unpackHRTFStatus (loaderStatusWord_.load (std::memory_order_acquire)).state == HRTFLoadState::Ready)
+        return;
+
+    requestedProfile_.store (profileIndex, std::memory_order_release);
+    requestSerial_.fetch_add (1, std::memory_order_acq_rel);
+
+    // Before the first prepare() the request is held; prepare() serves it.
+    if (preparedSampleRate_ > 0.0)
+    {
+        if (hrtfLoader_ == nullptr)
+        {
+            hrtfLoader_ = std::make_unique<HRTFProfileLoader> (*this);
+            hrtfLoader_->startThread (juce::Thread::Priority::low);
+        }
+        hrtfLoader_->notify();
+    }
+}
+
+HRTFProfileStatus RenderEngine::getHRTFProfileStatus() const noexcept
+{
+    // handled before serial: if they are equal at the second read, nothing was pending then.
+    const uint32_t handled = handledSerial_.load (std::memory_order_acquire);
+    const uint32_t serial = requestSerial_.load (std::memory_order_acquire);
+    const bool busy = loaderBusy_.load (std::memory_order_acquire);
+    const auto word = unpackHRTFStatus (loaderStatusWord_.load (std::memory_order_acquire));
+
+    HRTFProfileStatus status;
+    status.requestedProfile = requestedProfile_.load (std::memory_order_acquire);
+    status.activeProfile = activeHRTFProfile_.load (std::memory_order_acquire);
+
+    if (serial != handled || busy)
+    {
+        status.state = HRTFLoadState::Loading;
+        status.source = HRTFProfileSource::None;
+        status.problem = HRTFProfileProblem::None;
+    }
+    else
+    {
+        status.state = word.state;
+        status.source = word.source;
+        status.problem = word.problem;
+    }
+
+    return status;
+}
+
+bool RenderEngine::waitForHRTFProfileIdle (int timeoutMs)
+{
+    const juce::uint32 start = juce::Time::getMillisecondCounter();
+
+    for (;;)
+    {
+        if (handledSerial_.load (std::memory_order_acquire) == requestSerial_.load (std::memory_order_acquire)
+            && ! loaderBusy_.load (std::memory_order_acquire))
+            return true;
+
+        if (static_cast<int> (juce::Time::getMillisecondCounter() - start) >= timeoutMs)
+            return false;
+
+        juce::Thread::sleep (2);
+    }
+}
+
+//==============================================================================
+// Audio-thread side: claim a ready renderer from the mailbox (atomics only, DR-1)
+//==============================================================================
+void RenderEngine::claimReadyRenderer (bool hrtfPathThisBlock)
+{
+    // A path change mid-fade: the crossfade cannot finish on a path that does not run it, and
+    // its source renderer would never come back free. End it now. Only once engine-owned
+    // switching is in use, so a legacy consumer keeps its crossfade state exactly as before.
+    if (rendererXfading_ && ! hrtfPathThisBlock
+        && requestSerial_.load (std::memory_order_relaxed) != 0)
+    {
+        rendererXfading_ = false;
+        rendererXfadeActive_.store (false, std::memory_order_release);
+        rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
+    }
+
+    if (rendererXfading_)
+        return;
+
+    if (readyRenderer_.load (std::memory_order_relaxed) < 0)
+        return;
+
+    const int idx = readyRenderer_.exchange (-1, std::memory_order_acq_rel);
+    if (idx < 0)
+        return;
+
+    const int oldIdx = activeRendererIndex.load (std::memory_order_acquire);
+    if (idx == oldIdx)
+        return;
+
+    activeRendererIndex.store (idx, std::memory_order_release);
+    activeHRTFProfile_.store (binauralRenderers[static_cast<size_t> (idx)].getActiveProfile(),
+                              std::memory_order_release);
+
+    if (! hrtfPathThisBlock)
+    {
+        // No HRTF crossfade on this path: switch at once and give the old renderer back.
+        rendererFree_[static_cast<size_t> (oldIdx)].store (true, std::memory_order_release);
+        prevActiveRendererIdx_ = idx;
+    }
+    // On the HRTF path the swap detection in renderDirectBinauralHRTF starts the crossfade
+    // from the previous index and frees it where the crossfade ends.
+}
 
 //==============================================================================
 // prepare() — engine-owned DSP setup slice of the pre-move
@@ -27,6 +417,17 @@ RenderEngine::~RenderEngine() = default;
 //==============================================================================
 void RenderEngine::prepare (double sampleRate, int maxBlockSize)
 {
+    // Engine-owned switching: stop the worker before anything it could be writing is touched.
+    // A load in flight finishes (it cannot be interrupted); its unclaimed result is discarded
+    // below. The worker is started again at the end when a request was ever made.
+    if (hrtfLoader_ != nullptr)
+    {
+        hrtfLoader_->signalThreadShouldExit();
+        hrtfLoader_->notify();
+        hrtfLoader_->stopThread (15000);
+        hrtfLoader_.reset();
+    }
+
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (maxBlockSize), 1 };
 
     // v0.2: Configure LFE low-pass filter (120 Hz, 2nd order Butterworth).
@@ -82,6 +483,41 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
 
     // D-06(a): a fresh prepare forgets every held position.
     resetLastGoodPositions();
+
+    // Engine-owned switching bookkeeping (the worker is stopped, so this is single-threaded).
+    const bool firstPrepare = preparedSampleRate_ <= 0.0;
+    const bool settingsChanged = sampleRate != preparedSampleRate_ || maxBlockSize != preparedMaxBlock_;
+    preparedSampleRate_ = sampleRate;
+    preparedMaxBlock_ = maxBlockSize;
+
+    // Discard an unclaimed result and recompute who is free: the active renderer is not, the other is.
+    readyRenderer_.store (-1, std::memory_order_release);
+    const int activeIdx = activeRendererIndex.load (std::memory_order_acquire);
+    rendererFree_[static_cast<size_t> (activeIdx)].store (false, std::memory_order_release);
+    rendererFree_[static_cast<size_t> (1 - activeIdx)].store (true, std::memory_order_release);
+
+    if (hrtfEverRequested_)
+    {
+        rendererXfading_ = false;
+        rendererXfadeActive_.store (false, std::memory_order_release);
+        prevActiveRendererIdx_ = activeIdx;
+
+        if (settingsChanged && ! firstPrepare)
+        {
+            // The loaded profile is at the old rate: reload it at the new settings. Until the new
+            // copy is claimed, keep the active renderer's convolvers sized for the new block size.
+            forceReload_.store (true, std::memory_order_release);
+            auto& active = binauralRenderers[static_cast<size_t> (activeIdx)];
+            if (! active.isSimpleMode() && active.hrtfDatabase.isLoaded())
+                active.setProfile (active.getActiveProfile());
+        }
+
+        // Re-issue the current request so the restarted worker serves it.
+        requestSerial_.fetch_add (1, std::memory_order_acq_rel);
+        hrtfLoader_ = std::make_unique<HRTFProfileLoader> (*this);
+        hrtfLoader_->startThread (juce::Thread::Priority::low);
+        hrtfLoader_->notify();
+    }
 }
 
 //==============================================================================
@@ -228,6 +664,10 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     float* outL = (numOutCh > 0) ? outChannels[0] : nullptr;
     float* outR = (numOutCh > 1) ? outChannels[1] : nullptr;
 
+    // Engine-owned profile switching: pick up a ready renderer from the mailbox before the
+    // dispatch. hrtfPath mirrors the dispatch chain below exactly.
+    claimReadyRenderer (! ctx.isStereoVariant && ctx.isBinaural && ctx.useHRTF);
+
     // BUG-01: the Simple path's cue filters hold state, which is only valid
     // while that path runs every block. Every other branch clears the flag so
     // the Simple path cold-starts when it resumes.
@@ -320,6 +760,7 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         prevRxFadeOut_ = 1.0f;
         prevRxFadeIn_ = 0.0f;
         prevActiveRendererIdx_ = currentActiveIdx;
+        activeHRTFProfile_.store (activeRenderer.getActiveProfile(), std::memory_order_release);
     }
 
     // Update per-source HRIRs at block boundary for any taps that moved
@@ -439,6 +880,8 @@ void RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         {
             rendererXfading_ = false;
             rendererXfadeActive_.store (false, std::memory_order_release);
+            // The renderer faded out is neither active nor fading any more: the worker may use it.
+            rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
         }
     }
 

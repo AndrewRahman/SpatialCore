@@ -3,7 +3,9 @@
 #include <array>
 #include <vector>
 #include <atomic>
+#include <cstdint>
 #include <cstring>
+#include <memory>
 
 #include <juce_dsp/juce_dsp.h>
 
@@ -14,6 +16,7 @@
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
 #include <SpatialCore/Binaural/BinauralRenderer.h>
+#include <SpatialCore/Binaural/HRTFProfile.h>
 #include <SpatialCore/IO/OutputFormat.h>
 #include <SpatialCore/IO/OutputFormatRegistry.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
@@ -316,7 +319,52 @@ public:
 
     static constexpr int kRendererXfadeBlocks = 8;
 
+    //--------------------------------------------------------------------------
+    // Engine-owned HRTF profile switching (DATA-01, D-04, D-05, D-06).
+    //
+    // One call replaces the consumer's load / swap / timer glue. setHRTFProfile()
+    // only stores the request and wakes one engine-owned worker thread; the worker
+    // resolves the profile (shared folder, then the embedded copy, then a reported
+    // error), loads it into the renderer the audio thread is not using, and hands
+    // it over through a one-slot atomic mailbox. The audio thread claims it at the
+    // top of a block and crossfades with the existing renderer crossfade. Audio
+    // keeps playing the current profile until the new one is ready, and a failed
+    // load never mutes anything: the current profile keeps playing and the status
+    // says what went wrong.
+    //
+    // Thread contract:
+    //   - setHRTFProfile(), waitForHRTFProfileIdle(), setSharedHRTFFolderForTesting():
+    //     message thread (or the single test thread). Never the audio thread.
+    //   - getHRTFProfileStatus(): any thread, lock-free.
+    //   - The SOFA load (up to 36 MB) runs on the worker only. setHRTFProfile()
+    //     returns at once. The worker is started by the first request after
+    //     prepare(); an engine that never gets a request starts no thread.
+    //   - Profile numbering is HRTFProfile.h's: 0 Simple, 1..5 the SOFA profiles.
+    //
+    // Most recent request wins. Requests made before the first prepare() are held
+    // and served after it. Requesting the profile that is already active and
+    // settled does nothing; requesting a profile whose last load failed retries it.
+    //
+    // Mixing these calls with swapActiveRenderer() / getPrepareRendererIndex() /
+    // getBinauralRenderer() loads on one engine is unsupported: pick one way.
+    //--------------------------------------------------------------------------
+    void setHRTFProfile (int profileIndex);
+
+    /** Lock-free snapshot, safe from any thread. Use describeHRTFProfileStatus()
+        (allocates) on the reader's own thread to turn it into text. */
+    HRTFProfileStatus getHRTFProfileStatus() const noexcept;
+
+    /** True once no request is pending and no load is running (it does not wait for
+        the audio thread to claim the result). Message or test thread only. */
+    bool waitForHRTFProfileIdle (int timeoutMs);
+
+    /** Overrides getSharedHRTFFolder() for this engine (the real folder is root-owned
+        and shared by the whole machine). Message thread, before or between requests. */
+    void setSharedHRTFFolderForTesting (const juce::File& folder);
+
 private:
+    class HRTFProfileLoader;   // defined in RenderEngine.cpp; a nested class sees the private state below
+
     //--------------------------------------------------------------------------
     // The 5 render paths (verbatim-transplanted bodies, Task 2). Internal —
     // renderBlock() is the only public entry point, matching the pre-move
@@ -408,6 +456,35 @@ private:
     float prevRxFadeIn_  = 0.0f;
     std::vector<float> xfadeWetL_, xfadeWetR_;
     std::atomic<bool> rendererXfadeActive_ { false };
+
+    // --- Engine-owned profile switching (see setHRTFProfile above). The worker
+    //     only ever writes a renderer that is neither the active one nor the
+    //     source of a running crossfade: a free renderer, or its own unclaimed
+    //     result. The audio thread is the only writer of activeRendererIndex on
+    //     this path and only reads/writes the atomics below (DR-1). ---
+    std::unique_ptr<HRTFProfileLoader> hrtfLoader_;
+    std::atomic<int>      requestedProfile_ { 0 };
+    std::atomic<uint32_t> requestSerial_ { 0 };      // bumped by setHRTFProfile
+    std::atomic<uint32_t> handledSerial_ { 0 };      // set by the worker once a request is settled
+    std::atomic<int>      readyRenderer_ { -1 };     // one-slot mailbox: worker -> audio thread
+    std::atomic<bool>     rendererFree_[2] { { false }, { true } };   // audio thread -> worker
+    std::atomic<uint32_t> rendererMeta_[2] { { 0u }, { 0u } };        // what each renderer was loaded from
+    std::atomic<int>      activeHRTFProfile_ { 0 };
+    std::atomic<uint32_t> loaderStatusWord_ { 0u };
+    std::atomic<bool>     loaderBusy_ { false };
+    std::atomic<bool>     forceReload_ { false };
+    double preparedSampleRate_ = 0.0;
+    int    preparedMaxBlock_ = 0;
+    bool   hrtfEverRequested_ = false;               // message thread only
+
+    mutable juce::CriticalSection sharedFolderLock_;         // message and worker threads only
+    juce::File sharedFolderOverride_;
+    bool hasSharedFolderOverride_ = false;
+
+    /** Audio thread, once per block after the dispatch context is final. Takes a ready
+        renderer from the mailbox, and ends a crossfade stranded by a path change. */
+    void claimReadyRenderer (bool hrtfPathThisBlock);
+    juce::File getSharedFolderForLoader() const;
 
     // Per-source accumulation buffers for the direct-binaural HRTF pass
     // (Pass 1 -> Pass 2 hand-off), contiguous allocation mirroring the

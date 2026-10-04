@@ -11,6 +11,7 @@
 #include <SpatialCore/Core/SourcePosition.h>
 #include <SpatialCore/Core/BinauralGains.h>
 #include <SpatialCore/Core/SpatialMath.h>
+#include <SpatialCore/Core/SimpleBinauralCues.h>
 
 // Algorithms
 #include <SpatialCore/Algorithms/SpatializationAlgorithm.h>
@@ -29,6 +30,8 @@
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
 #include <SpatialCore/Binaural/BinauralRenderer.h>
+#include <SpatialCore/Binaural/HRTFProfile.h>
+#include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
 // IO
 #include <SpatialCore/IO/OutputFormat.h>
