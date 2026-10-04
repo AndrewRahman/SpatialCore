@@ -341,7 +341,11 @@ pull". SpatialCore's own tests still read the source-tree files through `SPATIAL
 
 **Threading.** `setHRTFProfile`, `waitForHRTFProfileIdle` and `setSharedHRTFFolderForTesting` are
 message-thread only. `getHRTFProfileStatus` is safe from any thread. The audio thread only does atomic
-operations (loads, stores, exchanges) for this: no lock, no allocation, no file access.
+operations (loads, stores, exchanges) for the profile handoff: no lock, no allocation, no file access.
+That guarantee covers the handoff, not every line of the render path: a few defensive
+`jassertfalse` plus `resize` guards remain in the binaural renderer, reachable only if `prepare()`
+was not called with a large enough block size (tracked as RTSF-01). `prepare()` itself may block
+while a profile load in flight finishes, and must not overlap `setHRTFProfile` or `renderBlock`.
 
 **Moving an existing plugin over.** Delete your HRTF loading glue and any HRTF BinaryData of your own,
 call `setHRTFProfile` from your profile parameter, and set `engineSelectsHRTF` and
