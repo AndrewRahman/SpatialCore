@@ -124,6 +124,7 @@ add_library(SpatialCore STATIC
     src/Binaural/PartitionedConvolver.cpp
     src/Binaural/BinauralRenderer.cpp
     src/Binaural/EmbeddedHRTF.cpp
+    src/Binaural/HRTFProfileResolver.cpp
     # IO
     src/IO/OutputFormatRegistry.cpp
     src/IO/SpeakerLayout.cpp
