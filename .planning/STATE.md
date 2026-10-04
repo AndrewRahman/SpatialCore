@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 03
 current_phase_name: Binaural Defects & HRTF Packaging
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-10-04T13:38:55.851Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-10-04T13:53:08.488Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 03 execution started
-state_head: 6f3ab73f89ee6d9b6d0e8d70d1ffee712c0685e4
+state_head: 658c298b9d329c947d0529291288aa4c5115bf71
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 26
-  completed_plans: 19
+  completed_plans: 20
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 ## Current Position
 
 Phase: 03 (Binaural Defects & HRTF Packaging) — EXECUTING
-Plan: 5 of 11
+Plan: 6 of 11
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 03 execution started
 
@@ -95,6 +95,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 03 P02 | 6 min | 2 tasks | 6 files |
 | Phase 03 P03 | 8 min | 3 tasks | 6 files |
 | Phase 03 P04 | 11 min | 3 tasks | 5 files |
+| Phase 03 P05 | 12min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: 03-03: BinauralRenderer scratch is grow-only max(block, 512, IR length), sized in prepare() and setProfile(); the RTSF-01 audio-thread resize guard is left for Phase 5
 - [Phase 03]: 03-04: Simple-path Down cue dip tuned -6 to -5.5 dB (research value measured -5.78 dB at 5.5 kHz, outside the -5.2 +- 0.5 design check; now -5.28 dB)
 - [Phase 03]: 03-04: non-finite mono input is fed to the Simple cue filters as 0 (output unchanged) so one bad sample cannot poison recursive state
+- [Phase 03]: 03-05: shared-file resolver tests run in both embedding modes through a probe profile (3 in ON, 5 in KEMAR-only) — Keeps every D-08/D-09/D-11/D-18 rule exercised in the OFF build instead of skipped
+- [Phase 03]: 03-05: SpatialCoreHRTFData linked PRIVATE into SpatialCore; SPATIALCORE_EMBEDS_ALL_HRTF PUBLIC 0/1; no #if in the embedded lookup — getNamedResource returning nullptr is the not-embedded signal
 
 ### Pending Todos
 
@@ -162,7 +165,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-04T13:38:55.800Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-10-04T13:53:08.429Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
