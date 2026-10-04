@@ -70,12 +70,32 @@ covered_files:
   - tests/reference/layouts_from_cpp.py
 covered_digest: "v2:sha256:03dae1ac058c7cda2e5cd3c81f0add794726da6fddcb1e02e3938cf141c559c5"
 behavior_unverified: 0
-overrides_applied: 1
+overrides_applied: 6
 overrides:
   - must_have: "RenderEngine has no private SH decoder: activateLayout fills ambiDecodeMatrix through AmbisonicsCodec::getDecodeMatrix at order 3, and each of the 15 speaker layouts gets a decode within 1e-6 of the pre-change private function (02-06)"
     reason: "The 1e-6 bound was never achievable on arm64 Release (G-02-10). Plan 02-10 replaced it with the derived 2.5e-5 bound plus a double-precision anchor. The user accepted the 2.5e-5 bound in place of 1e-6 in UAT test 11."
     accepted_by: "Andrew Rahman (02-UAT.md test 11, answer: yes)"
     accepted_at: "2026-10-04T00:45:00Z"
+  - must_have: "No VBAP, VBIP or MDAP source file contains a nearest-speaker branch; a hand-built LayoutContext with empty triplets on a height layout trips a Debug-only assert (D-01)"
+    reason: "IN-14: JUCE's assert path logs and allocates on the audio thread (DR-1). The invariant is enforced on the message thread by activateLayout's D-02a abort, and a hand-built empty context now pans by 2D VBAP, pinned by the IN-14 [robust] test."
+    accepted_by: 'Andrew Rahman (session 2026-10-04, answer: "accept all five")'
+    accepted_at: "2026-10-04T01:10:00Z"
+  - must_have: "When no triplet contains a finite direction, computeVBAPGains3D uses the triplet with the largest minimum gain, clamps negatives to 0 and renormalises; an empty triplet list returns silence; a Debug-only assert marks the path (D-06b, D-06c)"
+    reason: "WR-03: the audio-thread assert is removed, and a candidate that clamps to zero now gives unity on the nearest speaker instead of silence. Hand-built partial lists only; unreachable through RenderEngine ([ear][coverage]). D-06(b)/(c) amended in CONTEXT."
+    accepted_by: 'Andrew Rahman (session 2026-10-04, answer: "accept all five")'
+    accepted_at: "2026-10-04T01:10:00Z"
+  - must_have: "The docs describe below-horizon panning on height layouts as the ITU-R BS.2127 (EAR) lower-hemisphere construction, the no-triplet case as the largest-minimum-gain triplet, and non-finite positions as silence (algorithm layer) or last-good (engine); no doc describes a nearest-speaker fallback"
+    reason: "Follows from accepting WR-03: the guide and skill describe the new snap accurately, which the docs-match-code prohibition requires."
+    accepted_by: 'Andrew Rahman (session 2026-10-04, answer: "accept all five")'
+    accepted_at: "2026-10-04T01:10:00Z"
+  - must_have: "VBAPTriplet, LayoutContext, SpatializationAlgorithm and every signature OpenSpatialDelay compiles against are unchanged: the SpeakerLayout.h diff is comment lines only and [consumer-surface] passes (DR-3)"
+    reason: "WR-02 and IN-03 are additive and source-compatible (no data member changed; void-to-bool return). [consumer-surface] passes and OSD 30391cd builds against HEAD."
+    accepted_by: 'Andrew Rahman (session 2026-10-04, answer: "accept all five")'
+    accepted_at: "2026-10-04T01:10:00Z"
+  - must_have: "README.md, docs/integration-guide.md and SKILL.md keep CRLF on every line"
+    reason: "IN-13: the guide and SKILL.md were flipped to LF in 8899bcf; restoring CRLF would hide the edits a second time, so LF is pinned in .gitattributes."
+    accepted_by: 'Andrew Rahman (session 2026-10-04, answer: "accept all five")'
+    accepted_at: "2026-10-04T01:10:00Z"
 re_verification:
   previous_status: human_needed
   previous_score: 88/88
@@ -420,7 +440,7 @@ The five gaps below do need your decision, but they are recorded as gaps (failed
 
 **To close:** for each group, either accept it (paste the matching override into this file's frontmatter `overrides:`, with your name and the time, then re-run verification, which should then pass) or revert the change. If you accept group A, also amend D-06(b), D-06(c) and the DR-1 note in `02-CONTEXT.md`, so the locked decision matches the code.
 
-**Suggested overrides (not applied; ready to paste):**
+**Suggested overrides (applied 2026-10-04 by the user's "accept all five"; see frontmatter `overrides:`):**
 
 ```yaml
 overrides:
