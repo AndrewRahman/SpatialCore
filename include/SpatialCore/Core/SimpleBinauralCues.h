@@ -107,9 +107,14 @@ inline constexpr SimpleCueStage kSimpleCueUpStages[3] = {
 };
 
 /** Down branch: a 5.5 kHz dip with a small 1.2 kHz lift for sources underfoot.
-    Full-weight response -5.2 dB at 5.5 kHz. */
+    Full-weight response -5.2 dB at 5.5 kHz.
+
+    Tuned from the research starting value: the 03-RESEARCH.md table gave the dip as
+    -6 dB, but the 1.2 kHz lift adds +0.22 dB at 5.5 kHz, so the cascade measured -5.78 dB
+    there, outside the +-0.5 dB design check around -5.2. -5.5 dB (within the +-3 dB
+    tuning allowance) gives -5.28 dB. */
 inline constexpr SimpleCueStage kSimpleCueDownStages[2] = {
-    { SimpleCueStage::Kind::Peak, 5500.0f, 1.5f, -6.0f },
+    { SimpleCueStage::Kind::Peak, 5500.0f, 1.5f, -5.5f },
     { SimpleCueStage::Kind::Peak, 1200.0f, 0.7f, 2.5f },
 };
 

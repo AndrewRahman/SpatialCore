@@ -228,6 +228,11 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     float* outL = (numOutCh > 0) ? outChannels[0] : nullptr;
     float* outR = (numOutCh > 1) ? outChannels[1] : nullptr;
 
+    // BUG-01: the Simple path's cue filters hold state, which is only valid
+    // while that path runs every block. Every other branch clears the flag so
+    // the Simple path cold-starts when it resumes.
+    bool ranSimple = false;
+
     if (ctx.isStereoVariant)
     {
         renderStereoVariant (src, ctx, outL, outR, numOutCh);
@@ -239,6 +244,7 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     else if (ctx.isBinaural)
     {
         renderSimpleBinauralWoodworth (src, ctx, outL, outR, numOutCh);
+        ranSimple = true;
     }
     else if (ctx.isAmbiOutput)
     {
@@ -248,6 +254,8 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     {
         renderDiscreteSurround (src, ctx, layout, outChannels, numOutCh);
     }
+
+    simplePathRanLastBlock_ = ranSimple;
 }
 
 //==============================================================================
@@ -470,6 +478,18 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
             juce::degreesToRadians (sources.objects[t].elevationDeg));
     }
 
+    // Cold start: if the previous block ran another path, the cue state is
+    // stale (possibly minutes-old audio). Zero it and start each source's
+    // weights at its target so there is neither a decaying tail nor a glide
+    // from a position the listener no longer hears.
+    if (! simplePathRanLastBlock_)
+    {
+        resetSimpleCueState();
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            prevCueWeights_[t] = targetWeights[t];
+        simplePathRanLastBlock_ = true;
+    }
+
     for (int s = 0; s < numSamples; ++s)
     {
         float frac = static_cast<float> (s) * invN;
@@ -488,13 +508,25 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
             if (sources.monoBuffers[t] != nullptr)
             {
                 const float xf = std::isfinite (objMono) ? objMono : 0.0f;
-                float r = xf;
+                float r = xf, u = xf, d = xf;
                 for (int k = 0; k < 3; ++k)
+                {
                     r = cueBiquadStep (cueRear_[k], cueStateRear_[t][k], r);
+                    u = cueBiquadStep (cueUp_[k], cueStateUp_[t][k], u);
+                }
+                for (int k = 0; k < 2; ++k)
+                    d = cueBiquadStep (cueDown_[k], cueStateDown_[t][k], d);
 
-                const float wRear = prevCueWeights_[t].rear
-                                  + frac * (targetWeights[t].rear - prevCueWeights_[t].rear);
-                objMono = objMono + wRear * (r - objMono);
+                const SimpleCueWeights& pw = prevCueWeights_[t];
+                const SimpleCueWeights& tw = targetWeights[t];
+                const float wRear = pw.rear + frac * (tw.rear - pw.rear);
+                const float wUp   = pw.up   + frac * (tw.up   - pw.up);
+                const float wDown = pw.down + frac * (tw.down - pw.down);
+
+                // With all three weights exactly 0 this is x + 0 + 0 + 0 == x.
+                objMono = objMono + wRear * (r - objMono)
+                                  + wUp   * (u - objMono)
+                                  + wDown * (d - objMono);
             }
 
             if (tapFade <= 0.0f) continue;
