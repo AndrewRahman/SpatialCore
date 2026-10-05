@@ -32,6 +32,16 @@ struct RecordingListener : public ADMOSCReceiver::Listener
     float lastGlobalValue = 0.0f;
     int globalCallCount = 0;
 
+    // Queries (Phase 4 Plan 04-03): every admPositionQueried call, in order.
+    std::vector<std::pair<int, ADMPositionQuery>> queries;
+    int queryCallCount = 0;
+
+    void admPositionQueried (int objectIndex, ADMPositionQuery kind) override
+    {
+        queries.emplace_back (objectIndex, kind);
+        ++queryCallCount;
+    }
+
     void admPositionReceived (int objectIndex, float azimuthDeg, float elevationDeg, float distance) override
     {
         lastPositionObjectIndex = objectIndex;
@@ -487,4 +497,67 @@ TEST_CASE ("ADM-OSC query: /adm/obj/4/xyz with no arguments over UDP is answered
     deviceReturn.removeListener (&capture);
     sender.disconnect();
     deviceReturn.disconnect();
+}
+
+// ----------------------------------------------------------------------------
+// Query grammar (D-08a): no arguments to a position property is a query.
+// ----------------------------------------------------------------------------
+
+TEST_CASE ("ADM-OSC query: every position property with no arguments is reported once with its kind",
+           "[osc][query]")
+{
+    struct Row { const char* property; ADMPositionQuery kind; };
+    const Row rows[] = { { "azim", ADMPositionQuery::azim }, { "elev", ADMPositionQuery::elev },
+                         { "dist", ADMPositionQuery::dist }, { "aed",  ADMPositionQuery::aed },
+                         { "xyz",  ADMPositionQuery::xyz } };
+
+    for (const auto& row : rows)
+    {
+        DYNAMIC_SECTION ("/adm/obj/2/" << row.property)
+        {
+            RecordingListener listener;
+            auto receiver = createTestReceiver (listener);
+
+            sendOSC (*receiver, juce::String ("/adm/obj/2/") + row.property, {});
+
+            REQUIRE (listener.queryCallCount == 1);
+            CHECK (listener.queries[0].first == 1);   // 1-based address -> 0-based index
+            CHECK (listener.queries[0].second == row.kind);
+            CHECK (listener.positionCallCount == 0);
+            CHECK (listener.paramCallCount == 0);
+            CHECK (listener.globalCallCount == 0);
+        }
+    }
+}
+
+TEST_CASE ("ADM-OSC query: the /osd/obj/N/ alias of a position property is also a query",
+           "[osc][query]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    sendOSC (*receiver, "/osd/obj/2/aed", {});
+
+    REQUIRE (listener.queryCallCount == 1);
+    CHECK (listener.queries[0].first == 1);
+    CHECK (listener.queries[0].second == ADMPositionQuery::aed);
+    CHECK (listener.positionCallCount == 0);
+}
+
+TEST_CASE ("ADM-OSC query: a no-argument message to any other property or object is ignored",
+           "[osc][query][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    sendOSC (*receiver, "/osd/obj/1/enabled", {});
+    sendOSC (*receiver, "/osd/obj/1/doppler", {});
+    sendOSC (*receiver, "/adm/obj/1/x", {});
+    sendOSC (*receiver, "/adm/obj/13/aed", {});      // object 13 does not exist
+    sendOSC (*receiver, "/osd/global/drywet", {});
+
+    CHECK (listener.queryCallCount == 0);
+    CHECK (listener.positionCallCount == 0);
+    CHECK (listener.paramCallCount == 0);
+    CHECK (listener.globalCallCount == 0);
 }

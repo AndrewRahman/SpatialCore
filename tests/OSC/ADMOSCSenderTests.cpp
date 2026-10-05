@@ -100,6 +100,12 @@ namespace
             return n;
         }
 
+        Entry at (int i) const
+        {
+            const juce::ScopedLock sl (lock);
+            return i >= 0 && i < (int) entries.size() ? entries[(size_t) i] : Entry {};
+        }
+
         Entry last() const
         {
             const juce::ScopedLock sl (lock);
@@ -601,6 +607,242 @@ TEST_CASE ("ADMOSCSender: an object enabled again is sent once, and nothing is s
     CHECK (capture.waitUntilQuiet() == 4);
     CHECK (capture.countFor ("/adm/obj/2/aed") == 3);
     CHECK (capture.countFor ("/adm/obj/1/aed") == 1);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+// ============================================================================
+// Query replies (Phase 4 Plan 04-03, D-08a, D-20, T-04-07). queueReply holds one
+// pending reply per (object, kind); the 30 Hz slot flushes them in object order,
+// then azim, elev, dist, aed, xyz order. Ports 9752 and up.
+// ============================================================================
+
+namespace
+{
+    // Calls tick with every object disabled (no position traffic) at time t.
+    void tickSilent (ADMOSCSender& sender, double t)
+    {
+        const float zeros[MAX_SOURCES] = {};
+        const bool off[MAX_SOURCES] = {};
+        sender.tick (zeros, zeros, zeros, off, (int) MAX_SOURCES, t);
+    }
+
+    struct PositionSink : public ADMOSCReceiver::Listener
+    {
+        void admPositionReceived (int objectIndex, float az, float el, float d) override
+        {
+            index = objectIndex; azimuth = az; elevation = el; distance = d; ++calls;
+        }
+        int index = -1, calls = 0;
+        float azimuth = NAN, elevation = NAN, distance = NAN;
+    };
+}
+
+TEST_CASE ("ADMOSCSender: queued replies go out in object then kind order with the right formats",
+           "[osc][send][query]")
+{
+    constexpr int port = 9752;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    // Queued out of order on purpose: xyz first, azim last; objects 4 then 0.
+    sender.queueReply (4, ADMPositionQuery::aed, 5.0f, 6.0f, 0.7f);
+    sender.queueReply (0, ADMPositionQuery::xyz, 30.0f, 10.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::aed, 30.0f, 10.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::dist, 30.0f, 10.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::elev, 30.0f, 10.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::azim, 30.0f, 10.0f, 0.5f);
+    tickSilent (sender, 0.0);
+
+    REQUIRE (capture.waitUntilQuiet() == 6);
+
+    const char* addresses[] = { "/adm/obj/1/azim", "/adm/obj/1/elev", "/adm/obj/1/dist",
+                                "/adm/obj/1/aed",  "/adm/obj/1/xyz",  "/adm/obj/5/aed" };
+    const int argCounts[] = { 1, 1, 1, 3, 3, 3 };
+    for (int i = 0; i < 6; ++i)
+    {
+        INFO ("message " << i);
+        const auto e = capture.at (i);
+        CHECK (e.address == addresses[i]);
+        CHECK (e.argCount == argCounts[i]);
+    }
+
+    CHECK_THAT (capture.at (0).args[0], WithinAbs (30.0f, 1.0e-4f));
+    CHECK_THAT (capture.at (1).args[0], WithinAbs (10.0f, 1.0e-4f));
+    CHECK_THAT (capture.at (2).args[0], WithinAbs (0.5f, 1.0e-4f));
+    CHECK_THAT (capture.at (3).args[0], WithinAbs (30.0f, 1.0e-4f));
+    CHECK_THAT (capture.at (3).args[1], WithinAbs (10.0f, 1.0e-4f));
+    CHECK_THAT (capture.at (3).args[2], WithinAbs (0.5f, 1.0e-4f));
+
+    // x = -d cos(el) sin(az), y = d cos(el) cos(az), z = d sin(el)
+    const float el = 10.0f * 3.14159265f / 180.0f, az = 30.0f * 3.14159265f / 180.0f;
+    CHECK_THAT (capture.at (4).args[0], WithinAbs (-0.5f * std::cos (el) * std::sin (az), 1.0e-4f));
+    CHECK_THAT (capture.at (4).args[1], WithinAbs ( 0.5f * std::cos (el) * std::cos (az), 1.0e-4f));
+    CHECK_THAT (capture.at (4).args[2], WithinAbs ( 0.5f * std::sin (el), 1.0e-4f));
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: 1000 queries for one (object, kind) before a slot make one reply with the last value",
+           "[osc][send][query]")
+{
+    constexpr int port = 9753;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    for (int i = 0; i < 1000; ++i)
+        sender.queueReply (2, ADMPositionQuery::aed, (float) i * 0.1f, 0.0f, 0.5f);
+    tickSilent (sender, 0.0);
+
+    REQUIRE (capture.waitUntilQuiet() == 1);
+    CHECK (capture.at (0).address == "/adm/obj/3/aed");
+    CHECK_THAT (capture.at (0).args[0], WithinAbs (99.9f, 1.0e-3f));
+
+    // The reply was consumed: the next slot sends nothing.
+    tickSilent (sender, 1.0 / 30.0);
+    CHECK (capture.waitUntilQuiet() == 1);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while disconnected or for bad input",
+           "[osc][send][query]")
+{
+    constexpr int port = 9754;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+
+    // Queued while disconnected: dropped, so a later connect sends nothing.
+    sender.queueReply (0, ADMPositionQuery::aed, 1.0f, 2.0f, 0.5f);
+    REQUIRE (sender.connect ("127.0.0.1", port));
+    tickSilent (sender, 0.0);
+    CHECK (capture.waitUntilQuiet() == 0);
+
+    // Bad input is dropped: out-of-range index, non-finite value, unknown kind.
+    sender.queueReply (-1, ADMPositionQuery::aed, 1.0f, 2.0f, 0.5f);
+    sender.queueReply ((int) MAX_SOURCES, ADMPositionQuery::aed, 1.0f, 2.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::aed, NAN, 2.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::aed, 1.0f, INFINITY, 0.5f);
+    sender.queueReply (0, static_cast<ADMPositionQuery> (9), 1.0f, 2.0f, 0.5f);
+    tickSilent (sender, 1.0 / 30.0);
+    CHECK (capture.waitUntilQuiet() == 0);
+
+    // A valid reply queued between slots waits for the next slot.
+    sender.queueReply (1, ADMPositionQuery::azim, 45.0f, 0.0f, 0.5f);
+    tickSilent (sender, 1.0 / 30.0 + 0.010);
+    CHECK (capture.waitUntilQuiet() == 0);
+    tickSilent (sender, 2.0 / 30.0);
+    REQUIRE (capture.waitUntilQuiet() == 1);
+    CHECK (capture.at (0).address == "/adm/obj/2/azim");
+
+    // Disconnect drops a pending reply: it must not appear after a reconnect.
+    sender.queueReply (1, ADMPositionQuery::azim, 45.0f, 0.0f, 0.5f);
+    sender.disconnect();
+    REQUIRE (sender.connect ("127.0.0.1", port));
+    tickSilent (sender, 10.0);
+    CHECK (capture.waitUntilQuiet() == 1);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: a reply neither suppresses nor triggers a position send",
+           "[osc][send][query]")
+{
+    constexpr int port = 9755;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    float az[MAX_SOURCES] = {}, el[MAX_SOURCES] = {}, dist[MAX_SOURCES] = {};
+    bool enabled[MAX_SOURCES] = {};
+    az[0] = 20.0f; dist[0] = 0.5f; enabled[0] = true;
+
+    // First slot: the first position goes out once.
+    sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 0.0);
+    REQUIRE (capture.waitUntilQuiet() == 1);
+    CHECK (capture.at (0).address == "/adm/obj/1/aed");
+
+    // Object still, reply queued: only the reply goes out at the next slot.
+    sender.queueReply (0, ADMPositionQuery::xyz, 20.0f, 0.0f, 0.5f);
+    sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 1.0 / 30.0);
+    REQUIRE (capture.waitUntilQuiet() == 2);
+    CHECK (capture.at (1).address == "/adm/obj/1/xyz");
+
+    // The reply did not reset the dead-band reference: still no position send.
+    sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 2.0 / 30.0);
+    CHECK (capture.waitUntilQuiet() == 2);
+
+    // Object moved and a reply queued: both go out, position first.
+    az[0] = 40.0f;
+    sender.queueReply (0, ADMPositionQuery::azim, 40.0f, 0.0f, 0.5f);
+    sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 3.0 / 30.0);
+    REQUIRE (capture.waitUntilQuiet() == 4);
+    CHECK (capture.at (2).address == "/adm/obj/1/aed");
+    CHECK (capture.at (3).address == "/adm/obj/1/azim");
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: an xyz reply fed back into ADMOSCReceiver reproduces the position",
+           "[osc][send][query]")
+{
+    constexpr int port = 9756;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    sender.queueReply (0, ADMPositionQuery::xyz, 120.0f, -20.0f, 0.7f);
+    tickSilent (sender, 0.0);
+    REQUIRE (capture.waitUntilQuiet() == 1);
+    const auto reply = capture.at (0);
+    REQUIRE (reply.argCount == 3);
+
+    PositionSink sink;
+    ADMOSCReceiver rx;
+    rx.addListener (&sink);
+    juce::OSCMessage back (reply.address);
+    for (int i = 0; i < 3; ++i)
+        back.addFloat32 (reply.args[i]);
+    rx.testProcessOSCMessage (back);
+    rx.removeListener (&sink);
+
+    REQUIRE (sink.calls == 1);
+    CHECK (sink.index == 0);
+    CHECK_THAT (sink.azimuth,   WithinAbs (120.0f, 1.0e-3f));
+    CHECK_THAT (sink.elevation, WithinAbs (-20.0f, 1.0e-3f));
+    CHECK_THAT (sink.distance,  WithinAbs (0.7f, 1.0e-3f));
 
     receiver.removeListener (&capture);
     sender.disconnect();
