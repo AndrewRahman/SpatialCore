@@ -30,6 +30,20 @@ void BinauralRenderer::ensureScratchCapacity()
         convTmpR.resize (needed, 0.0f);
 }
 
+int BinauralRenderer::getScratchTooSmallCount() const noexcept
+{
+    return scratchTooSmallCount_.load (std::memory_order_relaxed);
+}
+
+void BinauralRenderer::shrinkScratchForTesting (size_t newSize)
+{
+    // TEST-ONLY seam: message or test thread, allocation allowed. A fresh vector swapped in, so the
+    // capacity equals the size too: a later audio-thread resize would have to allocate, and a
+    // test can see that.
+    std::vector<float> (newSize, 0.0f).swap (convTmpL);
+    std::vector<float> (newSize, 0.0f).swap (convTmpR);
+}
+
 void BinauralRenderer::setProfile (int profileIndex)
 {
     activeProfile = profileIndex;

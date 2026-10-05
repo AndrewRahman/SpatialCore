@@ -4,6 +4,7 @@
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <juce_dsp/juce_dsp.h>
+#include <atomic>
 #include <vector>
 
 namespace spatialcore
@@ -44,6 +45,22 @@ public:
                               const bool* sourceEnabled,
                               int numSources, int numSamples,
                               float* outL, float* outR);
+
+    /** How many updateSourceHRIR or renderSourceBuffers calls found the scratch buffers smaller
+        than they needed. That only happens when the caller renders more samples than prepare()
+        was given, or after shrinkScratchForTesting(). Each such call skipped its work instead of
+        growing a buffer on the audio thread: updateSourceHRIR keeps the source's previous HRIR,
+        and renderSourceBuffers leaves its zeroed output and advances no convolver, ITD line or
+        shelf state. Debug builds also assert. Any thread, lock-free (D-03, D-04, RTSF-01). */
+    int getScratchTooSmallCount() const noexcept;
+
+    /** TEST-ONLY: replaces both convolution scratch buffers with ones of exactly newSize floats
+        (capacity too), so a test can reach the
+        scratch-too-small guards, which prepare() and setProfile() otherwise make unreachable
+        through the public API. Message or test thread only (it allocates). Declared
+        unconditionally, like RenderEngine::setLoaderFailureForTesting(), so the class layout
+        never depends on build settings. */
+    void shrinkScratchForTesting (size_t newSize);
 
     /** Check if the renderer is in Simple (Woodworth) mode. */
     bool isSimpleMode() const { return activeProfile == 0; }
@@ -87,6 +104,10 @@ private:
 
     // Temporary work buffers for convolution output
     std::vector<float> convTmpL, convTmpR;
+
+    // Counted by the scratch-too-small guards (see getScratchTooSmallCount()). Relaxed and
+    // lock-free, so any thread may read it.
+    std::atomic<int> scratchTooSmallCount_ { 0 };
 
     /** Grows convTmpL/convTmpR to max (currentBlockSize, 512, storedIRLength). Called from
         prepare() and setProfile() only (message or loader thread). Grow-only. */
