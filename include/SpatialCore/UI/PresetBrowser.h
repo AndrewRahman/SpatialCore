@@ -37,10 +37,6 @@ private:
     juce::TextEditor nameEditor;
     juce::TextButton saveBtn { "Save" }, cancelBtn { "Cancel" };
 
-    // Embedded DM Sans Bold for the SAVE PRESET title. A typeface-less Font would resolve through the
-    // default look-and-feel, which a per-component setLookAndFeel does not change (D-22).
-    juce::Typeface::Ptr titleTypeface_;
-
     static constexpr int cardW = 260, cardH = 130;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PresetSaveOverlay)

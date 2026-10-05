@@ -157,7 +157,11 @@ TEST_CASE ("Fonts: map render is byte-identical with and without the SML look-an
     withSml->setLookAndFeel (nullptr);
 }
 
-TEST_CASE ("Fonts: the save-preset title asks for no system font", "[ui][fonts][spy]")
+// Documented exemption (D-22, rejected at the Phase 4 review): the user kept the original SAVE PRESET
+// title, a typeface-less bold font that resolves through the default look-and-feel. It is the one UI
+// font that does not come from SpatialCoreUIFontData, so it makes exactly the one request it always
+// made. A second request, or none, means the title changed without a new ruling.
+TEST_CASE ("Fonts: the save-preset title keeps its original single font request", "[ui][fonts][spy]")
 {
     ScopedSpyDefault spyDefault;
 
@@ -167,7 +171,7 @@ TEST_CASE ("Fonts: the save-preset title asks for no system font", "[ui][fonts][
 
     (void) paintOverlay (overlay);
     INFO ("requested by the overlay title: " << describe (spyDefault.spy.requested));
-    CHECK (spyDefault.spy.calls == 0);
+    CHECK (spyDefault.spy.calls == 1);
 }
 
 TEST_CASE ("Fonts: every embedded font resource equals its source file", "[ui][fonts][bytes]")
@@ -266,7 +270,7 @@ TEST_CASE ("Fonts: no UI code asks for an SML font by family name", "[ui][fonts]
         }
     }
 
-    // SMLLookAndFeel loads 7, the map 3 and the overlay 1: the scan really saw the call sites.
+    // SMLLookAndFeel loads 7 and the map 3: the scan really saw the call sites.
     CHECK (typefaceCreations >= 7);
 }
 
