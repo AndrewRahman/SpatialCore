@@ -6,8 +6,8 @@ current_phase_name: Control Surface & UI
 status: planning
 stopped_at: Phase 3 complete, ready to plan Phase 4
 last_updated: "2026-10-04T20:29:40.292Z"
-last_activity: 2026-10-04
-last_activity_desc: Phase 3 complete, transitioned to Phase 4
+last_activity: 2026-10-05
+last_activity_desc: Phase 3 code review fixed to clean (20 findings, 266/266 tests)
 state_head: 3d8adcfbd7b6aa3179cc6198a68913e86ef746ca
 progress:
   total_phases: 6
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 Phase: 4 — Control Surface & UI
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-04 — Phase 3 complete, transitioned to Phase 4
+Last activity: 2026-10-05 — Phase 3 code review --fix looped to clean (14 + 6 findings fixed, Debug and Release 266/266, OSD builds)
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -147,6 +147,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 03]: RenderBlockContext::engineSelectsHRTF (default false, D-15): the engine claims a ready profile, derives useHRTF from its active renderer and blends the Woodworth and HRTF paths during a Simple <-> HRTF fade; flag-off and no-switch output is bit-identical — A consumer-derived useHRTF can read a different renderer than the engine claims (the SC-16 tear class). Plain paths call exactly the flag-off dispatch so existing consumers are unchanged; the blend was rebuilt outside the engine and matched to 0 deviation, with once-per-block Woodworth proven by mutation.
 - [Phase 03]: 03-10: spatial-audio-dsp skill profile table renumbered to match kHRTFProfiles (SADIE 1 ... KEMAR 5); describeHRTFProfileStatus documented as a free function; Windows shared-folder path documented as implemented but unverified
 - [Phase 03]: 03-11: OSD#234 comment (A) and SpatialCore#15 close (C) approved but deferred until Phase 3 is pushed to main; B filed as SpatialCore#25; D loudness bounds pinned (0.5 LU, spread 2.98 LU)
+- [Phase 03]: Code review --fix (2026-10-05), 3 fix rounds to clean, ledger 14/14 fixed: SOFA files are pre-validated (declared rate, R, M, resampled N, 2^27-float budget) before libmysofa resamples; shared files are read through one fd with fstat S_ISREG and a streamed byte cap; a throwing load settles as Failed/LoadFailed; engineSelectsHRTF now fills objGains itself on binaural blocks (overwrites consumer objGains there); WR-05 64-sample ITD wrap documented only, still SpatialCore#25
 
 ### Pending Todos
 
@@ -180,10 +181,12 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | CI | ctest step runs zero tests; no arm64/FMA Release leg | Open — Phase 6 | Phase 02 (02-10) |
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Open — pre-existing | Phase 02 (02-07) |
+| Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
+| API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 
 ## Session Continuity
 
 Last session: 2026-10-04T17:26:20.044Z
 Stopped at: Phase 3 complete, ready to plan Phase 4
 Resume file: None
-Next command: `/gsd-discuss-phase 3` (no 03-CONTEXT.md yet)
+Next command: `/gsd-discuss-phase 4`
