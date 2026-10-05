@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_osc/juce_osc.h>
+#include <catch2/catch_test_macros.hpp>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -20,6 +21,11 @@ namespace spatialcore::test
 // was called has already been recorded. The wait ends on that event, not on a timer, so a
 // slow machine makes it longer instead of making the count wrong. Markers are not recorded
 // as entries.
+//
+// WR-02: each marker carries a unique token (an int32), and settle() waits for ITS token, not
+// for a count. A marker that arrives after its own settle() call timed out therefore cannot
+// satisfy a later call. A timeout is a test failure (FAIL), never a quiet return, because a
+// count taken without the marker proves nothing about datagrams still in flight.
 struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
 {
     struct Entry
@@ -32,7 +38,8 @@ struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::
     // port is the port this capture's OSCReceiver listens on.
     explicit RecordingCapture (int port)
     {
-        markerSender.connect ("127.0.0.1", port);
+        const bool connected = markerSender.connect ("127.0.0.1", port);
+        REQUIRE (connected);
     }
 
     void oscMessageReceived (const juce::OSCMessage& message) override
@@ -40,7 +47,10 @@ struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::
         const auto address = message.getAddressPattern().toString();
         if (address == kMarkerAddress)
         {
-            ++markersSeen;
+            // Tokens only grow (one sending thread, in-order loopback), so keep the maximum.
+            const int token = message.size() > 0 && message[0].isInt32() ? message[0].getInt32() : 0;
+            int seen = markersSeen.load();
+            while (token > seen && ! markersSeen.compare_exchange_weak (seen, token)) {}
             return;
         }
 
@@ -84,16 +94,23 @@ struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::
         return entries.empty() ? Entry {} : entries.back();
     }
 
-    // Waits for every datagram sent so far to be recorded, then returns the count.
+    // Waits for every datagram sent so far to be recorded, then returns the count. Fails the
+    // running test if the marker never arrives (it throws, so the caller's CHECK never runs).
     int settle (int timeoutMs = 5000)
     {
         const int token = ++markersSent;
-        markerSender.send (juce::OSCMessage (juce::OSCAddressPattern (kMarkerAddress)));
+        juce::OSCMessage marker { juce::OSCAddressPattern (kMarkerAddress) };
+        marker.addInt32 (token);
+        markerSender.send (marker);
 
         const auto deadline = std::chrono::steady_clock::now()
                             + std::chrono::milliseconds (timeoutMs);
         while (markersSeen.load() < token && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for (std::chrono::milliseconds (1));
+
+        if (markersSeen.load() < token)
+            FAIL ("RecordingCapture::settle() timed out: the marker never arrived, so the recorded count proves nothing");
+
         return count();
     }
 
@@ -103,7 +120,7 @@ struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::
     std::vector<Entry> entries;
     juce::OSCSender markerSender;
     std::atomic<int> markersSent { 0 };
-    std::atomic<int> markersSeen { 0 };
+    std::atomic<int> markersSeen { 0 };   // highest marker token received
 };
 
 } // namespace spatialcore::test
