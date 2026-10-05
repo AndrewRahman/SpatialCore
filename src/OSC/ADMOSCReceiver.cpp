@@ -1,5 +1,6 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
 #include "../Core/FloatSemanticsGuard.h"   // WR-04/IN-16/D-21: the NaN sentinel and the isfinite checks need IEEE semantics
+#include <algorithm>
 #include <cmath>
 
 namespace spatialcore
@@ -13,6 +14,20 @@ static inline void cartesianToPolar (float x, float y, float z,
                                      float& azDeg, float& elDeg, float& dist)
 {
     static constexpr float kPi = 3.14159265358979323846f;
+
+    // WR-04: a component above about 1.8e19 makes x * x overflow to infinity, r
+    // becomes infinity and the elevation collapses to 0. Past the unit cube the
+    // distance clamps to 1 anyway, so scale the triple into it first: the
+    // direction is preserved, nothing overflows, and an in-range triple (the only
+    // kind a compliant sender writes) is not touched, bit for bit.
+    const float m = std::max ({ std::abs (x), std::abs (y), std::abs (z) });
+    if (m > 1.0f)
+    {
+        x /= m;
+        y /= m;
+        z /= m;
+    }
+
     azDeg = std::atan2 (-x, y) * (180.0f / kPi);
     float r = std::sqrt (x * x + y * y);
     elDeg = std::atan2 (z, r) * (180.0f / kPi);

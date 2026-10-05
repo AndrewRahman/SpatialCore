@@ -767,6 +767,26 @@ TEST_CASE ("ADMOSCReceiver: a huge azimuth is wrapped once and the result is saf
     CHECK (std::isfinite (listener.lastAz));
     CHECK (std::isfinite (listener.lastEl));
     CHECK (listener.lastDist == 1.0f);
+
+    // WR-04: a component that overflows float when squared must not flatten the elevation.
+    // (1e30, 0, 1e30) points 45 degrees up and to the left (x is -azimuth).
+    listener.positionCallCount = 0;
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/xyz", 1.0e30f, 0.0f, 1.0e30f));
+    REQUIRE (listener.positionCallCount == 1);
+    CHECK_THAT (listener.lastAz, Catch::Matchers::WithinAbs (-90.0f, 1.0e-3f));
+    CHECK_THAT (listener.lastEl, Catch::Matchers::WithinAbs (45.0f, 1.0e-3f));
+    CHECK (listener.lastDist == 1.0f);
+
+    // The same direction written with a small, in-range scale gives the same angles.
+    listener.positionCallCount = 0;
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/xyz", 0.5f, 0.5f, 0.5f));
+    REQUIRE (listener.positionCallCount == 1);
+    const float smallAz = listener.lastAz, smallEl = listener.lastEl;
+    listener.positionCallCount = 0;
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/xyz", 3.0e30f, 3.0e30f, 3.0e30f));
+    REQUIRE (listener.positionCallCount == 1);
+    CHECK_THAT (listener.lastAz, Catch::Matchers::WithinAbs (smallAz, 1.0e-3f));
+    CHECK_THAT (listener.lastEl, Catch::Matchers::WithinAbs (smallEl, 1.0e-3f));
 }
 
 TEST_CASE ("ADMOSCReceiver: in-range float32 messages from a compliant sender forward bit for bit",
