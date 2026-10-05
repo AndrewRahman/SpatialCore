@@ -726,6 +726,17 @@ void RenderEngine::renderBlock (const RenderSources& sources,
                                  float* const* outChannels,
                                  int numOutCh)
 {
+    // A zero-length (or negative) block has nothing to render: it writes nothing, takes no fade
+    // step and claims nothing, so a pending SC-20 format switch is still faded by the next real
+    // block. Checked before anything else touches engine state.
+    if (sources.numSamples <= 0)
+        return;
+
+    // D-11: a block longer than prepare()'s maxBlockSize is rendered completely (the HRTF path in
+    // pieces, see renderDirectBinauralHRTF) and counted, never asserted: it is handled.
+    if (sources.numSamples > preparedMaxBlock_)
+        oversizedBlockCount_.fetch_add (1, std::memory_order_relaxed);
+
     // D-06(a) / D-19(ii): every render path and the engine's own gain
     // computation read this sanitised copy, never the raw parameter. The
     // algorithm-layer guards remain the protection for consumers that call
@@ -1088,6 +1099,14 @@ void RenderEngine::endRendererFade()
 // D-15 addition: with simpleCtx set, a Simple-mode renderer on either side of a fade is the
 // Woodworth path (see the header declaration); with it null nothing changes. A caller that sets
 // simpleCtx must have a fade running (renderBinauralWithProfileFade guarantees it).
+//
+// D-11 (CR-03): the per-source work buffers are sized by prepare() for preparedMaxBlock_ samples
+// and are never grown on the audio thread. A block of at most that size is exactly one piece
+// rendered with the consumer's own pointers. A longer block (a host that delivers more than it
+// promised) is rendered completely, in consecutive pieces of at most preparedMaxBlock_ samples,
+// each piece rendered exactly as a block of that length would be: no sample is dropped, nothing
+// is allocated, and the state (convolvers, ITD lines, crossfade, Woodworth gains) advances piece
+// by piece. This is the same approach PartitionedConvolver::process takes (WR-02).
 //==============================================================================
 bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh,
                                               int activeIdx, const RenderBlockContext* simpleCtx)
@@ -1101,9 +1120,6 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     // D-15: with simpleCtx set, a renderer in Simple mode is the Woodworth path, not a (silent)
     // convolver. At most one side of a fade is Simple here (see renderBinauralWithProfileFade).
     const bool activeIsSimple = simpleCtx != nullptr && activeRenderer.isSimpleMode();
-    const bool fromIsSimple = simpleCtx != nullptr && rendererXfading_
-                              && binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].isSimpleMode();
-    bool ranSimple = false;
 
     // Update per-source HRIRs at block boundary for any taps that moved
     // (new renderer only — old renderer keeps its existing HRIRs during crossfade).
@@ -1118,37 +1134,80 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         }
     }
 
-    // Ensure per-source accumulation storage is sized for this block (issue
-    // CR-03: numSamples may exceed the maxBlockSize this engine was prepared
-    // with — e.g. a host requesting an oversized block. sourceAccumStorage_
-    // is otherwise fixed at MAX_SOURCES * maxBlockSize from prepare(), so an
-    // oversized block would overflow the per-source memset/write below.
-    // This mirrors the wetBufL_/wetBufR_ defensive-resize pattern immediately
-    // below. Regrowth can reallocate the backing vector, so every cached
-    // sourceAccumBufPtrs[src] MUST be re-derived afterward — stale pointers
-    // would alias freed memory.
-    if (sourceAccumStorage_.size() < static_cast<size_t> (MAX_SOURCES) * static_cast<size_t> (numSamples))
+    // An engine that was never prepared has no work buffers at all: write silence, touch nothing.
+    const int pieceMax = preparedMaxBlock_;
+    if (pieceMax <= 0)
     {
-        // An oversized block is a prepare-contract violation (the engine
-        // should have been prepared with the true maximum block size) —
-        // flag it loudly in debug builds, consistent with BinauralRenderer's
-        // own self-flagging elsewhere in this file.
-        jassertfalse;
-        sourceAccumStorage_.assign (static_cast<size_t> (MAX_SOURCES) * static_cast<size_t> (numSamples), 0.0f);
-        for (int src = 0; src < MAX_SOURCES; ++src)
-            sourceAccumBufPtrs[src] = sourceAccumStorage_.data() + static_cast<size_t> (src) * static_cast<size_t> (numSamples);
+        if (outL != nullptr && numSamples > 0)
+            std::memset (outL, 0, sizeof (float) * static_cast<size_t> (numSamples));
+        if (outR != nullptr && numSamples > 0)
+            std::memset (outR, 0, sizeof (float) * static_cast<size_t> (numSamples));
+        (void) numOutCh;
+        return false;
+    }
+
+    // A stack copy (fixed arrays, no heap, DR-1) whose per-sample pointers advance piece by piece.
+    RenderSources chunk = sources;
+    bool ranSimple = false;
+
+    for (int offset = 0; offset < numSamples; offset += pieceMax)
+    {
+        const int pieceLen = std::min (pieceMax, numSamples - offset);
+        chunk.numSamples = pieceLen;
+
+        ranSimple |= renderDirectBinauralHRTFChunk (chunk,
+                                                    outL != nullptr ? outL + offset : nullptr,
+                                                    outR != nullptr ? outR + offset : nullptr,
+                                                    activeIdx, simpleCtx);
+
+        // The SC-20 snap belongs to the start of the block, as the next block would see it.
+        snapInterpolation_ = false;
+
+        for (int t = 0; t < MAX_SOURCES; ++t)
+        {
+            if (chunk.monoBuffers[t] != nullptr)           chunk.monoBuffers[t] += pieceLen;
+            if (chunk.tapFadeGainPerSample[t] != nullptr)  chunk.tapFadeGainPerSample[t] += pieceLen;
+            if (chunk.distGainPerSample[t] != nullptr)     chunk.distGainPerSample[t] += pieceLen;
+        }
+    }
+
+    // Remaining channels (ch >= 2) are left untouched here; the consumer clears
+    // them exactly as the pre-move code did (`buffer.clear(ch, ...)` on a
+    // juce::AudioBuffer is a consumer-side concern, not engine state).
+    (void) numOutCh;
+    return ranSimple;
+}
+
+//==============================================================================
+// renderDirectBinauralHRTFChunk — one piece (at most preparedMaxBlock_ samples) of the HRTF
+// path: the body of the pre-D-11 renderDirectBinauralHRTF from the accumulation buffers on.
+// The buffers are the ones prepare() sized, so nothing here grows.
+//==============================================================================
+bool RenderEngine::renderDirectBinauralHRTFChunk (const RenderSources& sources, float* outL, float* outR,
+                                                   int activeIdx, const RenderBlockContext* simpleCtx)
+{
+    const int numSamples = sources.numSamples;
+
+    auto& activeRenderer = binauralRenderers[static_cast<size_t> (activeIdx)];
+
+    // Read from the live state at the top of every piece: a renderer crossfade can end inside an
+    // oversized block, and the pieces after it are plain.
+    const bool activeIsSimple = simpleCtx != nullptr && activeRenderer.isSimpleMode();
+    const bool fromIsSimple = simpleCtx != nullptr && rendererXfading_
+                              && binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].isSimpleMode();
+    bool ranSimple = false;
+
+    if (activeIsSimple && ! rendererXfading_)
+    {
+        // The fade that put a Simple renderer on this path ended in an earlier piece. Nothing is
+        // left to blend: this is the plain Woodworth path, exactly as the block after it would run.
+        renderSimpleBinauralWoodworth (sources, *simpleCtx, outL, outR, 2);
+        return true;
     }
 
     // Zero per-source accumulation buffers (contiguous allocation)
     for (int src = 0; src < MAX_SOURCES; ++src)
         std::memset (sourceAccumBufPtrs[src], 0, sizeof (float) * static_cast<size_t> (numSamples));
-
-    // Ensure wet buffers are sized
-    if (wetBufL_.size() < static_cast<size_t> (numSamples))
-    {
-        wetBufL_.resize (static_cast<size_t> (numSamples), 0.0f);
-        wetBufR_.resize (static_cast<size_t> (numSamples), 0.0f);
-    }
 
     // v1.0: Per-sample distGain interpolation to prevent clicks on rapid position changes
     for (int s = 0; s < numSamples; ++s)
@@ -1179,20 +1238,14 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     for (int t = 0; t < MAX_SOURCES; ++t)
         srcBufPtrs[t] = sourceAccumBufPtrs[t];
 
-    // The Woodworth path's destination when a side is Simple. simpleWetL_/R_ cover every block up
-    // to the prepared size; an oversized block is a prepare-contract violation (flagged above for
-    // the wet buffers), and then the Woodworth output goes straight into the buffer of its own
-    // side, which that violation path has already sized -- never an allocation here (DR-1).
-    const size_t ns = static_cast<size_t> (numSamples);
-    const bool simpleScratchFits = simpleWetL_.size() >= ns && simpleWetR_.size() >= ns;
-
-    // Active (new) side.
+    // Active (new) side. The Woodworth path's destination is simpleWetL_/R_, which prepare() sized
+    // to the same preparedMaxBlock_ as every other buffer here, so a piece always fits (DR-1).
     const float* newL = wetBufL_.data();
     const float* newR = wetBufR_.data();
     if (activeIsSimple)
     {
-        float* dstL = simpleScratchFits ? simpleWetL_.data() : wetBufL_.data();
-        float* dstR = simpleScratchFits ? simpleWetR_.data() : wetBufR_.data();
+        float* dstL = simpleWetL_.data();
+        float* dstR = simpleWetR_.data();
         renderSimpleBinauralWoodworth (sources, *simpleCtx, dstL, dstR, 2);
         ranSimple = true;
         newL = dstL;
@@ -1207,14 +1260,12 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     // Renderer-level crossfade.
     if (rendererXfading_)
     {
-        if (xfadeWetL_.size() < ns) { xfadeWetL_.resize (ns, 0.0f); xfadeWetR_.resize (ns, 0.0f); }
-
         const float* oldL = xfadeWetL_.data();
         const float* oldR = xfadeWetR_.data();
         if (fromIsSimple)
         {
-            float* dstL = simpleScratchFits ? simpleWetL_.data() : xfadeWetL_.data();
-            float* dstR = simpleScratchFits ? simpleWetR_.data() : xfadeWetR_.data();
+            float* dstL = simpleWetL_.data();
+            float* dstR = simpleWetR_.data();
             renderSimpleBinauralWoodworth (sources, *simpleCtx, dstL, dstR, 2);
             ranSimple = true;
             oldL = dstL;
@@ -1262,10 +1313,6 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     if (outL != nullptr) std::memcpy (outL, wetBufL_.data(), sizeof (float) * static_cast<size_t> (numSamples));
     if (outR != nullptr) std::memcpy (outR, wetBufR_.data(), sizeof (float) * static_cast<size_t> (numSamples));
 
-    // Remaining channels (ch >= 2) are left untouched here; the consumer clears
-    // them exactly as the pre-move code did (`buffer.clear(ch, ...)` on a
-    // juce::AudioBuffer is a consumer-side concern, not engine state).
-    (void) numOutCh;
     return ranSimple;
 }
 
@@ -1725,6 +1772,11 @@ const RenderEngine::LayoutState& RenderEngine::getBlockLayout() const noexcept
 int RenderEngine::getWriterViewOnRenderThreadCount() const noexcept
 {
     return writerViewOnRenderThreadCount_.load (std::memory_order_relaxed);
+}
+
+int RenderEngine::getOversizedBlockCount() const noexcept
+{
+    return oversizedBlockCount_.load (std::memory_order_relaxed);
 }
 
 std::size_t RenderEngine::currentThreadHash() noexcept

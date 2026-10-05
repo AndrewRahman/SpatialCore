@@ -420,6 +420,13 @@ public:
     // and renders.
     int getWriterViewOnRenderThreadCount() const noexcept;
 
+    // Diagnostic (D-11, D-04): how many renderBlock() calls carried more samples than
+    // prepare()'s maxBlockSize. Such a block is rendered completely and nothing is dropped:
+    // the direct-binaural HRTF path renders it in pieces of at most maxBlockSize, every other
+    // path needs no block-sized buffer. It does not allocate and does not assert, because it is
+    // handled. A zero-length block returns at once and is not counted. Any thread, lock-free.
+    int getOversizedBlockCount() const noexcept;
+
     //--------------------------------------------------------------------------
     // Escape hatches (D-02 — leaf classes stay public). Consumers that need
     // direct access to the underlying renderer/HRTF database (e.g. for
@@ -522,6 +529,12 @@ private:
     // simpleWetL_/simpleWetR_. Returns true when the Woodworth path ran this block.
     bool renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh,
                                     int activeIdx, const RenderBlockContext* simpleCtx = nullptr);
+    // D-11: renders one piece of at most preparedMaxBlock_ samples of an HRTF block. The
+    // per-source work buffers are sized by prepare() for exactly that many samples, so a piece
+    // never needs a grow. renderDirectBinauralHRTF calls it once for a block of at most the
+    // prepared size (the consumer's own pointers) and once per piece for an oversized block.
+    bool renderDirectBinauralHRTFChunk (const RenderSources& chunk, float* outL, float* outR,
+                                         int activeIdx, const RenderBlockContext* simpleCtx);
     // D-15: the one function a binaural block goes through when engineSelectsHRTF is set. Plain
     // Simple and plain HRTF (including HRTF <-> HRTF) call exactly the path the flag-off dispatch
     // would, so the output is bit-identical; only a Simple <-> HRTF fade blends the two paths.
@@ -756,6 +769,8 @@ private:
     std::atomic<std::size_t> renderThreadHash_ { 0 };
     std::atomic<std::size_t> writerThreadHash_ { 0 };
     mutable std::atomic<int> writerViewOnRenderThreadCount_ { 0 };
+    // D-11: renderBlock() calls longer than preparedMaxBlock_ (relaxed, lock-free).
+    std::atomic<int> oversizedBlockCount_ { 0 };
     // A non-lock-free atomic would put a lock on the audio thread.
     static_assert (std::atomic<std::size_t>::is_always_lock_free,
                    "RenderEngine thread bookkeeping requires lock-free std::atomic<size_t>");

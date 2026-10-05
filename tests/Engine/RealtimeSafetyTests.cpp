@@ -261,6 +261,267 @@ TEST_CASE ("Realtime: every Ambisonics format renders moving distance without al
 }
 
 // ----------------------------------------------------------------------------
+// D-11, RTSF-01, RTSF-05: a host block longer than prepare()'s maxBlockSize is rendered completely
+// and allocates nothing, on every render path. The HRTF path used to grow three engine buffers on
+// the audio thread (CR-03); it now renders the block in pieces of at most the prepared size.
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr int kOversizedPrepared = 256;
+    constexpr int kOversizedBlock = 1024;
+    constexpr int kOversizedBlocks = 30;
+
+    // In a Debug tree libmysofa is compiled with -DVDEBUG, and every HRIR interpolation then
+    // printf()s (libmysofa interpolate.c:119). That allocates and takes stdio locks inside
+    // libmysofa on the thread that looks the HRIR up, which is not a SpatialCore allocation. So a
+    // block that looks HRIRs up is allocation- and lock-checked in Release only (the Release ctest
+    // is the RTSF-01 proof); the output, the counter and every other check run in both builds.
+    // Blocks that look nothing up (no live object, empty) are checked everywhere.
+    constexpr bool kHRIRLookupTraces =
+#if JUCE_DEBUG
+        true;
+#else
+        false;
+#endif
+
+    // The five configurations the plan names. `hrtf` requests profile 5 (embedded KEMAR) and waits
+    // for it, then the consumer sets useHRTF; the Simple configuration loads nothing.
+    struct OversizedConfig
+    {
+        const char* name;
+        OutputFormat format;
+        bool hrtf;
+        bool useHRTF;
+    };
+
+    constexpr std::array<OversizedConfig, 5> kOversizedConfigs { {
+        { "Simple binaural",     OutputFormat::Binaural,       false, false },
+        { "HRTF binaural",       OutputFormat::Binaural,       true,  true  },
+        { "Stereo variant",      OutputFormat::Stereo,         false, false },
+        { "Discrete surround",   OutputFormat::Surround7_1_4,  false, false },
+        { "Ambisonics HOA",      OutputFormat::AmbisonicsHOA,  false, false } } };
+
+    std::unique_ptr<RenderEngine> makeOversizedEngine (const OversizedConfig& config, int prepared)
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, prepared);
+        engine->setOutputFormat (config.format);
+
+        if (config.hrtf)
+        {
+            engine->setHRTFProfile (5);
+            REQUIRE (engine->waitForHRTFProfileIdle (30000));
+        }
+
+        return engine;
+    }
+
+    bool anyNonzeroOut (const OutputBank& out, int numCh, int n)
+    {
+        for (int c = 0; c < numCh; ++c)
+            for (int i = 0; i < n; ++i)
+                if (out.channels[(size_t) c][(size_t) i] != 0.0f)
+                    return true;
+
+        return false;
+    }
+}
+
+TEST_CASE ("Realtime: an oversized block renders on every path without allocating (D-11)",
+           "[rt][rt-alloc][rt-lock][oversized]")
+{
+    requireRealtimeTrapCanary();
+
+    for (const auto& config : kOversizedConfigs)
+    {
+        auto engine = makeOversizedEngine (config, kOversizedPrepared);
+
+        RenderBlockContext ctx = makeEngineContext();
+        ctx.useHRTF = config.useHRTF;
+        const int numOutCh = channelsFor (config.format);
+
+        MovingScene scene;
+        OutputBank out;
+        bool finite = false;
+        const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, numOutCh,
+                                                   kOversizedBlocks, kOversizedBlock, finite);
+
+        INFO (config.name);
+        CAPTURE (counts.allocs, counts.frees, counts.locks);
+
+        if (! (config.hrtf && kHRIRLookupTraces))
+        {
+            CHECK (counts.allocs == 0);
+            CHECK (counts.frees == 0);
+            CHECK (counts.locks == 0);
+        }
+
+        CHECK (finite);
+        CHECK (anyNonzeroOut (out, numOutCh, kOversizedBlock));
+        CHECK (engine->getOversizedBlockCount() == kOversizedBlocks);
+    }
+}
+
+namespace
+{
+    // One renderBlock call with the trap armed around it only; the counts are those of this call.
+    RealtimeCounts armedOnce (RenderEngine& engine, const RenderSources& sources,
+                              const RenderBlockContext& ctx, OutputBank& out, int numOutCh)
+    {
+        resetRealtimeCounts();
+
+        {
+            const ScopedRealtimeTrap trap;
+            engine.renderBlock (sources, ctx, out.ptrs, numOutCh);
+        }
+
+        return realtimeCounts();
+    }
+
+    bool channelsAllEqual (const OutputBank& out, int firstCh, int lastCh, int n, float value)
+    {
+        for (int c = firstCh; c <= lastCh; ++c)
+            for (int i = 0; i < n; ++i)
+                if (out.channels[(size_t) c][(size_t) i] != value)
+                    return false;
+
+        return true;
+    }
+}
+
+TEST_CASE ("Realtime: block-length edges, exactly prepared, one sample over, empty, no live object (D-11)",
+           "[rt][rt-alloc][rt-lock][oversized]")
+{
+    requireRealtimeTrapCanary();
+
+    SECTION ("HRTF path: prepared size, one over, empty, no live object")
+    {
+        const OversizedConfig& config = kOversizedConfigs[1];
+        auto engine = makeOversizedEngine (config, kOversizedPrepared);
+
+        RenderBlockContext ctx = makeEngineContext();
+        ctx.useHRTF = config.useHRTF;
+        const int numOutCh = channelsFor (config.format);
+
+        MovingScene scene;
+        OutputBank out;
+
+        // Exactly the prepared size: one piece, not counted.
+        {
+            scene.fill (0, kOversizedPrepared);
+            out.clear();
+            const RealtimeCounts counts = armedOnce (*engine, scene.sources (kOversizedPrepared), ctx, out, numOutCh);
+            CAPTURE (counts.allocs, counts.frees, counts.locks);
+            if (! kHRIRLookupTraces)
+            {
+                CHECK (counts.allocs == 0);
+                CHECK (counts.frees == 0);
+                CHECK (counts.locks == 0);
+            }
+            CHECK (out.allFinite (numOutCh, kOversizedPrepared));
+            CHECK (engine->getOversizedBlockCount() == 0);
+        }
+
+        // One sample over: two pieces (256 and 1), counted once, nothing allocated.
+        {
+            scene.fill (1, kOversizedPrepared + 1);
+            out.clear();
+            const RealtimeCounts counts = armedOnce (*engine, scene.sources (kOversizedPrepared + 1), ctx, out, numOutCh);
+            CAPTURE (counts.allocs, counts.frees, counts.locks);
+            if (! kHRIRLookupTraces)
+            {
+                CHECK (counts.allocs == 0);
+                CHECK (counts.frees == 0);
+                CHECK (counts.locks == 0);
+            }
+            CHECK (out.allFinite (numOutCh, kOversizedPrepared + 1));
+            CHECK (engine->getOversizedBlockCount() == 1);
+        }
+
+        // Empty: nothing written, nothing allocated, nothing counted.
+        {
+            for (auto& ch : out.channels)
+                std::fill (ch.begin(), ch.end(), 7.0f);
+
+            scene.fill (2, kOversizedPrepared);
+            const RealtimeCounts counts = armedOnce (*engine, scene.sources (0), ctx, out, numOutCh);
+            CAPTURE (counts.allocs, counts.frees, counts.locks);
+            CHECK (counts.allocs == 0);
+            CHECK (counts.frees == 0);
+            CHECK (counts.locks == 0);
+            CHECK (channelsAllEqual (out, 0, numOutCh - 1, kOversizedBlock, 7.0f));
+            CHECK (engine->getOversizedBlockCount() == 1);
+        }
+
+        // An oversized block with no live object: exact silence on channels 0 and 1.
+        {
+            for (auto& ch : out.channels)
+                std::fill (ch.begin(), ch.end(), 7.0f);
+
+            RenderSources none;
+            none.numSamples = kOversizedBlock;
+            const RealtimeCounts counts = armedOnce (*engine, none, ctx, out, numOutCh);
+            CAPTURE (counts.allocs, counts.frees, counts.locks);
+            CHECK (counts.allocs == 0);
+            CHECK (counts.frees == 0);
+            CHECK (counts.locks == 0);
+            CHECK (channelsAllEqual (out, 0, 1, kOversizedBlock, 0.0f));
+            CHECK (engine->getOversizedBlockCount() == 2);
+        }
+    }
+
+    SECTION ("a zero-length block does not consume the SC-20 format-switch fade")
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, kOversizedPrepared);
+        engine->setOutputFormat (OutputFormat::Binaural);
+
+        RenderBlockContext ctx = makeEngineContext();
+        ctx.engineFadesFormatSwitch = true;
+
+        MovingScene scene;
+        OutputBank out;
+
+        // A first real block, so the engine has played something (the first block never fades).
+        scene.fill (0, kOversizedPrepared);
+        engine->renderBlock (scene.sources (kOversizedPrepared), ctx, out.ptrs, 2);
+
+        engine->setOutputFormat (OutputFormat::Surround7_1_4);
+
+        // The empty block between the switch and the next real block.
+        scene.fill (1, kOversizedPrepared);
+        out.clear();
+        const RealtimeCounts counts = armedOnce (*engine, scene.sources (0), ctx, out, 12);
+        CAPTURE (counts.allocs, counts.frees, counts.locks);
+        CHECK (counts.allocs == 0);
+        CHECK (counts.locks == 0);
+        CHECK (engine->getOversizedBlockCount() == 0);
+
+        // The next real block is still the fade-out block: it renders the layout the engine held
+        // (Binaural) and ends at exactly 0 on channels 0 and 1.
+        scene.fill (2, kOversizedPrepared);
+        out.clear();
+        engine->renderBlock (scene.sources (kOversizedPrepared), ctx, out.ptrs, 12);
+        CHECK (engine->getBlockLayout().format == OutputFormat::Binaural);
+        CHECK (out.channels[0][kOversizedPrepared - 1] == 0.0f);
+        CHECK (out.channels[1][kOversizedPrepared - 1] == 0.0f);
+
+        bool audible = false;
+        for (int i = 0; i < kOversizedPrepared - 1; ++i)
+            audible = audible || out.channels[0][(size_t) i] != 0.0f || out.channels[1][(size_t) i] != 0.0f;
+        CHECK (audible);
+
+        // And the block after it is the fade-in block of the new format.
+        scene.fill (3, kOversizedPrepared);
+        out.clear();
+        engine->renderBlock (scene.sources (kOversizedPrepared), ctx, out.ptrs, 12);
+        CHECK (engine->getBlockLayout().format == OutputFormat::Surround7_1_4);
+        CHECK (out.channels[0][0] == 0.0f);
+        CHECK (out.channels[1][0] == 0.0f);
+    }
+}
+
+// ----------------------------------------------------------------------------
 // D-10: the NFC fix must store bit-for-bit the coefficients the old temporary stored.
 // The formula below is a test-local copy of the update in RenderEngine::renderAmbisonicsOutput
 // (same clamps, same float operations, c = 343, reference radius 1.5 m).
