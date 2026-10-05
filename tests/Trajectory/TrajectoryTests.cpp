@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 using namespace spatialcore;
@@ -301,4 +303,200 @@ TEST_CASE ("resetAll(): clears all objects to inactive with default position", "
     engine.resetAll();
     CHECK_FALSE (engine.isActive (0));
     CHECK_THAT (engine.getFinalDist (0), WithinAbs (0.5f, 0.001f));
+}
+
+// ============================================================================
+// Reverse for all 13 shapes (Phase 4, EXTR-04, ROADMAP criterion 3; D-13 / D-19).
+//
+// Ten shapes retrace the forward path when reversed. Bounce and Line keep their deliberate
+// OSD#100 reverse and are pinned here as exceptions to that rule (D-19): changing either would
+// change what OpenSpatialDelay users hear. Random is checked only for movement and range.
+// ============================================================================
+
+namespace
+{
+    // Shortest difference between two angles, in degrees, always >= 0.
+    float angularDiff (float a, float b)
+    {
+        float d = std::fmod (a - b, 360.0f);
+        if (d > 180.0f)  d -= 360.0f;
+        if (d < -180.0f) d += 360.0f;
+        return std::abs (d);
+    }
+
+    struct Base { float az, el, dist; };
+
+    bool inRange (float az, float el, float dist)
+    {
+        return std::isfinite (az) && std::isfinite (el) && std::isfinite (dist)
+            && az >= -180.0f && az <= 180.0f
+            && el >= -90.0f  && el <= 90.0f
+            && dist >= 0.0f  && dist <= 1.0f;
+    }
+}
+
+TEST_CASE ("Trajectory reverse: ten shapes retrace the forward path", "[trajectory][reverse]")
+{
+    const int shapes[] = { TrajShape::Circle, TrajShape::Cross, TrajShape::Figure8, TrajShape::Heart,
+                           TrajShape::Helix, TrajShape::Infinity, TrajShape::Orbit, TrajShape::Spiral,
+                           TrajShape::Square, TrajShape::Triangle };
+    const Base bases[] = { { 30.0f, 10.0f, 0.5f }, { -120.0f, -20.0f, 0.8f }, { 0.0f, 0.0f, 0.2f } };
+
+    for (int shape : shapes)
+    {
+        float maxErr = 0.0f;
+        for (const auto& base : bases)
+        {
+            for (int k = 0; k <= 100; ++k)
+            {
+                const float p = (float) k / 100.0f;
+                const auto fwd = TrajectoryEngine::computeTrajectory (shape, 1.0f - p, base.az, base.el, base.dist);
+                const auto rev = TrajectoryEngine::computeTrajectory (shape, p, base.az, base.el, base.dist, true);
+
+                const float eAz = angularDiff (rev.azDeg, fwd.azDeg);
+                const float eEl = std::abs (rev.elDeg - fwd.elDeg);
+                const float eDist = std::abs (rev.dist - fwd.dist);
+                maxErr = std::max ({ maxErr, eAz, eEl, eDist });
+
+                CAPTURE (shape, base.az, base.el, base.dist, p);
+                CHECK_THAT (eAz, WithinAbs (0.0f, 1e-4f));
+                CHECK_THAT (eEl, WithinAbs (0.0f, 1e-4f));
+                CHECK_THAT (eDist, WithinAbs (0.0f, 1e-4f));
+            }
+        }
+        CAPTURE (shape, maxErr);
+        CHECK (maxErr < 1e-4f);
+    }
+}
+
+TEST_CASE ("Trajectory reverse: Line reverse is a half-period shift (OSD#100)", "[trajectory][reverse]")
+{
+    // Line is cos (2 pi phase), an even function, so the generic phase flip would change
+    // nothing. computeTrajectory shifts it half a period instead (D-19: deliberate, kept).
+    const Base bases[] = { { 30.0f, 10.0f, 0.5f }, { -120.0f, -20.0f, 0.8f }, { 0.0f, 0.0f, 0.2f } };
+
+    for (const auto& base : bases)
+    {
+        for (int k = 0; k <= 100; ++k)
+        {
+            const float p = (float) k / 100.0f;
+            const auto rev = TrajectoryEngine::computeTrajectory (TrajShape::Line, p, base.az, base.el, base.dist, true);
+            const auto fwd = TrajectoryEngine::computeTrajectory (TrajShape::Line, std::fmod (p + 0.5f, 1.0f),
+                                                                    base.az, base.el, base.dist);
+            CAPTURE (base.az, base.el, base.dist, p);
+            CHECK_THAT (angularDiff (rev.azDeg, fwd.azDeg), WithinAbs (0.0f, 1e-4f));
+            CHECK_THAT (rev.elDeg, WithinAbs (fwd.elDeg, 1e-4f));
+            CHECK_THAT (rev.dist, WithinAbs (fwd.dist, 1e-4f));
+        }
+    }
+}
+
+TEST_CASE ("Trajectory reverse: Bounce reverse mirrors the azimuth offset (OSD#100)", "[trajectory][reverse]")
+{
+    // Bounce deliberately negates the azimuth offset in reverse so the az/el relationship
+    // mirrors diagonally (OpenSpatialDelay#100). Intentional exception to D-13 (D-19): kept.
+    const Base bases[] = { { 30.0f, 10.0f, 0.5f }, { -40.0f, 0.0f, 0.6f } };
+
+    for (const auto& base : bases)
+    {
+        for (int k = 0; k <= 100; ++k)
+        {
+            const float p = (float) k / 100.0f;
+            const auto fwd = TrajectoryEngine::computeTrajectory (TrajShape::Bounce, p, base.az, base.el, base.dist);
+            const auto rev = TrajectoryEngine::computeTrajectory (TrajShape::Bounce, p, base.az, base.el, base.dist, true);
+            CAPTURE (base.az, base.el, base.dist, p);
+            CHECK_THAT (rev.azDeg - base.az, WithinAbs (-(fwd.azDeg - base.az), 1e-4f));
+            CHECK_THAT (rev.elDeg, WithinAbs (fwd.elDeg, 1e-4f));
+            CHECK_THAT (rev.dist, WithinAbs (fwd.dist, 1e-4f));
+        }
+    }
+}
+
+TEST_CASE ("Trajectory tick: all 13 shapes animate forward and reverse through tick()",
+           "[trajectory][tick][reverse]")
+{
+    for (int shape = TrajShape::Bounce; shape <= TrajShape::Triangle; ++shape)
+    {
+        for (bool reverse : { false, true })
+        {
+            TrajectoryEngine engine;
+            TrajectoryEngine::ObjectInput input;
+            input.shape = shape;
+            input.speed = 1.0f;
+            input.reverse = reverse;
+            input.originAz = 20.0f;
+            input.originEl = 5.0f;
+            input.originDist = 0.5f;
+
+            float firstAz = 0.0f, firstEl = 0.0f, firstDist = 0.0f;
+            bool moved = false;
+
+            for (int t = 0; t < 60; ++t)
+            {
+                engine.tick (0, input, 1.0f / 60.0f);
+                const float az = engine.getFinalAz (0);
+                const float el = engine.getFinalEl (0);
+                const float dist = engine.getFinalDist (0);
+
+                CAPTURE (shape, reverse, t, az, el, dist);
+                REQUIRE (engine.isActive (0));
+                REQUIRE (inRange (az, el, dist));
+
+                if (t == 0)
+                    firstAz = az, firstEl = el, firstDist = dist;
+                else if (az != firstAz || el != firstEl || dist != firstDist)
+                    moved = true;
+            }
+
+            CAPTURE (shape, reverse);
+            CHECK (moved);
+
+            if (shape != TrajShape::Random)
+            {
+                const auto expected = TrajectoryEngine::computeTrajectory (shape, engine.phase_[0],
+                                                                            20.0f, 5.0f, 0.5f, reverse);
+                CHECK_THAT (angularDiff (engine.getFinalAz (0), expected.azDeg), WithinAbs (0.0f, 1e-4f));
+                CHECK_THAT (engine.getFinalEl (0), WithinAbs (expected.elDeg, 1e-4f));
+                CHECK_THAT (engine.getFinalDist (0), WithinAbs (expected.dist, 1e-4f));
+            }
+        }
+    }
+}
+
+TEST_CASE ("Trajectory tick: Random is seeded, moves and stays in range, forward and reverse",
+           "[trajectory][tick][reverse][random]")
+{
+    for (bool reverse : { false, true })
+    {
+        TrajectoryEngine engine;
+        engine.rng_.setSeed (1234);
+
+        TrajectoryEngine::ObjectInput input;
+        input.shape = TrajShape::Random;
+        input.speed = 1.0f;
+        input.reverse = reverse;
+        input.originAz = 0.0f;
+        input.originEl = 0.0f;
+        input.originDist = 0.5f;
+
+        float minAz = 1e9f, maxAz = -1e9f;
+        bool allInRange = true;
+
+        for (int t = 0; t < 600; ++t)
+        {
+            engine.tick (0, input, 1.0f / 60.0f);
+            const float az = engine.getFinalAz (0);
+            allInRange = allInRange && inRange (az, engine.getFinalEl (0), engine.getFinalDist (0));
+            minAz = std::min (minAz, az);
+            maxAz = std::max (maxAz, az);
+        }
+
+        CAPTURE (reverse, minAz, maxAz, engine.getState (0).randomTime);
+        CHECK (allInRange);
+        CHECK (maxAz - minAz > 10.0f);
+        if (reverse)
+            CHECK (engine.getState (0).randomTime < 0.0f);
+        else
+            CHECK (engine.getState (0).randomTime > 0.0f);
+    }
 }
