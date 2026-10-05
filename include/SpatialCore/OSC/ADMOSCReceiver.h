@@ -54,7 +54,8 @@ public:
         // value is finite (a NaN or infinity drops the message, D-21) and is a
         // float32 or an int32 converted to float, but it is otherwise UNBOUNDED:
         // /doppler, /pitch and /speed are not clamped here, and the range of
-        // enabled/trajectory/direction/input depends on the consumer. Datagrams are
+        // enabled/trajectory/direction/input depends on the consumer. The one
+        // exception is x, y and z, which the receiver already clamps to [-1, 1]. Datagrams are
         // unauthenticated, so range-limit the value before using it (and never feed
         // it to a loop whose length depends on its size).
         virtual void admObjectParamReceived (int /*objectIndex*/, const juce::String& /*paramName*/,
