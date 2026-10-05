@@ -1,4 +1,5 @@
 #include <SpatialCore/UI/PresetBrowser.h>
+#include "SpatialCoreUIFontData.h"
 
 namespace spatialcore
 {
@@ -19,6 +20,8 @@ namespace
 //==============================================================================
 PresetSaveOverlay::PresetSaveOverlay()
 {
+    titleTypeface_ = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::DM_SansBold_ttf, SpatialCoreUIFontData::DM_SansBold_ttfSize);
+
     setWantsKeyboardFocus (true);
     // v1.0: Do NOT mark opaque — rounded rectangle leaves corner pixels unpainted.
     // Opaque flag with unpainted regions causes corrupted CoreAnimation backing store
@@ -145,7 +148,7 @@ void PresetSaveOverlay::paint (juce::Graphics& g)
 
     // Title — SAVE PRESET
     g.setColour (textDim);
-    auto titleFont = juce::Font (juce::FontOptions (13.0f).withStyle ("Bold"));
+    auto titleFont = juce::Font (juce::FontOptions (titleTypeface_).withHeight (13.0f));
     g.setFont (titleFont);
     auto titleArea = bounds.withHeight (28.0f).translated (0.0f, 10.0f);
     g.drawText ("SAVE PRESET", titleArea.toNearestInt(), juce::Justification::centred);

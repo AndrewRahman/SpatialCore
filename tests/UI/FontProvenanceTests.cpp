@@ -157,6 +157,119 @@ TEST_CASE ("Fonts: map render is byte-identical with and without the SML look-an
     withSml->setLookAndFeel (nullptr);
 }
 
+TEST_CASE ("Fonts: the save-preset title asks for no system font", "[ui][fonts][spy]")
+{
+    ScopedSpyDefault spyDefault;
+
+    PresetSaveOverlay overlay;
+    overlay.setSize (260, 130);
+    spyDefault.reset(); // the constructor may build child widgets; the title paint is what is measured
+
+    (void) paintOverlay (overlay);
+    INFO ("requested by the overlay title: " << describe (spyDefault.spy.requested));
+    CHECK (spyDefault.spy.calls == 0);
+}
+
+TEST_CASE ("Fonts: every embedded font resource equals its source file", "[ui][fonts][bytes]")
+{
+    REQUIRE (SpatialCoreUIFontData::namedResourceListSize == 8);
+
+    const std::string fontDir = std::string (SPATIALCORE_SOURCE_DIR) + "/fonts/";
+
+    for (int i = 0; i < SpatialCoreUIFontData::namedResourceListSize; ++i)
+    {
+        const char* name = SpatialCoreUIFontData::namedResourceList[i];
+        const char* original = SpatialCoreUIFontData::getNamedResourceOriginalFilename (name);
+        REQUIRE (original != nullptr);
+        INFO ("resource " << name << " from " << original);
+
+        int size = 0;
+        const char* data = SpatialCoreUIFontData::getNamedResource (name, size);
+        REQUIRE (data != nullptr);
+
+        std::ifstream in (fontDir + original, std::ios::binary);
+        REQUIRE (in.good());
+        std::vector<char> file ((std::istreambuf_iterator<char> (in)), std::istreambuf_iterator<char>());
+
+        REQUIRE ((int) file.size() == size);
+        CHECK (std::memcmp (file.data(), data, file.size()) == 0);
+    }
+}
+
+TEST_CASE ("Fonts: SMLLookAndFeel loads all seven embedded typefaces", "[ui][fonts][sml]")
+{
+    SMLLookAndFeel sml;
+    CHECK (sml.dmSansRegular != nullptr);
+    CHECK (sml.dmSansMedium != nullptr);
+    CHECK (sml.dmSansBold != nullptr);
+    CHECK (sml.jetbrainsRegular != nullptr);
+    CHECK (sml.jetbrainsMedium != nullptr);
+    CHECK (sml.jetbrainsBold != nullptr);
+    CHECK (sml.robotoMedium != nullptr);
+}
+
+namespace
+{
+
+// D-05 code rule: a request for an SML font by family name would find an installed copy of that
+// family on a machine that has one and nothing on a machine that does not.
+const std::regex& familyNameRule()
+{
+    static const std::regex rule (
+        "\"[^\"]*(DM Sans|JetBrains|Roboto)[^\"]*\""
+        "|withName|setTypefaceName|getDefaultSansSerifFontName"
+        "|Font *\\( *\"|FontOptions *\\( *\""
+        "|findAllTypefaceNames|getTypefaceName");
+    return rule;
+}
+
+std::vector<juce::File> uiSourceFiles()
+{
+    std::vector<juce::File> files;
+    const juce::File root (SPATIALCORE_SOURCE_DIR);
+    for (auto* sub : { "src/UI", "include/SpatialCore/UI" })
+        for (auto& f : root.getChildFile (sub).findChildFiles (juce::File::findFiles, true, "*.cpp;*.h"))
+            files.push_back (f);
+    return files;
+}
+
+} // namespace
+
+TEST_CASE ("Fonts: no UI code asks for an SML font by family name", "[ui][fonts][rule]")
+{
+    // Positive controls: the rule is live, so an empty result means something.
+    CHECK (std::regex_search (std::string ("juce::FontOptions (\"DM Sans\")"), familyNameRule()));
+    CHECK (std::regex_search (std::string ("auto n = f.getTypefaceName();"), familyNameRule()));
+    CHECK (std::regex_search (std::string ("juce::Font (\"Arial\", 12.0f, 0)"), familyNameRule()));
+    CHECK_FALSE (std::regex_search (std::string ("juce::FontOptions (monoBold_).withHeight (10.0f)"), familyNameRule()));
+
+    const auto files = uiSourceFiles();
+    REQUIRE (files.size() >= 10);
+
+    int typefaceCreations = 0;
+    for (auto& f : files)
+    {
+        std::istringstream lines (f.loadFileAsString().toStdString());
+        std::string line;
+        int lineNo = 0;
+        while (std::getline (lines, line))
+        {
+            ++lineNo;
+            INFO (f.getFullPathName().toStdString() << ":" << lineNo << ": " << line);
+            CHECK_FALSE (std::regex_search (line, familyNameRule()));
+
+            if (line.find ("createSystemTypefaceFor") != std::string::npos)
+            {
+                ++typefaceCreations;
+                CHECK (line.find ("SpatialCoreUIFontData::") != std::string::npos);
+            }
+        }
+    }
+
+    // SMLLookAndFeel loads 7, the map 3 and the overlay 1: the scan really saw the call sites.
+    CHECK (typefaceCreations >= 7);
+}
+
 TEST_CASE ("Fonts: capture map and overlay renders for the D-06 and D-22 identity checks",
            "[.][ui-capture]")
 {
