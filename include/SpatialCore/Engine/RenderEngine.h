@@ -199,6 +199,24 @@ struct RenderBlockContext
     // behaviour; this is additive, not a major bump.
     bool engineDerivesDispatch = false;
 
+    // SC-20: click-free output-format switching, opt-in. When true, a block that
+    // sees a newly published layout (setOutputFormat() since the previous block)
+    // does not take it yet: it renders once more with the layout the engine
+    // already holds and fades its output linearly to zero (the last sample is
+    // exactly 0). The next block takes the newest published layout, starts every
+    // render path's gain interpolation at that block's own targets (no glide from
+    // the stale gains of whenever that path last ran) and fades in from zero (the
+    // first sample is exactly 0). The new format is therefore heard one block
+    // later and a switch costs a two-block dip. Several setOutputFormat() calls
+    // between two blocks still give one fade-out and one fade-in, of the last
+    // format. The first block after prepare() never fades, and getBlockLayout()
+    // always reports the layout the block actually rendered (the held one during
+    // the fade-out block). Only the channels the block's path writes are faded;
+    // wait-free, no allocation, lock or logging. Defaults false so every existing
+    // caller, including SpatialCore's own RenderEngineTests, sees byte-for-byte
+    // unchanged behaviour; this is additive, not a major bump.
+    bool engineFadesFormatSwitch = false;
+
     // D-15, engineSelectsHRTF: when true, renderBlock() sets useHRTF itself from its own active renderer
     // (useHRTF = ! isSimpleMode()) after claiming any ready profile, and the consumer's
     // useHRTF is ignored. While a switch between Simple (profile 0) and an HRTF profile is
@@ -550,6 +568,12 @@ private:
     //--------------------------------------------------------------------------
     const LayoutState& acquireBlockLayout();
 
+    // SC-20: linear fade over the block's samples on every channel the block's
+    // render path wrote (fadeIn: 0 -> 1, otherwise 1 -> 0; a one-sample block uses
+    // 1 for a fade-in and 0 for a fade-out). The endpoints are exact.
+    void applySwitchFade (const RenderBlockContext& ctx, const LayoutState& layout,
+                          float* const* outChannels, int numOutCh, int numSamples, bool fadeIn) const;
+
     // SC-16: overwrites the five dispatch fields in ctx from layout.format.
     // The format is clamped into [0, NUM_OUTPUT_FORMATS - 1] before it is
     // used as an OutputFormatRegistry index (the registry subscript has no
@@ -708,6 +732,15 @@ private:
     //     once per block. The writer never holds the reader's slot (SC-16). ---
     LayoutState layoutBuffers[TripleBufferIndex::kNumSlots];
     TripleBufferIndex layoutSlots_;
+    // SC-20: render-thread state of the opt-in switch fade (reset in prepare()).
+    // fadeInPending_: the held layout has been faded out and the next block takes
+    // the new one. renderedSincePrepare_: a block has rendered since prepare(), so
+    // the held layout is one that actually played. snapInterpolation_: this block
+    // is a fade-in block, so each render path starts its gain interpolation at its
+    // own targets. Present in every build type, never #if'd.
+    bool fadeInPending_ = false;
+    bool renderedSincePrepare_ = false;
+    bool snapInterpolation_ = false;
     // Debug detector for the single-writer contract (WR-09): set while a
     // setOutputFormat() call is in flight so an overlapping second writer
     // trips a jassert. Present in every build type (never #if'd) so the class

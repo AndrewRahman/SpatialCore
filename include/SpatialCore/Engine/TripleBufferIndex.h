@@ -76,7 +76,7 @@ public:
     // the previous call, and returns the slot the reader now holds.
     int acquireLatest() noexcept
     {
-        if ((middle_.load (std::memory_order_relaxed) & kFreshBit) != 0)
+        if (hasFresh())
         {
             const int previous = middle_.exchange (reader_, std::memory_order_acq_rel);
             reader_ = previous & kIndexMask;
@@ -86,6 +86,18 @@ public:
 
     // The slot the reader currently holds.
     int readSlot() const noexcept { return reader_; }
+
+    // SC-20: true when a publish() has happened since the reader's last
+    // acquireLatest(). One relaxed load, wait-free. It is a HINT the reader may
+    // act on before acquiring (the engine's switch fade renders the layout it
+    // already holds for one more block when this is true): it never moves the
+    // reader and never clears the bit, and it makes no promise about the
+    // published payload, so the reader must not read a fresh slot until
+    // acquireLatest() has returned it.
+    bool hasFresh() const noexcept
+    {
+        return (middle_.load (std::memory_order_relaxed) & kFreshBit) != 0;
+    }
 
     //--------------------------------------------------------------------------
     // Diagnostic (invariant tests)

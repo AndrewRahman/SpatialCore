@@ -1820,3 +1820,245 @@ TEST_CASE ("RenderEngine: lowering then raising the Ambisonics order matches a f
     CHECK (a.lastBlockFinite (49));
     CHECK (worstGap <= kSc19RelTolerance * scale);
 }
+
+// ============================================================================
+// SC-20: opt-in click-free output-format switching. With
+// RenderBlockContext::engineFadesFormatSwitch set, the block that first sees a
+// newly published layout renders once more with the layout the engine already
+// holds and fades it to zero; the next block takes the new layout and fades it
+// in from zero with its gain interpolation starting from its own targets.
+// ============================================================================
+namespace
+{
+    constexpr int kSc20Channels = 16;
+
+    struct Sc20Rig
+    {
+        RenderEngine engine;
+        SourceFixture fixture;
+        RenderSources sources;
+        RenderBlockContext ctx;
+        std::vector<std::vector<float>> outStorage;
+        float* outPtrs[kSc20Channels] = {};
+        int numSamples = kBlockSize;
+
+        explicit Sc20Rig (bool fade, OutputFormat first, int blockSamples = kBlockSize)
+            : outStorage (kSc20Channels, std::vector<float> (kBlockSize, 0.0f)), numSamples (blockSamples)
+        {
+            engine.prepare (kSampleRate, kBlockSize);
+            engine.setOutputFormat (first);
+            sources = fixture.makeSources();
+            sources.numSamples = numSamples;
+            ctx.sampleRate = kSampleRate;
+            ctx.engineDerivesDispatch = true;
+            ctx.engineComputesGains = true;
+            ctx.engineFadesFormatSwitch = fade;
+            for (int c = 0; c < kSc20Channels; ++c)
+                outPtrs[c] = outStorage[static_cast<size_t> (c)].data();
+        }
+
+        // The consumer clears the buffer before every block, as OSP does.
+        void render()
+        {
+            for (auto& ch : outStorage)
+                std::fill (ch.begin(), ch.end(), 0.0f);
+            engine.renderBlock (sources, ctx, outPtrs, kSc20Channels);
+        }
+
+        float at (int ch, int s) const { return outStorage[static_cast<size_t> (ch)][static_cast<size_t> (s)]; }
+
+        double energy() const
+        {
+            double e = 0.0;
+            for (const auto& ch : outStorage)
+                for (int s = 0; s < numSamples; ++s)
+                    e += static_cast<double> (ch[static_cast<size_t> (s)]) * ch[static_cast<size_t> (s)];
+            return e;
+        }
+
+        bool everyChannelZeroAt (int s) const
+        {
+            for (int c = 0; c < kSc20Channels; ++c)
+                if (at (c, s) != 0.0f)
+                    return false;
+            return true;
+        }
+
+        OutputFormat blockFormat() const { return engine.getBlockLayout().format; }
+    };
+}
+
+TEST_CASE ("RenderEngine: a 7.1.4 to Binaural switch fades the held layout out, then the new one in (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+    Sc20Rig reference (true, OutputFormat::Surround7_1_4);
+
+    for (int b = 0; b < 3; ++b)
+    {
+        a.render();
+        reference.render();
+        CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    }
+
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+
+    // Block N+1: still the held layout, faded to exactly zero at its last sample.
+    a.render();
+    reference.render();
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    CHECK (a.energy() > 1e-10);
+    for (int c = 0; c < kSc20Channels; ++c)
+    {
+        CHECK (a.at (c, kBlockSize - 1) == 0.0f);
+        CHECK_THAT (a.at (c, 0), WithinAbs (reference.at (c, 0), 1e-6));
+    }
+
+    // Block N+2: the new layout, fading in from exactly zero.
+    a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.everyChannelZeroAt (0));
+    CHECK (a.energy() > 1e-10);
+    CHECK (anyNonzero (&a.outStorage[0][0], kBlockSize));
+
+    // Block N+3: no fade left.
+    a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.energy() > 1e-10);
+    CHECK (a.at (0, 0) != 0.0f);
+}
+
+TEST_CASE ("RenderEngine: three format changes between two blocks give one fade-out and one fade-in of the last format (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+    for (int b = 0; b < 2; ++b)
+        a.render();
+
+    a.engine.setOutputFormat (OutputFormat::Stereo);
+    a.engine.setOutputFormat (OutputFormat::Surround5_1);
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+
+    a.render(); // fade-out of the held 7.1.4
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    CHECK (a.everyChannelZeroAt (kBlockSize - 1));
+    CHECK (a.energy() > 1e-10);
+
+    a.render(); // fade-in of the last format only
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.everyChannelZeroAt (0));
+    CHECK (a.energy() > 1e-10);
+
+    a.render(); // settled
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.at (0, 0) != 0.0f);
+}
+
+TEST_CASE ("RenderEngine: the first block after prepare() does not fade, and a flag-off switch lands at once (SC-20)",
+           "[engine][sc20]")
+{
+    // Flag on: a layout published just before the first block renders immediately and
+    // bit-identically to a flag-off engine.
+    {
+        Sc20Rig on (true, OutputFormat::Surround7_1_4);
+        Sc20Rig off (false, OutputFormat::Surround7_1_4);
+        on.render();
+        off.render();
+        CHECK (on.blockFormat() == OutputFormat::Surround7_1_4);
+        for (int c = 0; c < kSc20Channels; ++c)
+            for (int s = 0; s < kBlockSize; ++s)
+                CHECK (on.at (c, s) == off.at (c, s));
+        // (Its first sample is 0 for a different reason: gain interpolation starts from 0
+        // after prepare(). The block is audible, not faded.)
+        CHECK (on.energy() > 1e-10);
+        CHECK (on.at (0, kBlockSize - 1) != 0.0f);
+
+        // prepare() again, with a new layout pending: still no fade on the first block.
+        on.engine.prepare (kSampleRate, kBlockSize);
+        on.engine.setOutputFormat (OutputFormat::Binaural);
+        on.render();
+        CHECK (on.blockFormat() == OutputFormat::Binaural);
+        CHECK (on.energy() > 1e-10);
+        CHECK (on.at (0, kBlockSize - 1) != 0.0f);
+    }
+
+    // Flag off: a switch is heard at once, one cut block, no fade.
+    {
+        Sc20Rig off (false, OutputFormat::Surround7_1_4);
+        off.render();
+        off.render();
+        off.engine.setOutputFormat (OutputFormat::Binaural);
+        off.render();
+        CHECK (off.blockFormat() == OutputFormat::Binaural);
+        CHECK (off.at (0, kBlockSize - 1) != 0.0f);
+    }
+}
+
+TEST_CASE ("RenderEngine: one-sample blocks fade out to zero and fade in at unity (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4, 1);
+    for (int b = 0; b < 3; ++b)
+        a.render();
+
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+
+    a.render(); // fade-out: the single sample is the last, so exactly zero
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    CHECK (a.everyChannelZeroAt (0));
+
+    a.render(); // fade-in: the single sample is the first but the ramp uses 1 for a one-sample block
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.at (0, 0) != 0.0f);
+}
+
+TEST_CASE ("RenderEngine: the fade-in block starts its gain interpolation from its own targets (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+
+    // The 7.1.4 path's interpolation state is left at azimuth 30 ...
+    a.sources.objects[0].azimuthDeg = 30.0f;
+    for (int b = 0; b < 3; ++b)
+        a.render();
+
+    // ... while Binaural plays with the source at azimuth 30.
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+    for (int b = 0; b < 4; ++b)
+        a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+
+    // The source moves, then the layout returns to 7.1.4.
+    a.sources.objects[0].azimuthDeg = -120.0f;
+    a.engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    a.render(); // fade-out of Binaural
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    a.render(); // fade-in of 7.1.4
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+
+    // A DC source with snapped targets is a pure ramp: out[s] / ramp(s) is constant across the
+    // block on every speaker channel. Interpolating from the stale azimuth-30 gains would not be.
+    const int lfe = a.engine.getBlockLayout().layout.lfeChannelIndex;
+    int loudest = -1;
+    float loudestValue = 0.0f;
+    for (int c = 0; c < kSc20Channels; ++c)
+    {
+        if (c == lfe)
+            continue;
+        const float v = std::abs (a.at (c, kBlockSize - 1));
+        if (v > loudestValue)
+        {
+            loudestValue = v;
+            loudest = c;
+        }
+    }
+    REQUIRE (loudest >= 0);
+    REQUIRE (loudestValue > 1e-3f);
+
+    const auto gainAt = [&] (int s) { return a.at (loudest, s) / (static_cast<float> (s) / static_cast<float> (kBlockSize - 1)); };
+    const float g1 = gainAt (kBlockSize / 4);
+    const float g2 = gainAt (kBlockSize / 2);
+    const float g3 = gainAt (kBlockSize - 1);
+    CHECK_THAT (g1, WithinAbs (g3, 1e-4));
+    CHECK_THAT (g2, WithinAbs (g3, 1e-4));
+}

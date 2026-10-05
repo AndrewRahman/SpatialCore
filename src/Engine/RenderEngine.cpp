@@ -542,6 +542,12 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     }
     lastNfcAmbiOrder_ = -1;
 
+    // SC-20: a fresh prepare has played nothing, so the first block takes the
+    // published layout without a fade and no fade-in is owed.
+    fadeInPending_ = false;
+    renderedSincePrepare_ = false;
+    snapInterpolation_ = false;
+
     // HRTF convolution: prepare both renderers (double-buffered)
     binauralRenderers[0].prepare (sampleRate, maxBlockSize);
     binauralRenderers[1].prepare (sampleRate, maxBlockSize);
@@ -729,7 +735,30 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // the SC-13 gain computation and the discrete-surround speaker routing
     // below, so a message-thread format switch landing mid-block cannot pair
     // one format's dispatch with another format's layout.
-    const LayoutState& layout = acquireBlockLayout();
+    //
+    // SC-20 (opt-in): a block that sees a newly published layout renders the
+    // layout it already holds, faded out, and the following block takes the new
+    // one, faded in. The held slot is the reader's own slot, which the writer
+    // never touches, so rendering it needs no acquire; hasFresh() is only a
+    // hint. With the flag false this is exactly the old acquire.
+    bool fadeOutBlock = false;
+    bool fadeInBlock = false;
+    const LayoutState* layoutPtr = nullptr;
+    if (blockCtx.engineFadesFormatSwitch && renderedSincePrepare_ && ! fadeInPending_
+        && layoutSlots_.hasFresh())
+    {
+        layoutPtr = &layoutBuffers[static_cast<size_t> (layoutSlots_.readSlot())];
+        fadeOutBlock = true;
+        fadeInPending_ = true;
+    }
+    else
+    {
+        layoutPtr = &acquireBlockLayout();
+        fadeInBlock = blockCtx.engineFadesFormatSwitch && fadeInPending_;
+        fadeInPending_ = false;
+    }
+    snapInterpolation_ = fadeInBlock;
+    const LayoutState& layout = *layoutPtr;
     // SC-17: remember the snapshot this block renders with (getBlockLayout()) and
     // which thread is rendering (the writer-view misuse guard). Relaxed stores of
     // a pointer and a lock-free atomic: nothing here allocates, locks or logs.
@@ -812,6 +841,78 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     }
 
     simplePathRanLastBlock_ = ranSimple;
+
+    if (fadeOutBlock || fadeInBlock)
+        applySwitchFade (ctx, layout, outChannels, numOutCh, src.numSamples, fadeInBlock);
+
+    snapInterpolation_ = false;
+    renderedSincePrepare_ = true;
+}
+
+//==============================================================================
+// applySwitchFade — SC-20. A linear ramp over the block on exactly the channels
+// the block's render path wrote, so a consumer's other channels are untouched.
+// The ramp endpoints are exact (0 and 1), and a one-sample block takes the
+// endpoint the block is heading to (fade-out 0, fade-in 1). The channel set
+// mirrors the dispatch chain in renderBlock(): stereo variant and binaural
+// write channels 0-1, Ambisonics the first (order + 1)^2, discrete surround
+// each speaker's channel plus the LFE.
+//==============================================================================
+void RenderEngine::applySwitchFade (const RenderBlockContext& ctx, const LayoutState& layout,
+                                    float* const* outChannels, int numOutCh, int numSamples,
+                                    bool fadeIn) const
+{
+    if (numSamples <= 0 || outChannels == nullptr)
+        return;
+
+    const float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 0.0f;
+    const auto rampAt = [&] (int s)
+    {
+        if (numSamples == 1)
+            return fadeIn ? 1.0f : 0.0f;
+        if (s == numSamples - 1)
+            return fadeIn ? 1.0f : 0.0f;   // exact endpoint, no rounding in s * invN
+        const float frac = static_cast<float> (s) * invN;
+        return fadeIn ? frac : 1.0f - frac;
+    };
+    const auto fadeChannel = [&] (int ch)
+    {
+        if (ch < 0 || ch >= numOutCh || outChannels[ch] == nullptr)
+            return;
+        float* out = outChannels[ch];
+        for (int s = 0; s < numSamples; ++s)
+            out[s] *= rampAt (s);
+    };
+
+    if (ctx.isStereoVariant || ctx.isBinaural)
+    {
+        fadeChannel (0);
+        fadeChannel (1);
+    }
+    else if (ctx.isAmbiOutput)
+    {
+        const int numAmbiCh = std::min ((ctx.ambiOrder + 1) * (ctx.ambiOrder + 1), kMaxAmbiChannels);
+        for (int c = 0; c < numAmbiCh; ++c)
+            fadeChannel (c);
+    }
+    else
+    {
+        // A channel is faded once even if the layout names it twice.
+        constexpr int kMaskChannels = 64;
+        bool written[kMaskChannels] = {};
+        const auto& surLayout = layout.layout;
+        for (int sp = 0; sp < surLayout.numSpeakers; ++sp)
+        {
+            const int ch = surLayout.speakers[sp].channelIndex;
+            if (ch >= 0 && ch < kMaskChannels)
+                written[ch] = true;
+        }
+        if (surLayout.lfeChannelIndex >= 0 && surLayout.lfeChannelIndex < kMaskChannels)
+            written[surLayout.lfeChannelIndex] = true;
+        for (int ch = 0; ch < kMaskChannels && ch < numOutCh; ++ch)
+            if (written[ch])
+                fadeChannel (ch);
+    }
 }
 
 //==============================================================================
@@ -1245,6 +1346,11 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
         simplePathRanLastBlock_ = true;
     }
 
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            prevBinauralGains[t] = blockCtx.objGains[t];
+
     for (int s = 0; s < numSamples; ++s)
     {
         float frac = static_cast<float> (s) * invN;
@@ -1318,6 +1424,14 @@ void RenderEngine::renderStereoVariant (const RenderSources& sources,
 {
     const int numSamples = sources.numSamples;
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
+
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+        {
+            prevStereoGainL[t] = blockCtx.objGainL[t];
+            prevStereoGainR[t] = blockCtx.objGainR[t];
+        }
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -1434,6 +1548,12 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
             objSHCoeffs[t][c] = evalSH (c, azRad, elRad) * cachedMaxrE[acnToOrder (c)];
     }
 
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            for (int c = 0; c < numAmbiCh; ++c)
+                prevSHCoeffs[t][c] = objSHCoeffs[t][c];
+
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
 
     for (int s = 0; s < numSamples; ++s)
@@ -1494,6 +1614,12 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
     const int lfeIdx = surLayout.lfeChannelIndex;
 
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
+
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            for (int sp = 0; sp < numSpeakers; ++sp)
+                prevChannelGains[t][sp] = blockCtx.objChannelGains[t][sp];
 
     for (int s = 0; s < numSamples; ++s)
     {
