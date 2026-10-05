@@ -61,9 +61,10 @@ namespace spatialcore
 // the simple-binaural path (objGains, via DirectBinauralAlgorithm +
 // kDefaultBinauralProfiles) — the consumer no longer hand-builds a
 // LayoutContext or dispatches an algorithm itself for those two fields. The flag defaults false, so a consumer that still
-// precomputes these fields sees unchanged behaviour. Stereo-variant gains
-// (objGainL/objGainR) remain consumer-side always — that math is not a
-// SpatializationAlgorithm (D-06).
+// precomputes these fields sees unchanged behaviour. SC-18 part 2: on a stereo-variant block
+// the same flag also makes the engine fill objGainL, objGainR and stereoMode (the five stereo
+// modes, indices 7..11 of the algorithm index map, scaled by the block's distance gain); with
+// the flag false the consumer still supplies those three fields itself.
 //
 // Simple (Woodworth) binaural path (BUG-01, SpatialCore#15): the engine applies
 // a position-blended rear/up/down cue bank (SimpleBinauralCues.h) to each mono
@@ -140,11 +141,11 @@ struct RenderBlockContext
     // object (DirectBinauralAlgorithm::computeBinauralGains output).
     BinauralGains objGains[MAX_SOURCES] = {};
 
-    // Stereo-variant path: current-block target L/R gains per object
-    // (computed by the consumer's stereoMode switch — VBAP/XY/MS/Blumlein/
-    // Equal-Power — the gain MATH itself stays in the consumer per D-09,
-    // since it is not a SpatializationAlgorithm and was never touched by
-    // Plan 08-03's algorithm extraction).
+    // Stereo-variant path: current-block target L/R gains per object. By default
+    // the consumer computes them (its stereoMode switch — VBAP/XY/MS/Blumlein/
+    // Equal-Power); when engineComputesGains is set the engine fills objGainL,
+    // objGainR and stereoMode itself on a stereo-variant block (SC-18 part 2,
+    // OSP Phase 3 D-06), overwriting any values supplied here.
     float objGainL[MAX_SOURCES] = {};
     float objGainR[MAX_SOURCES] = {};
     int   stereoMode = 0;
@@ -182,8 +183,9 @@ struct RenderBlockContext
     // of reading consumer-precomputed values. Defaults false so every
     // existing caller — including SpatialCore's own RenderEngineTests — sees
     // byte-for-byte unchanged behaviour; this is additive, not a major bump.
-    // Scoped strictly to objChannelGains/objGains: objGainL/objGainR (stereo-
-    // variant gains) stay consumer-side per the comment above (D-06).
+    // Fills objChannelGains/objGains and, on a stereo-variant block, objGainL,
+    // objGainR and stereoMode (SC-18 part 2, D-06); with the flag false the
+    // consumer supplies all of these.
     bool engineComputesGains = false;
 
     // SC-16: when true, renderBlock() acquires the engine's layout once for
@@ -346,8 +348,10 @@ public:
     // (one relaxed atomic store). The value is clamped to
     // [0, kNumAlgorithmIndices - 1]. renderBlock() reads it once per block and
     // only when engineComputesGains is set. Indices 0..6 select the speaker
-    // algorithm; 7..11 are the stereo modes (their gain math arrives with SC-18
-    // part 2), and a speaker layout rendered with a stereo index uses VBAP. The
+    // algorithm; 7..11 are the five stereo modes (Equal Power, Stereo VBAP, XY Pair,
+    // MS Encode, Blumlein), whose gains the engine computes on a stereo-variant block
+    // (SC-18 part 2). A speaker layout rendered with a stereo index uses VBAP, and the
+    // Stereo format rendered with a speaker index uses Equal Power. The
     // default is VBAP, so a consumer that never calls this renders exactly as
     // before.
     //--------------------------------------------------------------------------
@@ -503,8 +507,8 @@ private:
     // SC-13: engine-owned gain computation, used only when the consumer sets
     // RenderBlockContext::engineComputesGains. Fills ctx.objChannelGains (via
     // the algorithm chosen by algorithmIndex_) and ctx.objGains (via binauralAlgorithm_) for every
-    // live object. Does not touch objGainL/objGainR/stereoMode (D-06 — those
-    // stay consumer-side, not a SpatializationAlgorithm concern).
+    // live object. On a stereo-variant block it also fills objGainL, objGainR
+    // and stereoMode (SC-18 part 2, D-06), never when binauralOnly is set.
     //--------------------------------------------------------------------------
     // With binauralOnly set (engineSelectsHRTF without engineComputesGains, WR-06) only
     // ctx.objGains is filled and objChannelGains is left as the consumer supplied it.

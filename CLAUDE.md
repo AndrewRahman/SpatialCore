@@ -41,25 +41,28 @@ public:
 ```
 `RenderBlockContext::engineComputesGains` (default `false`, SC-13) is the opt-in flag
 that lets `RenderEngine` compute `objChannelGains`/`objGains` internally instead of
-requiring the consumer to precompute them. Stereo-variant gains (`objGainL`/
-`objGainR`) always stay consumer-side — stereo gain math is not a
-`SpatializationAlgorithm` concern.
+requiring the consumer to precompute them. SC-18 part 2: on a stereo-variant block the
+same flag also makes the engine fill `objGainL`, `objGainR` and `stereoMode` (the five
+stereo modes, scaled by the block's distance gain); with the flag `false` the consumer still
+supplies them. The stereo math lives in the engine (`computeStereoModeGains`), not in a
+`SpatializationAlgorithm`.
 
 `RenderEngine::setAlgorithmIndex (int)` / `getAlgorithmIndex()` (SC-18) select the speaker
 algorithm that computes `objChannelGains` when `engineComputesGains` is set. The index map is
 OpenSpatialDelay's 12-entry saved-preset map (`kAlgorithmIndexAmbisonics` 0, `...ConstantPower` 1,
 `...DBAP` 2, `...KNN` 3, `...MDAP` 4, `...VBAP` 5, `...VBIP` 6, then the stereo modes 7..11; never
 renumber). The default is VBAP, so a consumer that never calls it renders as before. The setter is
-lock-free (one relaxed atomic store, clamped) and the engine reads it once per block. Stereo-mode
-gains follow in SC-18 part 2.
+lock-free (one relaxed atomic store, clamped) and the engine reads it once per block. On the Stereo
+format indices 7..11 select Equal Power, Stereo VBAP, XY Pair, MS Encode and Blumlein (a speaker
+index renders as Equal Power there); on a speaker layout a stereo index renders as VBAP.
 
 `RenderBlockContext::engineDerivesDispatch` (default `false`, SC-16) is the opt-in flag
 that lets `RenderEngine` derive its own dispatch from the layout it renders against.
 `renderBlock()` acquires the engine's layout once per block; when the flag is set it
 overwrites five fields of the context from that snapshot's format — `activeFormat`,
 `isStereoVariant`, `isBinaural`, `isAmbiOutput` and `ambiOrder` — and the consumer's
-values for them are ignored. `useHRTF`, `stereoMode`, `sampleRate`, `objGainL` and
-`objGainR` stay consumer-supplied. Set it (together with `engineComputesGains`) instead
+values for them are ignored. `useHRTF` and `sampleRate` stay consumer-supplied (and `stereoMode`,
+`objGainL` and `objGainR` too, unless `engineComputesGains` fills them on a stereo-variant block). Set it (together with `engineComputesGains`) instead
 of deriving the dispatch flags from your own format state: a consumer that keeps its own
 copy of the format can read a different switch than the engine's layout holds, which
 pairs one format's dispatch with another format's layout and renders a torn, silent
@@ -109,7 +112,7 @@ class SpatializationAlgorithm {
 - **Sample-based crossfades with floors:** the convolver crossfade is never shorter than `PartitionedConvolver::kMinCrossfadeSamples` (2048), and the renderer crossfade lasts `max(8 blocks, RenderEngine::kMinRendererXfadeSamples = 4096)` samples, fixed when the fade starts, so a 32-sample host block still gets at least 85 ms at 48 kHz
 - **Per-source HRTF:** 12 independent PartitionedConvolvers for direct binaural rendering
 - **Self-calibrating normalization:** `targetRMS = 1/sqrt(irLen)` ensures consistent levels across HRTF profiles
-- **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — with one stated exception: stereo-variant gains (`objGainL`/`objGainR`) are computed consumer-side always, because that math is not a `SpatializationAlgorithm`
+- **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — including the stereo-variant gains (`objGainL`/`objGainR`/`stereoMode`), which the engine computes itself when `engineComputesGains` is set (SC-18 part 2); with the flag false the consumer supplies them
 
 ## Build System
 - **Framework:** JUCE 9.0.0, C++17, CMake 3.22+

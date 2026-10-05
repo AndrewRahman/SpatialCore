@@ -799,16 +799,84 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 // via the algorithm chosen by algorithmIndex_) and ctx.objGains (simple binaural, via
 // binauralAlgorithm_) for every object slot. Only called when the consumer
 // sets RenderBlockContext::engineComputesGains, or (binauralOnly, objGains
-// alone) engineSelectsHRTF on a binaural block (WR-06). Does not read or write
-// objGainL/objGainR/stereoMode — those stay consumer-side (D-06).
+// alone) engineSelectsHRTF on a binaural block (WR-06).
+//
+// SC-18 part 2: on a stereo-variant block it also fills ctx.objGainL/objGainR
+// and ctx.stereoMode from the same algorithm index (indices 7..11 are the five
+// stereo modes; any other index renders as Equal Power), scaled by the block's
+// distance gain. With engineComputesGains false the consumer still supplies
+// those three fields itself.
 //==============================================================================
+namespace
+{
+    // The five stereo modes' gain math, transcribed from OpenSpatialDelay
+    // (PluginProcessor.cpp, stereoMode switch). Positive azimuth = left.
+    // mode: 0 Equal Power, 1 Stereo VBAP, 2 XY Pair, 3 MS Encode, 4 Blumlein.
+    // `dG` is the block distance gain, applied to both channels.
+    void computeStereoModeGains (int mode, float azRad, float dG, float& gainL, float& gainR)
+    {
+        constexpr float halfPi = juce::MathConstants<float>::halfPi;
+        constexpr float deg30 = juce::MathConstants<float>::pi / 6.0f;
+        constexpr float deg45 = juce::MathConstants<float>::pi / 4.0f;
+
+        switch (mode)
+        {
+            case 1: // Stereo VBAP: two virtual speakers at +/-30 degrees
+            {
+                const float lateralPos = -std::sin (azRad); // +1 = right, -1 = left
+                const float tVal = juce::jlimit (0.0f, 1.0f, (lateralPos / std::sin (deg30) + 1.0f) * 0.5f);
+                gainL = std::cos (tVal * halfPi) * dG;
+                gainR = std::sin (tVal * halfPi) * dG;
+                break;
+            }
+            case 2: // XY Pair: coincident cardioid pair at +/-45 degrees
+                gainL = 0.5f * (1.0f + std::cos (azRad - deg45)) * dG;
+                gainR = 0.5f * (1.0f + std::cos (azRad + deg45)) * dG;
+                break;
+            case 3: // MS Encode: subcardioid mid + figure-8 side, L = M + S, R = M - S
+            {
+                const float mid = (0.75f + 0.25f * std::cos (azRad)) * dG;
+                const float side = std::sin (azRad) * dG;
+                gainL = mid + side;
+                gainR = mid - side;
+                break;
+            }
+            case 4: // Blumlein: crossed figure-8 pair at +/-45 degrees
+            {
+                const float lateralPos = -std::sin (azRad);
+                const float tVal = juce::jlimit (0.0f, 1.0f, (lateralPos / std::sin (deg45) + 1.0f) * 0.5f);
+                gainL = std::cos (tVal * halfPi) * dG;
+                gainR = std::sin (tVal * halfPi) * dG;
+                break;
+            }
+            default: // 0: Equal Power pan law
+            {
+                const float pan = (-std::sin (azRad) + 1.0f) * 0.5f; // 0 = left, 1 = right
+                gainL = std::cos (pan * halfPi) * dG;
+                gainR = std::sin (pan * halfPi) * dG;
+                break;
+            }
+        }
+    }
+}
+
 void RenderEngine::computeObjectGains (const RenderSources& sources, const LayoutState& ls,
                                         RenderBlockContext& ctx, bool binauralOnly)
 {
     LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
 
-    // SC-18: one relaxed load per block, resolved to one algorithm reference.
-    const SpatializationAlgorithm& surroundAlgorithm = speakerAlgorithmFor (algorithmIndex_.load (std::memory_order_relaxed));
+    // SC-18: one relaxed load per block, resolved to one algorithm reference
+    // (speaker layouts) and, on a stereo-variant block, to one stereo mode.
+    const int algorithmIdx = algorithmIndex_.load (std::memory_order_relaxed);
+    const SpatializationAlgorithm& surroundAlgorithm = speakerAlgorithmFor (algorithmIdx);
+
+    // SC-18 part 2: the stereo gains are engine-owned only on a stereo-variant
+    // block (never on the binauralOnly path, which fills objGains alone). A
+    // speaker index (below Equal Power) renders as Equal Power, mode 0.
+    const bool fillStereoGains = ctx.isStereoVariant && ! binauralOnly;
+    if (fillStereoGains)
+        ctx.stereoMode = juce::jlimit (kAlgorithmIndexEqualPower, kNumAlgorithmIndices - 1, algorithmIdx)
+                         - kAlgorithmIndexEqualPower;
 
     for (int t = 0; t < MAX_SOURCES; ++t)
     {
@@ -817,6 +885,12 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
         if (! binauralOnly)
             for (int sp = 0; sp < MAX_SPEAKERS; ++sp)
                 ctx.objChannelGains[t][sp] = 0.0f;
+
+        if (fillStereoGains)
+        {
+            ctx.objGainL[t] = 0.0f;
+            ctx.objGainR[t] = 0.0f;
+        }
 
         if (! sources.objectLive[t])
         {
@@ -835,6 +909,18 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
 
         BinauralContext binCtx { binauralProfileIndex_, ctx.sampleRate, kDefaultBinauralProfiles };
         ctx.objGains[t] = binauralAlgorithm_.computeBinauralGains (pos, binCtx);
+
+        if (fillStereoGains)
+        {
+            // Block-end target of the consumer's distance gain, matching the
+            // block-rate objDistGain OSD folds into its stereo gains (Pitfall 9).
+            float dG = (sources.distGainPerSample[t] != nullptr && sources.numSamples > 0)
+                           ? sources.distGainPerSample[t][sources.numSamples - 1]
+                           : 1.0f;
+            if (! std::isfinite (dG))
+                dG = 0.0f; // T-03-07: a non-finite consumer gain must not poison the stereo ramp
+            computeStereoModeGains (ctx.stereoMode, pos.azimuthRad, dG, ctx.objGainL[t], ctx.objGainR[t]);
+        }
     }
 }
 
@@ -1200,11 +1286,11 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
 }
 
 //==============================================================================
-// renderStereoVariant — verbatim-transplanted (gain math for the 5 stereo
-// modes stays where it was computed, in the consumer, and is handed in via
-// RenderBlockContext.objGainL/objGainR — see the plan's D-09 note: this gain
-// computation is not a SpatializationAlgorithm and was never touched by the
-// Plan 08-03 algorithm extraction).
+// renderStereoVariant — verbatim-transplanted. It renders whatever is in
+// RenderBlockContext.objGainL/objGainR: the consumer's own values by default,
+// or the engine's five stereo modes when engineComputesGains is set
+// (computeObjectGains, SC-18 part 2). The gain math is not a
+// SpatializationAlgorithm; the engine keeps it in computeStereoModeGains.
 //==============================================================================
 void RenderEngine::renderStereoVariant (const RenderSources& sources,
                                           const RenderBlockContext& blockCtx,

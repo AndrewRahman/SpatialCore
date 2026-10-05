@@ -1411,3 +1411,142 @@ TEST_CASE ("RenderEngine: the algorithm index clamps, and stereo indices on a sp
     CHECK (sc18AllFinite (sc18Render (-5, 45.0f, 20.0f)));
     CHECK (sc18AllFinite (sc18Render (99, 45.0f, 20.0f)));
 }
+
+// ----------------------------------------------------------------------------
+// SC-18 part 2 — engine-owned stereo-mode gains for the Stereo format (D-06)
+// ----------------------------------------------------------------------------
+namespace
+{
+    struct Sc18StereoRender
+    {
+        std::vector<float> left;
+        std::vector<float> right;
+    };
+
+    float sc18Rms (const std::vector<float>& v)
+    {
+        double sum = 0.0;
+        for (float x : v)
+            sum += static_cast<double> (x) * x;
+        return static_cast<float> (std::sqrt (sum / static_cast<double> (v.size())));
+    }
+
+    // One steady DC source (0.5) on the Stereo format with engineComputesGains and
+    // engineDerivesDispatch set. `distanceGain` is the constant block distance gain
+    // the consumer hands in. Several warm-up blocks let the gain interpolation
+    // settle; the last block is returned.
+    Sc18StereoRender sc18StereoRender (int algorithmIndex, float azimuthDeg, float distanceGain = 1.0f)
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Stereo);
+        engine.setAlgorithmIndex (algorithmIndex);
+
+        SourceFixture fixture;
+        std::fill (fixture.distGain.begin(), fixture.distGain.end(), distanceGain);
+        RenderSources sources = fixture.makeSources();
+        sources.objects[0].azimuthDeg = azimuthDeg;
+        sources.objects[0].elevationDeg = 0.0f;
+
+        RenderBlockContext ctx;
+        ctx.sampleRate = kSampleRate;
+        ctx.engineComputesGains = true;
+        ctx.engineDerivesDispatch = true;
+
+        Sc18StereoRender out { std::vector<float> (kBlockSize, 0.0f), std::vector<float> (kBlockSize, 0.0f) };
+        float* outPtrs[2] = { out.left.data(), out.right.data() };
+        for (int block = 0; block < 32; ++block)
+        {
+            std::fill (out.left.begin(), out.left.end(), 0.0f);
+            std::fill (out.right.begin(), out.right.end(), 0.0f);
+            engine.renderBlock (sources, ctx, outPtrs, 2);
+        }
+        return out;
+    }
+}
+
+TEST_CASE ("RenderEngine: the five stereo modes give five different L/R pairs when the engine computes the gains (SC-18 part 2)",
+           "[engine][sc18]")
+{
+    // Azimuth 20, not 45: at +45 degrees Stereo VBAP (speakers at +/-30, clamped) and
+    // Blumlein (+/-45, exactly on the boundary) both give (L, R) = (1, 0) and are
+    // indistinguishable. At 20 degrees all five modes land on different pairs.
+    constexpr float kAzimuth = 20.0f;
+    struct Pair { float l, r; };
+    std::vector<Pair> pairs;
+    for (int idx = kAlgorithmIndexEqualPower; idx <= kAlgorithmIndexBlumlein; ++idx)
+    {
+        const auto r = sc18StereoRender (idx, kAzimuth);
+        REQUIRE (allFinite (r.left.data(), kBlockSize));
+        REQUIRE (allFinite (r.right.data(), kBlockSize));
+        pairs.push_back ({ sc18Rms (r.left), sc18Rms (r.right) });
+        INFO ("mode " << idx << " L=" << pairs.back().l << " R=" << pairs.back().r);
+        CHECK (pairs.back().l > 0.0f);
+    }
+    REQUIRE (pairs.size() == 5);
+    for (size_t a = 0; a < pairs.size(); ++a)
+        for (size_t b = a + 1; b < pairs.size(); ++b)
+        {
+            INFO ("modes " << a << " and " << b);
+            CHECK (std::max (std::abs (pairs[a].l - pairs[b].l), std::abs (pairs[a].r - pairs[b].r)) > 1.0e-3f);
+        }
+}
+
+TEST_CASE ("RenderEngine: Equal Power centres at azimuth 0 and hard-pans left at +90 (SC-18 part 2)", "[engine][sc18]")
+{
+    const auto centre = sc18StereoRender (kAlgorithmIndexEqualPower, 0.0f);
+    CHECK_THAT (sc18Rms (centre.left), WithinAbs (sc18Rms (centre.right), 1.0e-6));
+    CHECK (sc18Rms (centre.left) > 0.0f);
+
+    // Positive azimuth = left.
+    const auto left = sc18StereoRender (kAlgorithmIndexEqualPower, 90.0f);
+    CHECK_THAT (sc18Rms (left.right), WithinAbs (0.0, 1.0e-6));
+    CHECK (sc18Rms (left.left) > 0.0f);
+}
+
+TEST_CASE ("RenderEngine: a block distance gain of 0.5 halves both stereo channels in every mode (SC-18 part 2)",
+           "[engine][sc18]")
+{
+    // Distance enters the stereo gains at block rate (RESEARCH Pitfall 9).
+    for (int idx = kAlgorithmIndexEqualPower; idx <= kAlgorithmIndexBlumlein; ++idx)
+    {
+        INFO ("mode " << idx);
+        const auto full = sc18StereoRender (idx, 20.0f, 1.0f);
+        const auto half = sc18StereoRender (idx, 20.0f, 0.5f);
+        REQUIRE (sc18Rms (full.left) > 0.0f);
+        REQUIRE (sc18Rms (full.right) > 0.0f);
+        CHECK_THAT (sc18Rms (half.left) / sc18Rms (full.left), WithinAbs (0.5, 1.0e-5));
+        CHECK_THAT (sc18Rms (half.right) / sc18Rms (full.right), WithinAbs (0.5, 1.0e-5));
+    }
+}
+
+TEST_CASE ("RenderEngine: a speaker index on the Stereo format renders as Equal Power; consumer stereo gains stay honoured with the flag off (SC-18 part 2)",
+           "[engine][sc18]")
+{
+    const auto equalPower = sc18StereoRender (kAlgorithmIndexEqualPower, 20.0f);
+    for (int idx = 0; idx < kNumSpeakerAlgorithmIndices; ++idx)
+    {
+        INFO ("speaker index " << idx);
+        const auto r = sc18StereoRender (idx, 20.0f);
+        CHECK (r.left == equalPower.left);
+        CHECK (r.right == equalPower.right);
+    }
+
+    // engineComputesGains false: the consumer's own objGainL / objGainR are used verbatim.
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+    engine.setOutputFormat (OutputFormat::Stereo);
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    RenderBlockContext ctx;
+    ctx.sampleRate = kSampleRate;
+    ctx.engineDerivesDispatch = true;
+    ctx.objGainL[0] = 0.7f;
+    ctx.objGainR[0] = 0.3f;
+    std::vector<float> outL (kBlockSize, 0.0f), outR (kBlockSize, 0.0f);
+    float* outPtrs[2] = { outL.data(), outR.data() };
+    for (int block = 0; block < 32; ++block)
+        engine.renderBlock (sources, ctx, outPtrs, 2);
+    CHECK_THAT (sc18Rms (outL), WithinAbs (0.5 * 0.7, 1.0e-5));
+    CHECK_THAT (sc18Rms (outR), WithinAbs (0.5 * 0.3, 1.0e-5));
+}
