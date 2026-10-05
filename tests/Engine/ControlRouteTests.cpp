@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
+#include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <juce_osc/juce_osc.h>
 #include "../Support/RouteRenderRig.h"
 #include <cmath>
@@ -229,4 +230,77 @@ TEST_CASE ("OSC route: /xyz moves the image (ADM x = -0.5 is left)", "[route][os
     const float ratioRight = route.rig.leftRightRatio();
     CAPTURE (ratioRight);
     CHECK (ratioRight <= 0.5f);
+}
+
+// ============================================================================
+// Trajectory route (D-11 / D-12 / D-18): TrajectoryEngine::tick moves the rendered sound.
+// ============================================================================
+
+namespace
+{
+    // Consumer glue as a plugin timer runs it: tick a trajectory for object 0, then copy the
+    // final position into the rig. A fresh engine per call keeps each case self-contained.
+    struct TrajectoryToRigGlue
+    {
+        explicit TrajectoryToRigGlue (RouteRenderRig& r) : rig (r) {}
+
+        void tick (int count, bool reverse)
+        {
+            TrajectoryEngine::ObjectInput input;
+            input.shape = 9; // Orbit
+            input.speed = 1.0f;
+            input.reverse = reverse;
+            input.originAz = 0.0f;
+            input.originEl = 0.0f;
+            input.originDist = 0.5f;
+
+            for (int i = 0; i < count; ++i)
+                engine.tick (0, input, 1.0f / 60.0f);
+
+            rig.setObject (0, engine.getFinalAz (0), engine.getFinalEl (0), engine.getFinalDist (0));
+        }
+
+        RouteRenderRig& rig;
+        TrajectoryEngine engine;
+    };
+}
+
+TEST_CASE ("Trajectory route: Orbit forward moves the rendered object left, reverse moves it right",
+           "[route][trajectory][tracer]")
+{
+    SECTION ("forward: 15 ticks put the Orbit at +90 and the left channel louder")
+    {
+        RouteRenderRig rig (OutputFormat::Binaural, 2);
+        TrajectoryToRigGlue glue (rig);
+
+        glue.tick (15, false);
+        const float az = glue.engine.getFinalAz (0);
+        const float ratio = rig.leftRightRatio();
+        CAPTURE (az, ratio);
+        REQUIRE (glue.engine.isActive (0));
+        CHECK (std::abs (az - 90.0f) < 0.5f);
+        CHECK (ratio >= 2.0f);
+
+        // 15 more ticks carry it to 180 (straight behind): the image returns to the centre.
+        glue.tick (15, false);
+        const float azBehind = glue.engine.getFinalAz (0);
+        const float ratioBehind = rig.leftRightRatio();
+        CAPTURE (azBehind, ratioBehind);
+        CHECK (std::abs (std::abs (azBehind) - 180.0f) < 0.5f);
+        CHECK (std::abs (ratioBehind - 1.0f) < 0.1f);
+    }
+
+    SECTION ("reverse: 15 ticks put the Orbit at -90 and the right channel louder")
+    {
+        RouteRenderRig rig (OutputFormat::Binaural, 2);
+        TrajectoryToRigGlue glue (rig);
+
+        glue.tick (15, true);
+        const float az = glue.engine.getFinalAz (0);
+        const float ratio = rig.leftRightRatio();
+        CAPTURE (az, ratio);
+        REQUIRE (glue.engine.isActive (0));
+        CHECK (std::abs (az - (-90.0f)) < 0.5f);
+        CHECK (ratio <= 0.5f);
+    }
 }
