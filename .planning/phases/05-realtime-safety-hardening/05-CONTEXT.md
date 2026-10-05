@@ -78,6 +78,19 @@ removing the legacy HRTF route (next major). RTSF-04 is closed as a non-finding.
   produce exactly today's output, proven against the Phase 3 binaural goldens. If bit-identity is
   impossible, stop and ask the user; do not re-baseline.
 
+### Decisions added at plan time (2026-10-06, after research)
+- **D-11:** **An oversized host block is rendered correctly in pieces.** When a host delivers a
+  block longer than the prepared maximum, the engine-side sites (`RenderEngine.cpp` resize sites
+  found by research) process it in prepared-size chunks, as `PartitionedConvolver` already does: no
+  audio is dropped and nothing allocates. The existing CR-03 oversized-block test changes to assert
+  this. (D-03's "keep the last good sound" still governs the `BinauralRenderer` scratch guards that
+  cannot be chunked.)
+- **D-12:** **OSD#131 UI scope is a test only.** Add the multi-map regression test proving several
+  `SpatialMapComponent`s share their typefaces and paint without crashing. `SMLLookAndFeel`'s
+  per-instance fonts are not changed in this phase.
+- **D-13:** **Platform scope of the proof is macOS arm64.** Docs state "proved on macOS (Apple
+  Silicon); Windows and Linux are checked in Phase 6". Phase 5 closes on the macOS proof.
+
 ### Claude's Discretion
 - **Allocation detector mechanism (D-01/D-02):** the user said "you decide". Options: a test-only
   allocation trap (operator new/malloc hook armed around `renderBlock`) that works with the current
