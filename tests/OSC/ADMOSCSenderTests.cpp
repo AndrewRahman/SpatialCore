@@ -575,7 +575,7 @@ TEST_CASE ("ADMOSCSender: an object enabled again is sent once, and nothing is s
 // ============================================================================
 // Query replies (Phase 4 Plan 04-03, D-08a, D-20, T-04-07). queueReply holds one
 // pending reply per (object, kind); the 30 Hz slot flushes them in object order,
-// then azim, elev, dist, aed, xyz order. Ports 9752 and up.
+// then azim, elev, dist, aed, xyz order.
 // ============================================================================
 
 namespace
