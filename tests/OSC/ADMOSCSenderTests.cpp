@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <SpatialCore/OSC/ADMOSCReceiver.h>   // the xyz round-trip test feeds a reply back into the receiver
 #include <SpatialCore/OSC/ADMOSCSender.h>
 #include "../Support/FreeUdpPort.h"
 #include <juce_osc/juce_osc.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <SpatialCore/Core/Types.h>
-#include <SpatialCore/OSC/ADMOSCReceiver.h>
+#include <SpatialCore/OSC/ADMPositionQuery.h>
 #include <juce_osc/juce_osc.h>
 #include <array>
 

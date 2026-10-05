@@ -1,16 +1,11 @@
 #pragma once
 
 #include <SpatialCore/Core/Types.h>
+#include <SpatialCore/OSC/ADMPositionQuery.h>
 #include <juce_osc/juce_osc.h>
 
 namespace spatialcore
 {
-
-// Which position property a query asked for. ADM-OSC rule: a message with no
-// arguments sent to a position address is a query for the current value, and the
-// receiver of the query answers with the same address carrying that value
-// (Phase 4, D-08a). Reported through Listener::admPositionQueried.
-enum class ADMPositionQuery { azim, elev, dist, aed, xyz };
 
 // ADMOSCReceiver -- ADM-OSC + OSD-custom message parsing, decoupled from
 // juce::AudioProcessor (Phase 8 Plan 08-05, CORE-05). Structural change only:
