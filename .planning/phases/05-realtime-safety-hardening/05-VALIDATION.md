@@ -41,17 +41,25 @@ created: "2026-10-06"
 
 Filled in by the planner / validate-phase. Requirement → test map from RESEARCH.md:
 
-| Requirement | Behavior | Test Type | Automated Command | File Exists | Status |
-|-------------|----------|-----------|-------------------|-------------|--------|
-| RTSF-01 | Oversized block into `renderSourceBuffers` / `updateSourceHRIR`: no allocation in Release, counter increments, output defined | unit + trap | `./build-release/tests/SpatialCoreTests "[rt][scratch]"` | ❌ W0 | ⬜ pending |
-| RTSF-01 (engine sites) | Oversized block through `renderBlock` allocates nothing | trap | `./build-release/tests/SpatialCoreTests "[rt-alloc][oversized]"` | partial | ⬜ pending |
-| RTSF-02 | Concurrent `tick` and `getFinal*` race-free and in range | thread + TSan | `./build-tsan/tests/SpatialCoreTests "[trajectory][threads]"` | ❌ W0 | ⬜ pending |
-| RTSF-03 | Legacy-route misuse counted; `setHRTFProfile` while rendering race-free | unit + TSan | `./build-release/tests/SpatialCoreTests "[hrtf-switch][misuse]"`; `./build-tsan/tests/SpatialCoreTests "[hrtf-switch]"` | ❌ W0 / ✅ | ⬜ pending |
-| RTSF-05 | Alloc/lock matrix over formats, flags, profiles, block sizes, rates, algorithms (incl. Ambisonics NFC fix) | trap | `./build-release/tests/SpatialCoreTests "[rt-alloc]"` and `"[rt-lock]"` | ❌ W0 | ⬜ pending |
-| RTSF-05 | Lock primitives limited to allow-list | source scan | `./build-release/tests/SpatialCoreTests "[rt][rule]"` | ❌ W0 | ⬜ pending |
-| VERIFY-02 | `SharedFFTCache` identity, retention, isolation, 16-thread first use | unit + TSan | `./build-release/tests/SpatialCoreTests "[fftcache]"` | ❌ W0 | ⬜ pending |
-| VERIFY-02 | 8 engines concurrently; OSD#96 isolation bit-identical | stress + TSan | `./build-release/tests/SpatialCoreTests "[multi]"` | ❌ W0 | ⬜ pending |
-| VERIFY-02 (OSD#131) | Several live maps share typefaces, paint, no crash | UI | `./build-release/tests/SpatialCoreUITests "[ui][multi]"` | ❌ W0 | ⬜ pending |
+| Requirement | Plan-Task | Behavior | Test Type | Automated Command | File Exists | Status |
+|-------------|-----------|----------|-----------|-------------------|-------------|--------|
+| RTSF-05 (tooling) | 05-01 T1 | Trap canary sees malloc, new, CriticalSection, std::mutex; cold-start 7.1.4 render counts zero | trap | `./build-release/tests/SpatialCoreTests "[rt][canary],[rt][tracer]"` | ❌ W0 (05-01 creates) | ⬜ pending |
+| RTSF-05 (NFC) | 05-01 T2 | Six Ambisonics formats render moving distance with zero allocations; before/after capture byte-identical (D-10) | trap + cmp | `./build-release/tests/SpatialCoreTests "[rt],[nfc]"`; `cmp` of `[.][ambi-nfc-capture]` output | ❌ W0 | ⬜ pending |
+| RTSF-01 (engine sites, D-11) | 05-02 T1 | Oversized block renders in prepared-size pieces, bit-identical to prepared-size blocks; no allocation on any path; adjacency and empty edges | unit + trap | `./build-release/tests/SpatialCoreTests "[oversized]"` | partial (CR-03 rewritten) | ⬜ pending |
+| RTSF-01 (renderer guards) | 05-02 T2 | Too-small scratch skips, keeps the last good sound, counts, no allocation in Release | unit + trap | `./build-release/tests/SpatialCoreTests "[rt][scratch]"` | ❌ W0 | ⬜ pending |
+| RTSF-05 (switches) | 05-03 T1 | Mid-play profile and format switches with all three flags: zero allocations and locks | trap | `./build-release/tests/SpatialCoreTests "[rt][switch]"` | ❌ W0 | ⬜ pending |
+| RTSF-05 (matrix) | 05-03 T2 | 23 formats x 8 flag sets, 6 profiles x 2 routes, sizes x rates, 12 algorithms | trap | `./build-release/tests/SpatialCoreTests "[rt][matrix]"` | ❌ W0 | ⬜ pending |
+| RTSF-05 (rest + rule) | 05-03 T3 | Trajectories, audit switch, ordering, legacy route; lock inventory allow-list | trap + source scan | `./build-release/tests/SpatialCoreTests "[rt]"` | ❌ W0 | ⬜ pending |
+| RTSF-02 | 05-04 T1 | Concurrent `tick` and getters race-free and in range (red at BASE under TSan) | thread + TSan | `./build-tsan/tests/SpatialCoreTests "[trajectory][threads]"` | ❌ W0 | ⬜ pending |
+| RTSF-02 / D-01 | 05-04 T2 | `[tsan]` subset clean; per-tick step pinned | TSan + unit | `./build-tsan/tests/SpatialCoreTests "[tsan]"`; `"[trajectory][step]"` | ❌ W0 | ⬜ pending |
+| RTSF-03 (wrong thread) | 05-05 T1 | Legacy call on the render thread counted; single-thread harness not | unit | `./build-release/tests/SpatialCoreTests "[hrtf-switch][misuse]"` | ❌ W0 | ⬜ pending |
+| RTSF-03 (in use) | 05-05 T2 | Load into an in-use renderer counted; documented flows and engine loader not | unit + thread | `./build-release/tests/SpatialCoreTests "[hrtf-switch][in-use]"` | ❌ W0 | ⬜ pending |
+| RTSF-03 (criterion 3) | 05-05 T3 | setHRTFProfile from a 30 Hz UI timer while rendering; legacy flow with a render thread | thread + TSan | `./build-tsan/tests/SpatialCoreTests "[hrtf-switch]"`; `"[golden]"` unchanged | ✅ partly (Phase 3) | ⬜ pending |
+| VERIFY-02 (OSD#96) | 05-06 T1 | Engine A bit-identical alone vs beside a switching engine B | stress | `./build-release/tests/SpatialCoreTests "[multi][isolation]"` | ❌ W0 | ⬜ pending |
+| VERIFY-02 (cache, stress) | 05-06 T2 | Cache identity, retention, cross-order, 16-thread first use; 8 engines on 8 threads | unit + stress + TSan | `./build-tsan/tests/SpatialCoreTests "[fftcache],[multi]"` | ❌ W0 | ⬜ pending |
+| VERIFY-02 (OSD#131) | 05-07 T1 | Sixteen live maps share one face set and paint identically | UI | `./build-release/tests/SpatialCoreUITests "[ui][multi]"` | ❌ W0 | ⬜ pending |
+| VERIFY-02 (UI churn) | 05-07 T2 | Churn beside live maps; UI suite clean under TSan | UI + TSan | `./build-tsan/tests/SpatialCoreUITests` | ❌ W0 | ⬜ pending |
+| All (gate) | 05-08 T1 | README check run as written, whole suite under TSan | gate | README "Realtime-safety check" commands | ❌ (05-08 writes) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
