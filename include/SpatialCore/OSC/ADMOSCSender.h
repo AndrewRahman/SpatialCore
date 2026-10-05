@@ -68,8 +68,6 @@ private:
 
     juce::OSCSender sender;
     bool connected = false;
-    int  sendPort  = 4003;
-    juce::String sendHost = "127.0.0.1";
 
     double nextSendDue_    = 0.0;
     bool   scheduleArmed_  = false;

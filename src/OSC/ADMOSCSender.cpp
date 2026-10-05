@@ -18,8 +18,6 @@ bool ADMOSCSender::connect(const juce::String& host, int port)
     // failed connect that dropped the old socket) must not be flushed to the new one.
     clearPendingReplies();
 
-    sendHost = host;
-    sendPort = port;
     connected = sender.connect(host, port);
     if (connected)
     {
