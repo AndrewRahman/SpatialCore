@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 04
 current_phase_name: Control Surface & UI
-status: executing
-stopped_at: Completed 04-07-PLAN.md
-last_updated: "2026-10-05T09:41:05.908Z"
+status: verifying
+stopped_at: Completed 04-08-PLAN.md
+last_updated: "2026-10-05T10:00:17.246Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 04 execution started
-state_head: 71a3358ef3682ba68dcafa4e76d0dc320d717f74
+state_head: c89aeb6de1a3eaad0861e647931118d03195a1bb
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 34
-  completed_plans: 33
+  completed_plans: 34
 milestone_name: milestone
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 
 Phase: 04 (Control Surface & UI) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-05 — Phase 04 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -110,6 +110,7 @@ Progress: [█████░░░░░] 50%
 | Phase 04 P05 | 14 min | 2 tasks | 5 files |
 | Phase 04 P06 | 10 min | 2 tasks | 6 files |
 | Phase 04 P07 | 21 min | 2 tasks | 5 files |
+| Phase 04 P08 | 16 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -162,6 +163,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: 04-05: SpatialCoreUITests carries JUCE_UNIT_TESTS only (no modal loops); a Catch2 listener owns the GUI initialiser; the ui: ctest prefix drops its trailing space, so gates grep 'ui:'
 - [Phase 04]: 04-06: SpatialMapComponent owns embedded JetBrains Mono typefaces and PresetSaveOverlay an embedded DM Sans Bold title (D-05, D-06, D-22); DATA-02 proven by provenance (spy, bytes, code rule)
 - [Phase 04]: 04-07: SpatialCoreDemo is off by default (SPATIALCORE_BUILD_EXAMPLES, top-level only); it keeps TrajectoryEngine off the audio thread by copying output into atomics on the message thread and sets TrajectoryState::reverse itself; selftest proves osc, query, trajectory and map through RenderEngine
+- [Phase 04]: 04-08: gate listing check greps 'ui:' (CTest drops the space after the ui: prefix); README documents it
+- [Phase 04]: 04-08: EXTR-04 ticked on all-automated evidence; EXTR-05 (D-03 screenshots) and DATA-02 (D-22 title) stay unticked, pending human approval at the Phase 4 end-of-phase review
 
 ### Pending Todos
 
@@ -202,7 +205,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-05T09:41:05.844Z
-Stopped at: Completed 04-07-PLAN.md
+Last session: 2026-10-05T10:00:17.180Z
+Stopped at: Completed 04-08-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`

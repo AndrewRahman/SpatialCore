@@ -203,7 +203,7 @@ not link — so UI verification here is by interaction, not by unit test.
 
 **Already verified**: `DATA-02` is done — `fonts/*.ttf` are compiled in as JUCE BinaryData.
 `ADMOSCReceiver.cpp:43` bounds-checks correctly, closing the original RTSF-04 as a non-finding.
-**Plans**: 7/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 8/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 **UI hint**: yes
 
 Plans:
@@ -229,7 +229,7 @@ Plans:
 - [x] 04-07-PLAN.md — Off-by-default demo app: before/after-drag screenshots for the D-03 review and a self-tested worked example of OSC, trajectory and map wiring *(wave 7)*
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 04-08-PLAN.md — Documented local gate with both test executables, OSD Phase 4 release-note row, docs, VERIFICATION evidence; EXTR-04 ticked, EXTR-05 and DATA-02 ticked after the end-of-phase D-03 / D-22 approvals (D-14, D-16, D-17) *(wave 8)*
+- [x] 04-08-PLAN.md — Documented local gate with both test executables, OSD Phase 4 release-note row, docs, VERIFICATION evidence; EXTR-04 ticked, EXTR-05 and DATA-02 ticked after the end-of-phase D-03 / D-22 approvals (D-14, D-16, D-17) *(wave 8)*
 
 ### Phase 5: Realtime Safety Hardening
 
@@ -290,7 +290,7 @@ External Dependencies.
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
-| 4. Control Surface & UI | 7/8 | In Progress|  |
+| 4. Control Surface & UI | 8/8 | In Progress|  |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
