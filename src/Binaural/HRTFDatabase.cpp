@@ -5,6 +5,7 @@ extern "C" {
 #include "mysofa.h"
 }
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -101,7 +102,7 @@ namespace
                     if (static_cast<juce::int64> (capacity) >= limit)
                         break;
 
-                    capacity = static_cast<size_t> (juce::jmin<juce::int64> (static_cast<juce::int64> (capacity) * 2, limit));
+                    capacity = static_cast<size_t> (std::min<juce::int64> (static_cast<juce::int64> (capacity) * 2, limit));
                     out.setSize (capacity);
                 }
 
