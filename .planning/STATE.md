@@ -1,14 +1,14 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 4
+current_phase: 04
 current_phase_name: Control Surface & UI
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-10-05T06:48:10.466Z"
+last_updated: "2026-10-05T07:51:31.841Z"
 last_activity: 2026-10-05
-last_activity_desc: Phase 4 context gathered (after v1.0.0 milestone audit — gaps_found, 13/25 reqs; phases 4-6 not started)
-state_head: 4f9a0302193319f28af5d49a30c28a868ba4efa3
+last_activity_desc: Phase 04 execution started
+state_head: d5282ea65220fde236d1ed29b2b021b232332ab4
 progress:
   total_phases: 6
   completed_phases: 3
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 
 ## Current Position
 
-Phase: 4 (Control Surface & UI) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-10-05 — v1.0.0 milestone audit (`.planning/v1.0.0-MILESTONE-AUDIT.md`): gaps_found, 13/25 requirements satisfied. Phases 1-3 clean and integrated (11/11 wiring, 266/266 tests); the 12 unsatisfied requirements are exactly Phases 4-6, so no gap-closure phase is needed. Phase 3 Nyquist validated; Phases 1-2 VALIDATION.md still draft
+Phase: 04 (Control Surface & UI) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 04
+Last activity: 2026-10-05 — Phase 04 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
