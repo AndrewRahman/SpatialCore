@@ -129,6 +129,17 @@ public:
 > block rendered with and never acquires a newer one. **Migration:** a consumer that calls
 > `getActiveLayout()` from `processBlock()` (OpenSpatialDelay does) must switch to
 > `getBlockLayout()` before bumping its SpatialCore pin past `ab60c25`.
+> Set `ctx.engineFadesFormatSwitch = true` (SC-20) to make a format switch click-free. The
+> block that first sees a newly published layout renders the layout the engine already
+> holds, faded to zero, and the next block takes the new layout and fades it in from zero
+> with its gain interpolation starting at its own targets. The new format is heard one
+> block later and a switch costs a two-block dip (about 21 ms at 512 samples / 48 kHz);
+> several `setOutputFormat()` calls between two blocks give one fade-out and one fade-in of
+> the last format, and the first block after `prepare()` never fades. `getBlockLayout()`
+> reports the layout the block actually rendered, so a channel map chosen from it stays
+> paired with the samples (it is the held layout during the fade-out block). It is wait-free
+> and allocation-free and is opt-in: with the flag false nothing changes. Do not republish
+> the format that is already active, since every publish costs a dip.
 > Choose the speaker algorithm with `engine.setAlgorithmIndex (kAlgorithmIndex...)` (SC-18),
 > from any non-audio thread: the index map is OpenSpatialDelay's 12-entry saved-preset map
 > (0 Ambisonics, 1 Constant Power, 2 DBAP, 3 KNN, 4 MDAP, 5 VBAP, 6 VBIP, 7..11 the stereo

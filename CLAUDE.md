@@ -17,7 +17,7 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 |-----------|---------|-------------|
 | Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural. `AllAlgorithms.h`'s `AllAlgorithmTypes` list is the source of truth for the count |
 | Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa; `loadFromBinaryData` reads the embedded profile set `SpatialCoreHRTFData`), `HRTFProfile.h` (the profile table, indices 0-5, 0 = Simple), `HRTFProfileResolver` (shared folder, then embedded copy, then a reported error), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
-| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, engine-owned HRTF profile switching (`setHRTFProfile`, an engine-owned background loader, a lock-free status) with the opt-in `engineSelectsHRTF` flag, a Simple-path cue bank (rear, up and down filter branches ahead of the Woodworth gains), a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
+| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, engine-owned HRTF profile switching (`setHRTFProfile`, an engine-owned background loader, a lock-free status) with the opt-in `engineSelectsHRTF` flag, a Simple-path cue bank (rear, up and down filter branches ahead of the Woodworth gains), a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16) and an opt-in click-free format-switch fade (`engineFadesFormatSwitch`, SC-20), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
 | Core | `Core/SpatialMath.h` | `softClip()`, `outputLimiter()` (tanh soft ceiling), `distanceAttenuation()`, plus the shared position/gain types in `Core/Types.h` |
 | I/O | `IO/*.h` | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
@@ -55,6 +55,21 @@ renumber). The default is VBAP, so a consumer that never calls it renders as bef
 lock-free (one relaxed atomic store, clamped) and the engine reads it once per block. On the Stereo
 format indices 7..11 select Equal Power, Stereo VBAP, XY Pair, MS Encode and Blumlein (a speaker
 index renders as Equal Power there); on a speaker layout a stereo index renders as VBAP.
+
+`RenderBlockContext::engineFadesFormatSwitch` (default `false`, SC-20, SpatialCore#27) makes an
+output-format switch click-free. A block that sees a newly published layout renders once more
+with the layout the engine already holds and fades its output linearly to zero (last sample
+exactly 0); the next block takes the newest published layout, starts every render path's gain
+interpolation at that block's own targets and fades in from zero (first sample exactly 0). The
+new format is heard one block later and a switch costs a two-block dip (about 21 ms at 512
+samples / 48 kHz); several `setOutputFormat()` calls between two blocks give one fade-out and
+one fade-in, of the last format. The first block after `prepare()` never fades, and
+`getBlockLayout()` reports the layout the block actually rendered (the held one during the
+fade-out block). Only the channels the block's path writes are faded. It rests on the
+reader-side `TripleBufferIndex::hasFresh()` peek (one relaxed load); wait-free, no allocation,
+lock or logging. It is opt-in, so a consumer that does not set it renders byte-for-byte as
+before. A consumer that wants the fade should also avoid republishing the format that is
+already active (each publish costs a dip).
 
 `RenderBlockContext::engineDerivesDispatch` (default `false`, SC-16) is the opt-in flag
 that lets `RenderEngine` derive its own dispatch from the layout it renders against.
