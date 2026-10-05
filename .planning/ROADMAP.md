@@ -254,11 +254,11 @@ shipping publicly at v1.0.0.
 from scope. `SharedFFTCache` is already correctly spinlock-guarded at
 `PartitionedConvolver.cpp:16`; what remains unverified is concurrent-instance behaviour.
 **Locked rule in play**: DR-1.
-**Plans**: 8 plans (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
+**Plans**: 1/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
-- [ ] 05-01-PLAN.md — Proof tooling: a canary-checked allocation and lock trap (macOS, test-only) armed around renderBlock from the first block; the Ambisonics NFC audio-thread allocation fixed, byte-identical before and after (D-10) *(wave 1)*
+- [x] 05-01-PLAN.md — Proof tooling: a canary-checked allocation and lock trap (macOS, test-only) armed around renderBlock from the first block; the Ambisonics NFC audio-thread allocation fixed, byte-identical before and after (D-10) *(wave 1)*
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 05-02-PLAN.md — RTSF-01: oversized host blocks rendered in prepared-size pieces (D-11, bit-identical to prepared-size blocks); BinauralRenderer's two guards share one helper that skips, keeps the last good sound and counts (D-03, D-04) *(wave 2)*
@@ -316,7 +316,7 @@ External Dependencies.
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
-| 5. Realtime Safety Hardening | 0/8 | Planned | - |
+| 5. Realtime Safety Hardening | 1/8 | In Progress|  |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
 ## Coverage

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 05
-current_phase_name: realtime-safety-hardening
+current_phase_name: Realtime Safety Hardening
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-10-05T23:18:47.466Z"
-last_activity: 2026-10-05
-last_activity_desc: Phase 04 complete, transitioned to Phase 5
-state_head: cc3ab0c6c21d553640413aa9205619433d519315
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-10-05T23:36:09.839Z"
+last_activity: 2026-10-06
+last_activity_desc: Phase 05 execution started
+state_head: f8f164e2aa730496b73872525a205b95e195e5a4
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 42
-  completed_plans: 34
+  completed_plans: 35
 milestone_name: milestone
 ---
 
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 5 — Realtime Safety Hardening
+**Current focus:** Phase 05 — Realtime Safety Hardening
 
 ## Current Position
 
-Phase: 05 (realtime-safety-hardening) — READY TO EXECUTE
-Plan: Not started
+Phase: 05 (Realtime Safety Hardening) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-10-05 — Phase 04 complete, transitioned to Phase 5
+Last activity: 2026-10-06 — Phase 05 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -112,6 +112,7 @@ Progress: [███████░░░] 67%
 | Phase 04 P06 | 10 min | 2 tasks | 6 files |
 | Phase 04 P07 | 21 min | 2 tasks | 5 files |
 | Phase 04 P08 | 16 min | 2 tasks | 7 files |
+| Phase 05 P01 | 13 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: 04-08: EXTR-04 ticked on all-automated evidence; EXTR-05 (D-03 screenshots) and DATA-02 (D-22 title) stay unticked, pending human approval at the Phase 4 end-of-phase review
 - [Phase 04]: Code review --fix (2026-10-05), 5 review rounds to clean, ledger 18/18 fixed: ADMOSCSender skips non-finite positions and connect() drops queued replies; /xyz rescales an overflowing triple keeping direction; wrapAzimuth bounded (infinity -> NaN for the hold-last-good sanitiser); object numbers are 1-2 digits; ADMPositionQuery moved to its own header with a kCount_ sentinel; OSC param/global values documented finite-but-unbounded (not clamped); network tests use OS-assigned ports and token markers instead of fixed ports and quiet periods
 - [Phase 04]: end-of-phase review 2026-10-05: D-03 screenshots approved (drag to az 90, d 0.8 as designed), EXTR-05 ticked; D-22 title rejected (DM Sans Bold too small), documented revert applied (PresetSaveOverlay back to BASE, [ui][fonts][spy] overlay exemption pins 1 request, item 4 removed from the OSD row), gate re-run green, DATA-02 ticked
+- [Phase 05]: 05-01: realtime trap is a libmalloc malloc_logger hook plus a __DATA,__interpose dylib, test-only, APPLE and no -fsanitize; trap cases SKIP elsewhere (never a green zero)
+- [Phase 05]: 05-01: Ambisonics NFC coefficients are assigned in place from a std::array<float, 4>; raw output of all six formats byte-identical before and after (D-10)
 
 ### Pending Todos
 
@@ -210,7 +213,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-05T21:41:04.063Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-realtime-safety-hardening/05-CONTEXT.md
+Last session: 2026-10-05T23:36:09.771Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None
 Next command: `/gsd-discuss-phase 4`
