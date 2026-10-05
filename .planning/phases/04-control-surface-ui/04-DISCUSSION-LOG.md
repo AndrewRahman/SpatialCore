@@ -58,3 +58,8 @@ UI test target structure, demo app naming and CMake option, sender clock injecti
 ## Deferred Ideas
 
 Elevation drag; shared OSC/trajectory/map→engine connector; full ADM-OSC query support beyond positions; ~50 Hz broadcast rate.
+
+## Post-merge gap check (v1.0.0 milestone audit merged from main)
+
+Compared the audit against this context. No conflicts. Added D-15 to D-18.
+Unused-parameter warnings in `ADMOSCReceiver.h`: **fold into Phase 4** (vs leave for later). D-16 to D-18 were recorded without a question (they record evidence and pick test settings; no product choice).
