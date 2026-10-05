@@ -330,6 +330,35 @@ TEST_CASE ("ADMOSCReceiver: Malformed address with no object number is ignored",
     CHECK (listener.positionCallCount == 0);
 }
 
+TEST_CASE ("ADMOSCReceiver: an object number with anything but one or two digits is ignored (IN-03)",
+           "[osc][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    // Each of these used to be read as object 2 (or 1) by getIntValue()'s leading-integer rule.
+    const char* const bad[] = { "2x", "2.7", "+2", "-2", "x2", "0x2", "002", "4294967297", "" };
+    for (const char* obj : bad)
+    {
+        DYNAMIC_SECTION ("/adm/obj/" << obj << "/azim")
+        {
+            sendOSC (*receiver, juce::String ("/adm/obj/") + obj + "/azim", { 45.0f });
+            sendOSC (*receiver, juce::String ("/osd/obj/") + obj + "/azim", { 45.0f });
+            CHECK (listener.positionCallCount == 0);
+            CHECK (listener.queries.empty());
+        }
+    }
+
+    // Plain numbers still work, with or without a leading zero.
+    sendOSC (*receiver, "/adm/obj/2/azim", { 45.0f });
+    CHECK (listener.lastPositionObjectIndex == 1);
+    sendOSC (*receiver, "/adm/obj/02/azim", { 45.0f });
+    CHECK (listener.lastPositionObjectIndex == 1);
+    sendOSC (*receiver, "/adm/obj/12/azim", { 45.0f });
+    CHECK (listener.lastPositionObjectIndex == 11);
+    CHECK (listener.positionCallCount == 3);
+}
+
 TEST_CASE ("ADMOSCReceiver: removeListener stops further dispatch", "[osc][edge]")
 {
     RecordingListener listener;

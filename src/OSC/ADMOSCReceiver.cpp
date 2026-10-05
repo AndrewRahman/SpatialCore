@@ -102,7 +102,15 @@ void ADMOSCReceiver::oscMessageReceived (const juce::OSCMessage& message)
         auto slashIdx = afterObj.indexOf ("/");
         if (slashIdx < 0) return;
 
-        int objNum = afterObj.substring (0, slashIdx).getIntValue();
+        // The object number is one to two decimal digits and nothing else (IN-03):
+        // getIntValue() alone reads the leading integer and ignores the rest, so
+        // "2x", " 2", "2.7" or "+2" would all have been taken as object 2, and a
+        // long digit string could wrap around into range.
+        const auto objSegment = afterObj.substring (0, slashIdx);
+        if (objSegment.isEmpty() || objSegment.length() > 2 || ! objSegment.containsOnly ("0123456789"))
+            return;
+
+        int objNum = objSegment.getIntValue();
         if (objNum < 1 || objNum > MAX_SOURCES) return;
         int objIdx = objNum - 1;
 
