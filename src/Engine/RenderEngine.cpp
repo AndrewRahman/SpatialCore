@@ -5,6 +5,7 @@
 #include <SpatialCore/Binaural/HRTFProfile.h>
 #include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
+#include <array>
 #include <cstdlib>
 #include <new>
 #include <cstring>
@@ -1496,8 +1497,12 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
     // were last written under a different order, and the distance gate below
     // would not rewrite them while the distance stays settled. Invalidate
     // every object's last-written distance so this block's update recomputes
-    // every active order (SpatialCore#21). No allocation: coefficients are
-    // assigned first-order into state already sized for first order.
+    // every active order (SpatialCore#21). No allocation: the update below
+    // assigns four floats into the coefficient storage the prepare() placeholder
+    // already sized (capacity of at least 8 floats, so assignImpl never
+    // reallocates). It builds no temporary Coefficients object: that temporary
+    // allocated on the audio thread (Phase 5 RESEARCH F1). The stored values are
+    // bit-identical to the old construction (D-10, pinned by [nfc][d10]).
     if (ambiOrder != lastNfcAmbiOrder_)
     {
         for (int t = 0; t < MAX_SOURCES; ++t)
@@ -1530,8 +1535,7 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
                 float b1 = (wZero - 1.0f);
                 float a0 = (1.0f + wPole);
                 float a1 = (wPole - 1.0f);
-                *nfcFilters[t][ord].coefficients =
-                    juce::dsp::IIR::Coefficients<float> (b0 / a0, b1 / a0, 1.0f, a1 / a0);
+                *nfcFilters[t][ord].coefficients = std::array<float, 4> { b0 / a0, b1 / a0, 1.0f, a1 / a0 };
             }
             prevNfcDistance[t] = smoothedNfcDistance[t];
         }
