@@ -1,0 +1,1 @@
+No external API integration: ADM-OSC is a wire protocol SpatialCore itself implements (its own ADMOSCReceiver/ADMOSCSender over JUCE's existing OSC classes, plus tests that talk to it over loopback); Phase 4 calls no third-party service, SDK or hosted API, and adds no new dependency.

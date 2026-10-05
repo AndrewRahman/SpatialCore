@@ -203,8 +203,33 @@ not link — so UI verification here is by interaction, not by unit test.
 
 **Already verified**: `DATA-02` is done — `fonts/*.ttf` are compiled in as JUCE BinaryData.
 `ADMOSCReceiver.cpp:43` bounds-checks correctly, closing the original RTSF-04 as a non-finding.
-**Plans**: TBD
+**Plans**: 8 plans (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 **UI hint**: yes
+
+Plans:
+**Wave 1**
+- [ ] 04-01-PLAN.md — OSC route to the renderer: real UDP ADM-OSC moves rendered sound; every position address proven through RouteRenderRig; build trees configured *(wave 1)*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 04-02-PLAN.md — Self-clocked 30 Hz sender: silent while still, first send at zero, send-all on connect and re-enable, fake-clock proofs (D-07, D-08b, D-09, D-10) *(wave 2)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 04-03-PLAN.md — ADM-OSC position queries answered to the configured destination (D-08a, D-20), receiver hardening (D-21), unused-parameter warnings gone (D-15) *(wave 3)*
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 04-04-PLAN.md — Trajectory route to the renderer; reverse for all 13 shapes, Bounce and Line kept as the D-19 exceptions *(wave 4)*
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 04-05-PLAN.md — SpatialCoreUITests target: map drag moves rendered sound; drag, distance ring and elevation opacity checked in pixels; UI tests in the local gate (D-01, D-17) *(wave 5)*
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 04-06-PLAN.md — Fonts from embedded data only: map-owned JetBrains Mono, overlay title, spy, byte and code-rule tests (DATA-02, D-05, D-06, D-22) *(wave 6)*
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 04-07-PLAN.md — Off-by-default demo app: before/after-drag screenshots for the D-03 review and a self-tested worked example of OSC, trajectory and map wiring *(wave 7)*
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 04-08-PLAN.md — Documented local gate with both test executables, OSD Phase 4 release-note row, docs, VERIFICATION evidence; EXTR-04 ticked, EXTR-05 and DATA-02 ticked after the end-of-phase D-03 / D-22 approvals (D-14, D-16, D-17) *(wave 8)*
 
 ### Phase 5: Realtime Safety Hardening
 
