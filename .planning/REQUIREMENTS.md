@@ -154,12 +154,12 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     `ADMOSCReceiver.cpp:43` was audited and confirmed correct — the 2026-08-09 RTSF-04 concern
     is **closed as a non-finding**.
 
-- [ ] **EXTR-05**: UI components render and interact for real — verified by tests; pending human approval at the Phase 4 end-of-phase review (D-03 screenshots)
+- [x] **EXTR-05**: UI components render and interact for real — verified by tests; demo screenshots approved at the Phase 4 review, 2026-10-05 (D-03)
   - Acceptance: `SpatialMapComponent` renders objects, rings, and elevation-as-opacity and
     supports drag; no component holds a concrete processor pointer (DR-16).
 
-  - Note: all 10 `src/UI/*.cpp` files are untested, by design — UI lives in the separate
-    `SpatialCoreUI` target which `SpatialCoreTests` does not link.
+  - Note: UI is tested by `SpatialCoreUITests`, the only target that links `SpatialCoreUI`
+    (Phase 4). `SpatialCoreTests` still does not link it.
 
 ### Packaging and Consumability
 
@@ -209,7 +209,7 @@ otherwise. What remains is verifying the named gaps, not building the modules.
   - The build already fails loudly on LFS pointer stubs via a CI guard. That half is done.
   - Satisfies DR-5 as written, and leaves a designed path off it.
 
-- [ ] **DATA-02**: `SMLLookAndFeel` has the font BinaryData it needs — verified by tests; pending human approval at the Phase 4 end-of-phase review (D-22 title)
+- [x] **DATA-02**: `SMLLookAndFeel` has the font BinaryData it needs — verified by tests (Phase 4). The D-22 title change was rejected at the review, so the SAVE PRESET title keeps its original bold font as a documented exemption in `[ui][fonts][spy]`
   - **Verified done.** `fonts/*.ttf` are compiled in as JUCE BinaryData. Retained only to confirm
     rendering on a host with no SML font installed.
   - Phase 4 evidence: `[ui][fonts][bytes]`, `[ui][fonts][spy]`, `[ui][fonts][rule]` and `[ui][fonts][identical]` plus the D-05 grep gate. A run on a machine with no fonts installed was replaced by this provenance proof (D-05).
@@ -430,8 +430,8 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | EXTR-02 | REQ-extract-binaural-rendering | 3 | Complete |
 | DATA-01 | REQ-embed-hrtf-binarydata | 3 | Complete (lookup chain + embedded default) |
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Complete (Phase 4) |
-| EXTR-05 | REQ-extract-ui-rendering | 4 | Verified by tests; pending human approval (D-03) |
-| DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Verified by tests; pending human approval (D-22) |
+| EXTR-05 | REQ-extract-ui-rendering | 4 | Complete (Phase 4) |
+| DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Complete (Phase 4) |
 | RTSF-01 | SpatialCore#19 — 2 sites | 5 | Pending |
 | RTSF-02 | SpatialCore#18 | 5 | Pending |
 | RTSF-03 | CONCERNS.md | 5 | Pending |

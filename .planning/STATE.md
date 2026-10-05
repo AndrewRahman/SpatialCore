@@ -165,6 +165,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: 04-07: SpatialCoreDemo is off by default (SPATIALCORE_BUILD_EXAMPLES, top-level only); it keeps TrajectoryEngine off the audio thread by copying output into atomics on the message thread and sets TrajectoryState::reverse itself; selftest proves osc, query, trajectory and map through RenderEngine
 - [Phase 04]: 04-08: gate listing check greps 'ui:' (CTest drops the space after the ui: prefix); README documents it
 - [Phase 04]: 04-08: EXTR-04 ticked on all-automated evidence; EXTR-05 (D-03 screenshots) and DATA-02 (D-22 title) stay unticked, pending human approval at the Phase 4 end-of-phase review
+- [Phase 04]: end-of-phase review 2026-10-05: D-03 screenshots approved (drag to az 90, d 0.8 as designed), EXTR-05 ticked; D-22 title rejected (DM Sans Bold too small), documented revert applied (PresetSaveOverlay back to BASE, [ui][fonts][spy] overlay exemption pins 1 request, item 4 removed from the OSD row), gate re-run green, DATA-02 ticked
 
 ### Pending Todos
 
