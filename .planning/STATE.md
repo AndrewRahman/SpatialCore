@@ -7,7 +7,7 @@ status: planning
 stopped_at: Phase 3 complete, ready to plan Phase 4
 last_updated: "2026-10-04T20:29:40.292Z"
 last_activity: 2026-10-05
-last_activity_desc: Phase 3 code review fixed to clean (20 findings, 266/266 tests)
+last_activity_desc: v1.0.0 milestone audit — gaps_found (13/25 reqs; phases 4-6 not started)
 state_head: 3d8adcfbd7b6aa3179cc6198a68913e86ef746ca
 progress:
   total_phases: 6
@@ -26,14 +26,14 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 03 — Binaural Defects & HRTF Packaging
+**Current focus:** Phase 04 — Control Surface & UI
 
 ## Current Position
 
 Phase: 4 — Control Surface & UI
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-10-05 — Phase 3 code review --fix looped to clean (14 + 6 findings fixed, Debug and Release 266/266, OSD builds)
+Last activity: 2026-10-05 — v1.0.0 milestone audit (`.planning/v1.0.0-MILESTONE-AUDIT.md`): gaps_found, 13/25 requirements satisfied. Phases 1-3 clean and integrated (11/11 wiring, 266/266 tests); the 12 unsatisfied requirements are exactly Phases 4-6, so no gap-closure phase is needed. Phase 3 Nyquist validated; Phases 1-2 VALIDATION.md still draft
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -164,7 +164,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 
 - **[Phase 2] Branch sync before Phase 3: done 2026-10-04.** `origin/main` (the LFE fixes `3a0d912` + `5140c9a` via `4bed89a`, and SC-16 `b9877e1`..`ab60c25`) was merged into `gsd-remap` as `6055109` and pushed as `main`. Debug 208/209 (only HutubsPP2Tests.cpp:47), Release 209/209, OSD 30391cd builds.
 - **[Phase 2] CI "green" is test-vacuous.** CI passed at `879a8fe`, but its ctest step runs from the build root and finds zero tests (no top-level `enable_testing()`); there is also no arm64/FMA leg. Phase gates use `ctest` in `build-release/tests`. Owned by Phase 6.
-- **[Phase 3] `HutubsPP2Tests.cpp:47`** fails in Debug only (golden captured from an optimised build); Release passes 201/201. Phase 3 owns the binaural goldens.
+- **[Phase 3] `HutubsPP2Tests.cpp:47`** — RESOLVED in Phase 3 (03-02 tolerance fingerprints); Debug and Release 266/266.
 - **[Phase 3] BUG-01** — DirectBinaural elevation and front/back cues are deliberately unasserted in `PanningLawTests.cpp`; Phase 3 adds them.
 - **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
 - **[Phase 2] OSD-side follow-ups** — release notes for the audible changes, four OSD docs describing VBIP as squared gains, delete OSD's local SH/VBAP copies at migration (`02-09-SUMMARY.md`). Tracked in PROJECT.md External Dependencies.
@@ -176,11 +176,13 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
 | Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Open — Phase 3 or 5 | Phase 02 (02-04) |
-| Binaural | HUTUBS PP2 golden checksum fails in Debug only | Open — Phase 3 | Phase 02 (02-10) |
+| Binaural | HUTUBS PP2 golden checksum fails in Debug only | Resolved — Phase 3 (03-02) | Phase 02 (02-10) |
 | Tests | Other tight test-local tolerances may fail on another compiler/build type (none fails today) | Open | Phase 02 (02-10) |
 | CI | ctest step runs zero tests; no arm64/FMA Release leg | Open — Phase 6 | Phase 02 (02-10) |
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Open — pre-existing | Phase 02 (02-07) |
+| Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Open — Phase 5 or 6 | v1.0.0 audit |
+| Planning | 01-VALIDATION.md and 02-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`, `2`) | Open | v1.0.0 audit |
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 
