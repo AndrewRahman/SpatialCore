@@ -3,6 +3,7 @@
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 using namespace spatialcore;
@@ -22,6 +23,32 @@ namespace TrajShape
 // plus None, replicating Tests/TrajectoryTests.cpp's style but calling
 // spatialcore::TrajectoryEngine:: directly (D-09 fresh-test-separate-commit).
 // ============================================================================
+
+TEST_CASE ("wrapAzimuth returns for any input and keeps in-range results (WR-05)", "[trajectory][edge]")
+{
+    // Unchanged for the values the engine itself produces.
+    CHECK (wrapAzimuth (0.0f) == 0.0f);
+    CHECK (wrapAzimuth (180.0f) == 180.0f);
+    CHECK (wrapAzimuth (-180.0f) == -180.0f);
+    CHECK (wrapAzimuth (181.0f) == -179.0f);
+    CHECK (wrapAzimuth (-181.0f) == 179.0f);
+    CHECK (wrapAzimuth (540.0f) == 180.0f);
+
+    // Far from the range: these used to loop forever (1e10 - 360 == 1e10 in float).
+    for (float az : { 1.0e4f, -1.0e4f, 1.0e10f, -1.0e10f, 1.0e30f, -3.4e38f })
+    {
+        CAPTURE (az);
+        const float w = wrapAzimuth (az);
+        CHECK (std::isfinite (w));
+        CHECK (w >= -180.0f);
+        CHECK (w <= 180.0f);
+    }
+
+    // Non-finite input returns (it used to hang on infinity) and stays non-finite.
+    CHECK (std::isnan (wrapAzimuth (std::numeric_limits<float>::quiet_NaN())));
+    CHECK (std::isnan (wrapAzimuth (std::numeric_limits<float>::infinity())));
+    CHECK (std::isnan (wrapAzimuth (-std::numeric_limits<float>::infinity())));
+}
 
 TEST_CASE ("None shape returns base position unchanged", "[trajectory][characterization]")
 {

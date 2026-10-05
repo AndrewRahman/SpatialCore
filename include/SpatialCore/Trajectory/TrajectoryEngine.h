@@ -7,9 +7,19 @@
 namespace spatialcore
 {
 
-/** Wrap azimuth into [-180, 180] range. */
+/** Wrap azimuth into [-180, 180] range.
+
+    Bounded for any input (WR-05): a value far from the range (1e10, 1e30) is
+    reduced with one remainder first, because the subtract-360 loop alone never
+    returns on it (1e10 - 360 == 1e10 in float). A NaN stays NaN and an infinity
+    becomes NaN, so a non-finite value stays visibly non-finite for the caller's
+    own guard instead of hanging the thread. Values within a few turns of the
+    range take the same loop as before, so their results are unchanged. */
 inline float wrapAzimuth (float az)
 {
+    if (std::abs (az) > 3600.0f)
+        az = std::remainder (az, 360.0f);
+
     while (az > 180.0f)  az -= 360.0f;
     while (az < -180.0f) az += 360.0f;
     return az;

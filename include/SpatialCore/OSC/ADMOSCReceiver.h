@@ -55,12 +55,20 @@ public:
         // trajectory|speed|direction|input). objectIndex is 0-based; paramName
         // is the raw OSC property name (e.g. "enabled", "doppler") -- the
         // consumer maps this to its own parameter ID scheme.
+        //
+        // value is finite (a NaN or infinity drops the message, D-21) and is a
+        // float32 or an int32 converted to float, but it is otherwise UNBOUNDED:
+        // /doppler, /pitch and /speed are not clamped here, and the range of
+        // enabled/trajectory/direction/input depends on the consumer. Datagrams are
+        // unauthenticated, so range-limit the value before using it (and never feed
+        // it to a loop whose length depends on its size).
         virtual void admObjectParamReceived (int /*objectIndex*/, const juce::String& /*paramName*/,
                                              float /*value*/) {}
 
         // Global param (/osd/global/<property>). propertyName is the raw OSC
         // property name (e.g. "delaytime", "drywet") -- the consumer maps
-        // this to its own parameter ID scheme.
+        // this to its own parameter ID scheme. value is finite but otherwise
+        // unbounded; range-limit it before use (see admObjectParamReceived).
         virtual void admGlobalParamReceived (const juce::String& /*propertyName*/, float /*value*/) {}
 
         // A device sent /adm/obj/N/ or /osd/obj/N/ azim|elev|dist|aed|xyz with no
