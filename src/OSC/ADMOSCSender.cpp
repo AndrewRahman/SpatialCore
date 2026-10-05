@@ -161,6 +161,14 @@ void ADMOSCSender::tick(const float* azimuthsDeg, const float* elevationsDeg,
         if (! enabled[i])
             continue;
 
+        // A non-finite position is never sent and never becomes the dead-band
+        // reference: a NaN reference makes every later comparison false, which
+        // would silence the object until it is re-enabled (WR-01). The previous
+        // reference and forceSend_ are kept, so the next finite position sends.
+        if (! std::isfinite(azimuthsDeg[i]) || ! std::isfinite(elevationsDeg[i])
+            || ! std::isfinite(distances[i]))
+            continue;
+
         // First position, connect and re-enable always send; afterwards only a
         // change beyond the dead-band does.
         const float dAz   = std::abs(azimuthsDeg[i]   - prevAz[i]);

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -491,6 +492,46 @@ TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degre
     sender.tick (&az, &el, &dist, &enabled, 1, 2.0 / 30.0);   // greater
     REQUIRE (capture.waitUntilQuiet() == 2);
     CHECK_THAT (capture.last().args[0], WithinAbs (0.2f, 1.0e-6f));
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: a non-finite position is never sent and does not silence the object (WR-01)",
+           "[osc][send][deadband][nan]")
+{
+    constexpr int port = 9757;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    const bool enabled = true;
+    float az = 10.0f, el = 0.0f, dist = 0.5f;
+    sender.tick (&az, &el, &dist, &enabled, 1, 0.0);           // first send
+    REQUIRE (capture.waitUntilQuiet() == 1);
+
+    // One NaN frame on each axis in turn, then +-infinity: nothing reaches the wire.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    float badAz = nan, badEl = nan, badDist = nan;
+    sender.tick (&badAz, &el, &dist, &enabled, 1, 1.0 / 30.0);
+    sender.tick (&az, &badEl, &dist, &enabled, 1, 2.0 / 30.0);
+    sender.tick (&az, &el, &badDist, &enabled, 1, 3.0 / 30.0);
+    badAz = inf; badEl = -inf;
+    sender.tick (&badAz, &el, &dist, &enabled, 1, 4.0 / 30.0);
+    sender.tick (&az, &badEl, &dist, &enabled, 1, 5.0 / 30.0);
+    CHECK (capture.waitUntilQuiet() == 1);
+
+    // The next finite, moved position is sent: the dead-band reference was not poisoned.
+    az = 25.0f;
+    sender.tick (&az, &el, &dist, &enabled, 1, 6.0 / 30.0);
+    REQUIRE (capture.waitUntilQuiet() == 2);
+    CHECK_THAT (capture.last().args[0], WithinAbs (25.0f, 1.0e-6f));
 
     receiver.removeListener (&capture);
     sender.disconnect();
