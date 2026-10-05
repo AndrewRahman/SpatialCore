@@ -53,7 +53,9 @@ void ADMOSCSender::queueReply(int objectIndex, ADMPositionQuery kind,
 
 void ADMOSCSender::flushReplies()
 {
-    static constexpr const char* kPropertyNames[kNumQueryKinds] = { "azim", "elev", "dist", "aed", "xyz" };
+    static constexpr const char* kPropertyNames[] = { "azim", "elev", "dist", "aed", "xyz" };
+    static_assert (sizeof (kPropertyNames) / sizeof (kPropertyNames[0]) == kNumQueryKinds,
+                   "kPropertyNames must have one entry per ADMPositionQuery (IN-02)");
     static constexpr float kPi = 3.14159265358979323846f;
 
     // Object order, then kind order, so a burst of replies is deterministic.

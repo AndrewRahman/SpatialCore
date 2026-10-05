@@ -76,6 +76,9 @@ private:
         float a = 0.0f, b = 0.0f, c = 0.0f;
     };
     static constexpr int kNumQueryKinds = 5;
+    // IN-02: the reply table is indexed by ADMPositionQuery, so a new enumerator must grow it.
+    static_assert (static_cast<int> (ADMPositionQuery::xyz) + 1 == kNumQueryKinds,
+                   "ADMPositionQuery changed: update kNumQueryKinds, kPropertyNames and flushReplies");
     PendingReply pendingReply_[MAX_SOURCES][kNumQueryKinds] = {};
 
     void flushReplies();
