@@ -5,9 +5,11 @@
 #include "../Binaural/BinauralTestUtilities.h"
 #include "../TestNumerics.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <vector>
 
 using namespace spatialcore;
@@ -1549,4 +1551,136 @@ TEST_CASE ("RenderEngine: a speaker index on the Stereo format renders as Equal 
         engine.renderBlock (sources, ctx, outPtrs, 2);
     CHECK_THAT (sc18Rms (outL), WithinAbs (0.5 * 0.7, 1.0e-5));
     CHECK_THAT (sc18Rms (outR), WithinAbs (0.5 * 0.3, 1.0e-5));
+}
+
+// ----------------------------------------------------------------------------
+// SC-17 / SpatialCore#24 ("A+"): getBlockLayout() is the render-thread view of
+// the layout, and the writer-view accessors count misuse from the render thread.
+// ----------------------------------------------------------------------------
+TEST_CASE ("RenderEngine: getBlockLayout follows the layout the last block rendered, never a newer one (SC-17)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    // Fresh engine: the reader's initial slot, the default Binaural layout.
+    CHECK (engine.getBlockLayout().format == OutputFormat::Binaural);
+
+    // A switch before any render does not move the render-thread view: only
+    // renderBlock() acquires.
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Binaural);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+    Sc16Output out;
+
+    out.clear();
+    engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround7_1_4);
+
+    // Two more switches without a render leave the view where the last block put it.
+    engine.setOutputFormat (OutputFormat::Quad);
+    engine.setOutputFormat (OutputFormat::Surround5_1);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround7_1_4);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround7_1_4);   // asking twice never acquires
+
+    out.clear();
+    engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround5_1);
+    CHECK (engine.getBlockLayout().layout.numSpeakers == engine.getActiveLayout().layout.numSpeakers);
+}
+
+TEST_CASE ("RenderEngine: a single thread that writes and renders is never counted as writer-view misuse (SC-17)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+    Sc16Output out;
+
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    out.clear();
+    engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+
+    CHECK (engine.getActiveOutputFormat() == OutputFormat::Surround7_1_4);
+    CHECK (engine.getActiveLayout().format == OutputFormat::Surround7_1_4);
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 0);
+}
+
+TEST_CASE ("RenderEngine: the writer view called from the render thread is counted (SC-17)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+
+    // This thread is the writer.
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 0);
+
+    // A different thread renders, then (wrongly) reads the writer view once.
+    // Debug builds also jassert here; JUCE logs and only breaks under a debugger.
+    std::thread renderThread ([&]
+    {
+        Sc16Output out;
+        out.clear();
+        engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+        (void) engine.getActiveLayout();
+    });
+    renderThread.join();
+
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 1);
+
+    // The writer thread reading its own view is still not counted.
+    (void) engine.getActiveOutputFormat();
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 1);
+}
+
+TEST_CASE ("RenderEngine: a render thread always sees one of the formats a writer toggles between (SC-17 smoke)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+
+    std::atomic<bool> writerDone { false };
+    std::atomic<int> unexpected { 0 };
+    std::atomic<int> blocks { 0 };
+
+    std::thread renderThread ([&]
+    {
+        Sc16Output out;
+        while (! writerDone.load (std::memory_order_acquire))
+        {
+            out.clear();
+            engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+            const auto f = engine.getBlockLayout().format;
+            if (f != OutputFormat::Surround7_1_4 && f != OutputFormat::Binaural
+                && f != OutputFormat::AmbisonicsHOA)
+                unexpected.fetch_add (1);
+            blocks.fetch_add (1);
+        }
+    });
+
+    const OutputFormat formats[3] = { OutputFormat::Surround7_1_4, OutputFormat::Binaural,
+                                      OutputFormat::AmbisonicsHOA };
+    for (int i = 0; i < 2000; ++i)
+        engine.setOutputFormat (formats[i % 3]);
+    writerDone.store (true, std::memory_order_release);
+    renderThread.join();
+
+    CHECK (unexpected.load() == 0);
+    CHECK (blocks.load() > 0);
 }

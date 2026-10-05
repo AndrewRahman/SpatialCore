@@ -122,7 +122,13 @@ public:
 > layout snapshot it renders, so a format switch landing mid-block cannot tear them
 > apart (SC-16). Call `setOutputFormat()` from the message thread only, and treat
 > `getActiveLayout()` / `getActiveOutputFormat()` as the writer-thread view, not for the
-> audio thread.
+> audio thread: a call from the render thread while another thread is the writer is
+> counted (`getWriterViewOnRenderThreadCount()`) and asserts in debug builds. Audio-thread
+> code that needs the layout (for example to choose an output channel map) calls
+> `engine.getBlockLayout()` after `renderBlock()` (SC-17): it returns the snapshot that
+> block rendered with and never acquires a newer one. **Migration:** a consumer that calls
+> `getActiveLayout()` from `processBlock()` (OpenSpatialDelay does) must switch to
+> `getBlockLayout()` before bumping its SpatialCore pin past `ab60c25`.
 > Choose the speaker algorithm with `engine.setAlgorithmIndex (kAlgorithmIndex...)` (SC-18),
 > from any non-audio thread: the index map is OpenSpatialDelay's 12-entry saved-preset map
 > (0 Ambisonics, 1 Constant Power, 2 DBAP, 3 KNN, 4 MDAP, 5 VBAP, 6 VBIP, 7..11 the stereo

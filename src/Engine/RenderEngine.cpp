@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <thread>
+#include <functional>
 #include <type_traits>
 
 namespace spatialcore
@@ -289,6 +291,10 @@ private:
 
 RenderEngine::RenderEngine()
 {
+    // SC-17: before the first renderBlock() the render-thread view is the
+    // reader's initial slot (the default Binaural layout).
+    blockLayout_ = &layoutBuffers[static_cast<size_t> (layoutSlots_.readSlot())];
+
     resetLastGoodPositions();
 
     // SC-18: D-09 index order 0..6 (see kAlgorithmIndex* in RenderEngine.h).
@@ -715,6 +721,11 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // below, so a message-thread format switch landing mid-block cannot pair
     // one format's dispatch with another format's layout.
     const LayoutState& layout = acquireBlockLayout();
+    // SC-17: remember the snapshot this block renders with (getBlockLayout()) and
+    // which thread is rendering (the writer-view misuse guard). Relaxed stores of
+    // a pointer and a lock-free atomic: nothing here allocates, locks or logs.
+    blockLayout_ = &layout;
+    renderThreadHash_.store (currentThreadHash(), std::memory_order_relaxed);
 
     // SC-13 / SC-16: when the consumer opts in to either, work on a scratch
     // copy of the context (an assignment into an existing member, no
@@ -1518,6 +1529,9 @@ void RenderEngine::setOutputFormat (OutputFormat format)
     const bool overlapped = inSetOutputFormat_.exchange (true, std::memory_order_acquire);
     jassert (! overlapped);
 
+    // SC-17: remember which thread is the writer (the writer-view misuse guard).
+    writerThreadHash_.store (currentThreadHash(), std::memory_order_relaxed);
+
     activateLayout (format);
 
     // On overlap the other writer's call is still in flight and owns the flag.
@@ -1532,9 +1546,39 @@ OutputFormat RenderEngine::getActiveOutputFormat() const
 
 const RenderEngine::LayoutState& RenderEngine::getActiveLayout() const
 {
-    // Writer-thread view: the slot most recently published. Never reached from
-    // the audio thread.
+    // SC-17: the caller is a known render thread and not the known writer ->
+    // writer-view misuse. Count it (every build) and assert (debug). A harness
+    // whose one thread both writes and renders is never flagged, and nothing is
+    // flagged until both threads have been seen.
+    const std::size_t me = currentThreadHash();
+    const std::size_t renderer = renderThreadHash_.load (std::memory_order_relaxed);
+    const std::size_t writer = writerThreadHash_.load (std::memory_order_relaxed);
+    if (renderer != 0 && me == renderer && writer != 0 && me != writer)
+    {
+        writerViewOnRenderThreadCount_.fetch_add (1, std::memory_order_relaxed);
+        jassertfalse;
+    }
+
+    // Writer-thread view: the slot most recently published. Audio-thread code
+    // uses getBlockLayout().
     return layoutBuffers[static_cast<size_t> (layoutSlots_.lastPublishedSlot())];
+}
+
+const RenderEngine::LayoutState& RenderEngine::getBlockLayout() const noexcept
+{
+    // The stored snapshot and nothing else, no new snapshot is taken (SC-17).
+    return *blockLayout_;
+}
+
+int RenderEngine::getWriterViewOnRenderThreadCount() const noexcept
+{
+    return writerViewOnRenderThreadCount_.load (std::memory_order_relaxed);
+}
+
+std::size_t RenderEngine::currentThreadHash() noexcept
+{
+    const std::size_t h = std::hash<std::thread::id> {} (std::this_thread::get_id());
+    return h != 0 ? h : 1;
 }
 
 const RenderEngine::LayoutState& RenderEngine::acquireBlockLayout()

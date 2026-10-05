@@ -329,7 +329,10 @@ public:
     //
     // getActiveOutputFormat() / getActiveLayout() are the WRITER-thread view:
     // the most recently published layout, callable only from the thread that
-    // calls setOutputFormat(), never from the audio thread.
+    // calls setOutputFormat(). A call made on the render thread while a
+    // different thread is the writer is counted (getWriterViewOnRenderThreadCount())
+    // and asserts in debug builds (SC-17). Audio-thread code reads the layout
+    // through getBlockLayout() after renderBlock().
     //--------------------------------------------------------------------------
     void setOutputFormat (OutputFormat format);
     OutputFormat getActiveOutputFormat() const;
@@ -372,8 +375,32 @@ public:
     // Writer-thread view: the most recently published layout, callable only
     // from the thread that calls setOutputFormat(). Not a per-block snapshot —
     // the audio thread obtains its layout once per block inside renderBlock()
-    // (SC-16) and must never use this accessor.
+    // (SC-16) and must never use this accessor: a call from the render thread
+    // while a different thread is the writer is counted and, in debug builds,
+    // asserts (SC-17). Use getBlockLayout() on the audio thread.
     const LayoutState& getActiveLayout() const;
+
+    //--------------------------------------------------------------------------
+    // SC-17 / SpatialCore#24 ("A+"): the RENDER-thread view of the layout.
+    //
+    // Returns the layout snapshot the most recent renderBlock() acquired and
+    // rendered with. It never acquires: a second acquire could hand back a slot
+    // newer than the one the block used, and a consumer that chose a channel
+    // map from it would pair one format's samples with another format's map.
+    // Valid on the render thread until that thread's next renderBlock(). Before
+    // the first renderBlock() it is the reader's initial slot (the default
+    // Binaural layout). Call it AFTER renderBlock() to learn what the block
+    // rendered.
+    //
+    // Wait-free: one pointer load, no allocation, no lock.
+    //--------------------------------------------------------------------------
+    const LayoutState& getBlockLayout() const noexcept;
+
+    // Diagnostic for tests: how many times getActiveLayout() /
+    // getActiveOutputFormat() was called on the render thread while a different
+    // thread was the writer. 0 for a single-threaded harness that both writes
+    // and renders.
+    int getWriterViewOnRenderThreadCount() const noexcept;
 
     //--------------------------------------------------------------------------
     // Escape hatches (D-02 — leaf classes stay public). Consumers that need
@@ -685,6 +712,23 @@ private:
     // trips a jassert. Present in every build type (never #if'd) so the class
     // layout does not depend on the consumer's JUCE_DEBUG setting.
     std::atomic<bool> inSetOutputFormat_ { false };
+
+    // SC-17: render-thread view and writer-view misuse guard. Present in every
+    // build type (never #if'd), like inSetOutputFormat_, so the class layout does
+    // not depend on JUCE_DEBUG. blockLayout_ is touched by the render thread only
+    // (set by renderBlock(), read by getBlockLayout()); the thread hashes are
+    // relaxed bookkeeping, 0 meaning "not seen yet".
+    const LayoutState* blockLayout_ = nullptr;   // set in the constructor
+    std::atomic<std::size_t> renderThreadHash_ { 0 };
+    std::atomic<std::size_t> writerThreadHash_ { 0 };
+    mutable std::atomic<int> writerViewOnRenderThreadCount_ { 0 };
+    // A non-lock-free atomic would put a lock on the audio thread.
+    static_assert (std::atomic<std::size_t>::is_always_lock_free,
+                   "RenderEngine thread bookkeeping requires lock-free std::atomic<size_t>");
+    static_assert (std::atomic<int>::is_always_lock_free,
+                   "RenderEngine thread bookkeeping requires lock-free std::atomic<int>");
+    // Never 0 (0 means unknown).
+    static std::size_t currentThreadHash() noexcept;
 
     // --- SC-13: engine-owned gain computation state ---
     // Algorithms are stateless per the project convention, so a plain member
