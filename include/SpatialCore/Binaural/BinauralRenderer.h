@@ -35,12 +35,20 @@ public:
 
     /** Update a single source's HRIR based on its current 3D position.
         Realtime-safe: KD-tree lookup + in-place FFT, no allocation.
-        Called from processBlock at block boundaries when position changes. */
+        Called from processBlock at block boundaries when position changes.
+        If the scratch buffers are smaller than the loaded IR (a prepare-contract violation,
+        see getScratchTooSmallCount()) the call returns without touching anything: the source
+        keeps its previous HRIR and the next call retries. It never grows a buffer. */
     void updateSourceHRIR (int sourceIndex, float azRad, float elRad);
 
     /** Render per-source accumulation buffers through HRTF convolvers.
         sourceBufs: [numSources][numSamples], outL/outR: [numSamples]
-        Only enabled sources are convolved. */
+        Only enabled sources are convolved. outL/outR are zeroed first. If numSamples is larger
+        than the scratch buffers (a block longer than prepare() was given, see
+        getScratchTooSmallCount()) the call leaves that zeroed output and advances no convolver,
+        ITD line or shelf state, so the renderer's next normal block is unaffected; it never
+        grows a buffer. A caller with a longer block should render it in pieces. A zero or
+        negative numSamples returns at once. */
     void renderSourceBuffers (const float* const* sourceBufs,
                               const bool* sourceEnabled,
                               int numSources, int numSamples,
@@ -108,6 +116,12 @@ private:
     // Counted by the scratch-too-small guards (see getScratchTooSmallCount()). Relaxed and
     // lock-free, so any thread may read it.
     std::atomic<int> scratchTooSmallCount_ { 0 };
+
+    /** The one guard behind both audio-thread entry points (D-03, D-04, RTSF-01). True when both
+        scratch buffers hold at least `needed` floats. Otherwise it counts the miss in
+        scratchTooSmallCount_, asserts (Debug only) and returns false, and the caller skips its
+        work. It never resizes, in any build type. */
+    bool scratchFits (size_t needed) noexcept;
 
     /** Grows convTmpL/convTmpR to max (currentBlockSize, 512, storedIRLength). Called from
         prepare() and setProfile() only (message or loader thread). Grow-only. */
