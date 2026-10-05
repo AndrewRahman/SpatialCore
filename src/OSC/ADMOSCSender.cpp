@@ -24,6 +24,73 @@ void ADMOSCSender::disconnect()
     sender.disconnect();
     connected = false;
     scheduleArmed_ = false;
+
+    // A reply queued for the old connection must not leak into the next one.
+    for (auto& perObject : pendingReply_)
+        for (auto& r : perObject)
+            r.pending = false;
+}
+
+void ADMOSCSender::queueReply(int objectIndex, ADMPositionQuery kind,
+                              float azimuthDeg, float elevationDeg, float distance)
+{
+    const int k = static_cast<int>(kind);
+    if (! connected || objectIndex < 0 || objectIndex >= MAX_SOURCES
+        || k < 0 || k >= kNumQueryKinds)
+        return;
+
+    if (! std::isfinite(azimuthDeg) || ! std::isfinite(elevationDeg) || ! std::isfinite(distance))
+        return;
+
+    // Latest wins: the same (object, kind) overwrites, so N queries make one reply.
+    auto& r = pendingReply_[objectIndex][k];
+    r.pending = true;
+    r.a = azimuthDeg;
+    r.b = elevationDeg;
+    r.c = distance;
+}
+
+void ADMOSCSender::flushReplies()
+{
+    static constexpr const char* kPropertyNames[kNumQueryKinds] = { "azim", "elev", "dist", "aed", "xyz" };
+    static constexpr float kPi = 3.14159265358979323846f;
+
+    // Object order, then kind order, so a burst of replies is deterministic.
+    for (int obj = 0; obj < MAX_SOURCES; ++obj)
+    {
+        for (int k = 0; k < kNumQueryKinds; ++k)
+        {
+            auto& r = pendingReply_[obj][k];
+            if (! r.pending)
+                continue;
+            r.pending = false;
+
+            juce::OSCMessage msg("/adm/obj/" + juce::String(obj + 1) + "/" + kPropertyNames[k]);
+            switch (static_cast<ADMPositionQuery>(k))
+            {
+                case ADMPositionQuery::azim: msg.addFloat32(r.a); break;
+                case ADMPositionQuery::elev: msg.addFloat32(r.b); break;
+                case ADMPositionQuery::dist: msg.addFloat32(r.c); break;
+                case ADMPositionQuery::aed:
+                    msg.addFloat32(r.a);
+                    msg.addFloat32(r.b);
+                    msg.addFloat32(r.c);
+                    break;
+                case ADMPositionQuery::xyz:
+                {
+                    // Inverse of the receiver's conversion (ITU-R BS.2127-0):
+                    // x = -d cos(el) sin(az), y = d cos(el) cos(az), z = d sin(el).
+                    const float az = r.a * (kPi / 180.0f);
+                    const float el = r.b * (kPi / 180.0f);
+                    msg.addFloat32(-r.c * std::cos(el) * std::sin(az));
+                    msg.addFloat32( r.c * std::cos(el) * std::cos(az));
+                    msg.addFloat32( r.c * std::sin(el));
+                    break;
+                }
+            }
+            sender.send(msg);
+        }
+    }
 }
 
 void ADMOSCSender::sendPosition(int objectIndex, float azimuthDeg,
@@ -110,6 +177,10 @@ void ADMOSCSender::tick(const float* azimuthsDeg, const float* elevationsDeg,
             forceSend_[(size_t) i] = false;
         }
     }
+
+    // Query replies leave on the slot, after the position sends. They never touch
+    // prevAz/prevEl/prevDist or forceSend_, so the dead-band is unaffected.
+    flushReplies();
 }
 
 } // namespace spatialcore

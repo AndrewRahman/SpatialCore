@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SpatialCore/Core/Types.h>
+#include <SpatialCore/OSC/ADMOSCReceiver.h>
 #include <juce_osc/juce_osc.h>
 #include <array>
 
@@ -38,6 +39,23 @@ public:
               const float* distances, const bool* enabled, int numObjects,
               double nowSeconds);
 
+    /** Message thread only. Answers a position query (D-08a): the consumer calls this from
+        ADMOSCReceiver::Listener::admPositionQueried with the object's current position.
+
+        The reply mirrors the query (azim, elev and dist carry one float32, aed carries
+        azimuth, elevation, distance, xyz carries the cartesian form of the same position),
+        and is flushed on the next 30 Hz slot of tick(). One reply is pending per
+        (object, kind) and the latest call wins, so a flood of queries produces one reply.
+        Ignored while disconnected, for an out-of-range index, or for a non-finite value.
+        A reply does not change the dead-band state of the position sends.
+
+        The reply goes to this sender's configured host and port, NOT to the address the
+        query came from. This is a stated deviation from the ADM-OSC text, because
+        juce::OSCReceiver does not expose a packet's source address, and it means a
+        spoofed query cannot reflect traffic at a third party (D-20). */
+    void queueReply (int objectIndex, ADMPositionQuery kind,
+                     float azimuthDeg, float elevationDeg, float distance);
+
 private:
     // True when this call is a send slot; arms and advances the schedule.
     bool consumeSendSlot (double nowSeconds);
@@ -50,6 +68,17 @@ private:
     double nextSendDue_    = 0.0;
     bool   scheduleArmed_  = false;
     std::array<bool, MAX_SOURCES> forceSend_ {};
+
+    // One pending query reply per (object, kind); a fixed table, no allocation.
+    struct PendingReply
+    {
+        bool  pending = false;
+        float a = 0.0f, b = 0.0f, c = 0.0f;
+    };
+    static constexpr int kNumQueryKinds = 5;
+    PendingReply pendingReply_[MAX_SOURCES][kNumQueryKinds] = {};
+
+    void flushReplies();
 
     float prevAz[MAX_SOURCES]   = {};
     float prevEl[MAX_SOURCES]   = {};

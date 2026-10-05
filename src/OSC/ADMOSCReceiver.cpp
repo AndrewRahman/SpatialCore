@@ -46,6 +46,23 @@ void ADMOSCReceiver::oscMessageReceived (const juce::OSCMessage& message)
 
         auto property = afterObj.substring (slashIdx);
 
+        // --- Queries: a position property with no arguments asks for the current
+        // value (ADM-OSC, D-08a). Any other property with no arguments is ignored.
+        // Both prefixes share this branch, so /osd/obj/N/ aliases are queries too.
+        if (message.size() == 0)
+        {
+            ADMPositionQuery kind;
+            if      (property == "/azim") kind = ADMPositionQuery::azim;
+            else if (property == "/elev") kind = ADMPositionQuery::elev;
+            else if (property == "/dist") kind = ADMPositionQuery::dist;
+            else if (property == "/aed")  kind = ADMPositionQuery::aed;
+            else if (property == "/xyz")  kind = ADMPositionQuery::xyz;
+            else return;
+
+            listeners.call ([objIdx, kind] (Listener& l) { l.admPositionQueried (objIdx, kind); });
+            return;
+        }
+
         // --- Position messages (accepted on both /adm/ and /osd/) ---
         // NOTE: the pre-move OSD handler read the OTHER two axes from cached
         // APVTS state so a single-axis message (e.g. /azim) could report a

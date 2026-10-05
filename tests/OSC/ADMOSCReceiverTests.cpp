@@ -1,7 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
+#include <SpatialCore/OSC/ADMOSCSender.h>
+#include <chrono>
 #include <cmath>
+#include <thread>
+#include <vector>
 
 using namespace spatialcore;
 using Catch::Matchers::WithinAbs;
@@ -325,4 +329,162 @@ TEST_CASE ("ADMOSCReceiver: removeListener stops further dispatch", "[osc][edge]
     sendOSC (*receiver, "/adm/obj/1/azim", { 20.0f });
 
     CHECK (listener.positionCallCount == 1);  // unchanged -- no further dispatch
+}
+
+
+// ============================================================================
+// Position queries (Phase 4 Plan 04-03, D-08a, D-20). A message with no
+// arguments to a position property is a query: the receiver reports it to the
+// Listener, the consumer answers through ADMOSCSender::queueReply, and the
+// reply leaves on the sender's next 30 Hz slot to its configured destination.
+// ============================================================================
+
+namespace
+{
+    // Thread-safe capture of every message that reaches a loopback socket
+    // (copied from ADMOSCSenderTests.cpp, which keeps it file-local).
+    struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
+    {
+        struct Entry
+        {
+            juce::String address;
+            float args[3] = {};
+            int argCount = 0;
+        };
+
+        void oscMessageReceived (const juce::OSCMessage& message) override
+        {
+            Entry e;
+            e.address  = message.getAddressPattern().toString();
+            e.argCount = message.size();
+            for (int i = 0; i < message.size() && i < 3; ++i)
+                e.args[i] = message[i].getFloat32();
+
+            const juce::ScopedLock sl (lock);
+            entries.push_back (e);
+        }
+
+        int count() const
+        {
+            const juce::ScopedLock sl (lock);
+            return (int) entries.size();
+        }
+
+        Entry at (int i) const
+        {
+            const juce::ScopedLock sl (lock);
+            return i >= 0 && i < (int) entries.size() ? entries[(size_t) i] : Entry {};
+        }
+
+        // Polls until the count has not changed for quietMs, then returns it.
+        int waitUntilQuiet (int quietMs = 60, int timeoutMs = 3000) const
+        {
+            const auto deadline = std::chrono::steady_clock::now()
+                                + std::chrono::milliseconds (timeoutMs);
+            int seen = count();
+            auto lastChange = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                std::this_thread::sleep_for (std::chrono::milliseconds (5));
+                const int now = count();
+                if (now != seen)
+                {
+                    seen = now;
+                    lastChange = std::chrono::steady_clock::now();
+                }
+                else if (std::chrono::steady_clock::now() - lastChange
+                         >= std::chrono::milliseconds (quietMs))
+                {
+                    break;
+                }
+            }
+            return count();
+        }
+
+        mutable juce::CriticalSection lock;
+        std::vector<Entry> entries;
+    };
+
+    // The consumer's side of the contract: it owns the current position of every
+    // object and answers a query from that state. The receiver stores nothing (DR-16).
+    struct QueryGlue : public ADMOSCReceiver::Listener
+    {
+        explicit QueryGlue (ADMOSCSender& s) : sender (s) {}
+
+        void admPositionReceived (int, float, float, float) override {}
+
+        void admPositionQueried (int objectIndex, ADMPositionQuery kind) override
+        {
+            ++queriesSeen;
+            if (objectIndex >= 0 && objectIndex < (int) MAX_SOURCES)
+                sender.queueReply (objectIndex, kind, az[objectIndex], el[objectIndex], dist[objectIndex]);
+        }
+
+        ADMOSCSender& sender;
+        float az[MAX_SOURCES] = {};
+        float el[MAX_SOURCES] = {};
+        float dist[MAX_SOURCES] = {};
+        int queriesSeen = 0;
+    };
+
+    void pumpUntilCount (const int& counter, int expected)
+    {
+        for (int i = 0; i < 40 && counter < expected; ++i)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+    }
+}
+
+TEST_CASE ("ADM-OSC query: /adm/obj/4/xyz with no arguments over UDP is answered at the configured destination",
+           "[osc][query][udp][tracer]")
+{
+    // Same rule as the route tracer: the GUI initialiser comes first and goes out of
+    // scope last, or MessageLoopCallback delivery crashes in this console executable.
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
+    // The device's return port, standing in for wherever the sender is configured to send.
+    juce::OSCReceiver deviceReturn;
+    RecordingCapture capture;
+    REQUIRE (deviceReturn.connect (9751));
+    deviceReturn.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", 9751));
+
+    QueryGlue glue (sender);
+    glue.az[3] = 90.0f;   // address /adm/obj/4/ is object index 3
+    glue.el[3] = 0.0f;
+    glue.dist[3] = 0.5f;
+
+    ADMOSCReceiver rx;
+    rx.addListener (&glue);
+    REQUIRE (rx.connect (9750));
+
+    // The late-joining device: a plain OSC sender, no arguments.
+    juce::OSCSender device;
+    REQUIRE (device.connect ("127.0.0.1", 9750));
+    REQUIRE (device.send (juce::OSCMessage { juce::OSCAddressPattern { "/adm/obj/4/xyz" } }));
+
+    pumpUntilCount (glue.queriesSeen, 1);
+    REQUIRE (glue.queriesSeen == 1);
+
+    // Every object disabled: no position traffic, only the reply. The first call
+    // after connect() is a send slot.
+    const float azs[MAX_SOURCES] = {}, els[MAX_SOURCES] = {}, dists[MAX_SOURCES] = {};
+    const bool enabled[MAX_SOURCES] = {};
+    sender.tick (azs, els, dists, enabled, (int) MAX_SOURCES, 0.0);
+
+    REQUIRE (capture.waitUntilQuiet() == 1);
+    const auto reply = capture.at (0);
+    CHECK (reply.address == "/adm/obj/4/xyz");
+    REQUIRE (reply.argCount == 3);
+    CHECK_THAT (reply.args[0], WithinAbs (-0.5f, 1.0e-4f));
+    CHECK_THAT (reply.args[1], WithinAbs (0.0f, 1.0e-4f));
+    CHECK_THAT (reply.args[2], WithinAbs (0.0f, 1.0e-4f));
+
+    device.disconnect();
+    rx.disconnect();
+    rx.removeListener (&glue);
+    deviceReturn.removeListener (&capture);
+    sender.disconnect();
+    deviceReturn.disconnect();
 }

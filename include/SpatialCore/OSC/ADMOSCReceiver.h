@@ -6,6 +6,12 @@
 namespace spatialcore
 {
 
+// Which position property a query asked for. ADM-OSC rule: a message with no
+// arguments sent to a position address is a query for the current value, and the
+// receiver of the query answers with the same address carrying that value
+// (Phase 4, D-08a). Reported through Listener::admPositionQueried.
+enum class ADMPositionQuery { azim, elev, dist, aed, xyz };
+
 // ADMOSCReceiver -- ADM-OSC + OSD-custom message parsing, decoupled from
 // juce::AudioProcessor (Phase 8 Plan 08-05, CORE-05). Structural change only:
 // this class OWNS a juce::OSCReceiver and implements
@@ -49,6 +55,14 @@ public:
         // property name (e.g. "delaytime", "drywet") -- the consumer maps
         // this to its own parameter ID scheme.
         virtual void admGlobalParamReceived (const juce::String& propertyName, float value) {}
+
+        // A device sent /adm/obj/N/ or /osd/obj/N/ azim|elev|dist|aed|xyz with no
+        // arguments: it asks for the object's current position. Message thread.
+        // objectIndex is 0-based. The consumer answers from its own state with
+        // ADMOSCSender::queueReply; this class stores no position and holds no
+        // processor pointer (DR-16, D-08). Defaulted, so existing consumers compile
+        // and simply never answer.
+        virtual void admPositionQueried (int /*objectIndex*/, ADMPositionQuery /*kind*/) {}
     };
 
     ADMOSCReceiver() { juce::OSCReceiver::addListener (this); }
