@@ -2,6 +2,7 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <juce_osc/juce_osc.h>
+#include "../Support/FreeUdpPort.h"
 #include "../Support/RouteRenderRig.h"
 #include <cmath>
 
@@ -87,11 +88,13 @@ TEST_CASE ("OSC route: an external ADM-OSC sender over UDP moves a rendered obje
     OscToRigGlue glue (rig);
     ADMOSCReceiver rx;
     rx.addListener (&glue);
-    REQUIRE (rx.connect (9720));
+    const int port = spatialcore::test::findFreeUdpPort();   // WR-06: no fixed port to collide on
+    REQUIRE (port > 0);
+    REQUIRE (rx.connect (port));
 
     // The external device: a plain OSC sender, not a SpatialCore class.
     juce::OSCSender desk;
-    REQUIRE (desk.connect ("127.0.0.1", 9720));
+    REQUIRE (desk.connect ("127.0.0.1", port));
 
     REQUIRE (desk.send (floats ("/adm/obj/1/aed", { 90.0f, 0.0f, 0.5f })));
     pumpUntil (glue.positionsReceived, 1);

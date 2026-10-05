@@ -5,7 +5,7 @@
 //                                         after-drag.png, prints the report, exits 0 or 1
 //   SpatialCoreDemo --selftest            no window, no audio device: drives the OSC, query,
 //                                         trajectory and map routes through RenderEngine on
-//                                         loopback ports 9790 and 9791, exits 0 on PASS, else 1
+//                                         a pair of free loopback ports chosen by the OS, exits 0 on PASS, else 1
 //   SpatialCoreDemo [--osc-in <port>] [--osc-out <port>]
 //                                         interactive: a window with the map, the default audio
 //                                         device, ADM-OSC in on 4002 and out to 127.0.0.1:4003

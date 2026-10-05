@@ -3,6 +3,8 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
 #include <SpatialCore/OSC/ADMOSCSender.h>
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
+#include "../Support/FreeUdpPort.h"
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <thread>
@@ -363,10 +365,22 @@ namespace
             int argCount = 0;
         };
 
+        explicit RecordingCapture (int port)
+        {
+            markerSender.connect ("127.0.0.1", port);
+        }
+
         void oscMessageReceived (const juce::OSCMessage& message) override
         {
+            const auto address = message.getAddressPattern().toString();
+            if (address == kMarkerAddress)
+            {
+                ++markersSeen;
+                return;
+            }
+
             Entry e;
-            e.address  = message.getAddressPattern().toString();
+            e.address  = address;
             e.argCount = message.size();
             for (int i = 0; i < message.size() && i < 3; ++i)
                 e.args[i] = message[i].getFloat32();
@@ -387,33 +401,30 @@ namespace
             return i >= 0 && i < (int) entries.size() ? entries[(size_t) i] : Entry {};
         }
 
-        // Polls until the count has not changed for quietMs, then returns it.
-        int waitUntilQuiet (int quietMs = 60, int timeoutMs = 3000) const
+        // Waits until every datagram sent so far has been recorded, then returns the
+        // count (WR-06). A marker datagram goes to the same port from a second socket;
+        // loopback queues datagrams in send order and the receive thread reads them in
+        // order, so the marker's arrival means everything before it has been recorded.
+        // No quiet-period timer, so a slow machine cannot make the count come up short.
+        int settle (int timeoutMs = 5000)
         {
+            const int token = ++markersSent;
+            markerSender.send (juce::OSCMessage (juce::OSCAddressPattern (kMarkerAddress)));
+
             const auto deadline = std::chrono::steady_clock::now()
                                 + std::chrono::milliseconds (timeoutMs);
-            int seen = count();
-            auto lastChange = std::chrono::steady_clock::now();
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                std::this_thread::sleep_for (std::chrono::milliseconds (5));
-                const int now = count();
-                if (now != seen)
-                {
-                    seen = now;
-                    lastChange = std::chrono::steady_clock::now();
-                }
-                else if (std::chrono::steady_clock::now() - lastChange
-                         >= std::chrono::milliseconds (quietMs))
-                {
-                    break;
-                }
-            }
+            while (markersSeen.load() < token && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for (std::chrono::milliseconds (1));
             return count();
         }
 
+        static constexpr const char* kMarkerAddress = "/spatialcore-test/settle";
+
         mutable juce::CriticalSection lock;
         std::vector<Entry> entries;
+        juce::OSCSender markerSender;
+        std::atomic<int> markersSent { 0 };
+        std::atomic<int> markersSeen { 0 };
     };
 
     // The consumer's side of the contract: it owns the current position of every
@@ -453,13 +464,19 @@ TEST_CASE ("ADM-OSC query: /adm/obj/4/xyz with no arguments over UDP is answered
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     // The device's return port, standing in for wherever the sender is configured to send.
+    const int returnPort = test::findFreeUdpPort();
+    const int queryPort = test::findFreeUdpPort();
+    REQUIRE (returnPort > 0);
+    REQUIRE (queryPort > 0);
+    REQUIRE (returnPort != queryPort);
+
     juce::OSCReceiver deviceReturn;
-    RecordingCapture capture;
-    REQUIRE (deviceReturn.connect (9751));
+    RecordingCapture capture (returnPort);
+    REQUIRE (deviceReturn.connect (returnPort));
     deviceReturn.addListener (&capture);
 
     ADMOSCSender sender;
-    REQUIRE (sender.connect ("127.0.0.1", 9751));
+    REQUIRE (sender.connect ("127.0.0.1", returnPort));
 
     QueryGlue glue (sender);
     glue.az[3] = 90.0f;   // address /adm/obj/4/ is object index 3
@@ -468,11 +485,11 @@ TEST_CASE ("ADM-OSC query: /adm/obj/4/xyz with no arguments over UDP is answered
 
     ADMOSCReceiver rx;
     rx.addListener (&glue);
-    REQUIRE (rx.connect (9750));
+    REQUIRE (rx.connect (queryPort));
 
     // The late-joining device: a plain OSC sender, no arguments.
     juce::OSCSender device;
-    REQUIRE (device.connect ("127.0.0.1", 9750));
+    REQUIRE (device.connect ("127.0.0.1", queryPort));
     REQUIRE (device.send (juce::OSCMessage { juce::OSCAddressPattern { "/adm/obj/4/xyz" } }));
 
     pumpUntilCount (glue.queriesSeen, 1);
@@ -484,7 +501,7 @@ TEST_CASE ("ADM-OSC query: /adm/obj/4/xyz with no arguments over UDP is answered
     const bool enabled[MAX_SOURCES] = {};
     sender.tick (azs, els, dists, enabled, (int) MAX_SOURCES, 0.0);
 
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
     const auto reply = capture.at (0);
     CHECK (reply.address == "/adm/obj/4/xyz");
     REQUIRE (reply.argCount == 3);

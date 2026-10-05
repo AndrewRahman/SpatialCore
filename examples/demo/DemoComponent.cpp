@@ -6,6 +6,15 @@
 #include <cmath>
 #include <iostream>
 
+#if JUCE_WINDOWS
+ #include <winsock2.h>
+#else
+ #include <arpa/inet.h>
+ #include <netinet/in.h>
+ #include <sys/socket.h>
+ #include <unistd.h>
+#endif
+
 using namespace spatialcore;
 
 namespace
@@ -16,6 +25,49 @@ const char* const kShapeNames[] = { "None", "Bounce", "Circle", "Cross", "Figure
 constexpr int kNumShapes = (int) (sizeof (kShapeNames) / sizeof (kShapeNames[0]));
 constexpr int kOrbit = 9;
 constexpr int kControlsHeight = 40;
+
+// A UDP port the OS reports as free, for the self-test's loopback pair (so it never collides
+// with another run or another app on a fixed number). juce::DatagramSocket cannot bind port 0,
+// so this binds a plain socket to port 0, reads the assigned port and closes it. 0 on failure.
+int findFreeUdpPort()
+{
+   #if JUCE_WINDOWS
+    WSADATA wsa;
+    if (WSAStartup (MAKEWORD (2, 2), &wsa) != 0)
+        return 0;
+    const SOCKET s = ::socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
+        return 0;
+   #else
+    const int s = ::socket (AF_INET, SOCK_DGRAM, 0);
+    if (s < 0)
+        return 0;
+   #endif
+
+    sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0;
+    addr.sin_addr.s_addr = htonl (INADDR_ANY);
+
+    int port = 0;
+    if (::bind (s, reinterpret_cast<sockaddr*> (&addr), sizeof (addr)) == 0)
+    {
+       #if JUCE_WINDOWS
+        int len = (int) sizeof (addr);
+       #else
+        socklen_t len = sizeof (addr);
+       #endif
+        if (::getsockname (s, reinterpret_cast<sockaddr*> (&addr), &len) == 0)
+            port = (int) ntohs (addr.sin_port);
+    }
+
+   #if JUCE_WINDOWS
+    ::closesocket (s);
+   #else
+    ::close (s);
+   #endif
+    return port;
+}
 } // namespace
 
 //==============================================================================
@@ -550,12 +602,19 @@ void DemoComponent::runSelfTest (std::function<void (bool)> done)
     }
 
     rig_ = std::make_unique<SelfTestRig>();
-    const bool wired = startOsc (9790, 9791)
-                    && rig_->sender.connect ("127.0.0.1", 9790)
-                    && rig_->receiver.connect (9791);
+    const int inPort = findFreeUdpPort();
+    int outPort = findFreeUdpPort();
+    while (outPort == inPort && outPort != 0)
+        outPort = findFreeUdpPort();
+
+    const bool wired = inPort > 0 && outPort > 0
+                    && startOsc (inPort, outPort)
+                    && rig_->sender.connect ("127.0.0.1", inPort)
+                    && rig_->receiver.connect (outPort);
     if (! wired)
     {
-        selfTestReport ("osc", false, "could not open loopback ports 9790 and 9791");
+        selfTestReport ("osc", false, "could not open a loopback port pair (" + juce::String (inPort)
+                                          + " and " + juce::String (outPort) + ")");
         selfTestFinish();
         return;
     }

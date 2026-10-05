@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <SpatialCore/OSC/ADMOSCSender.h>
+#include "../Support/FreeUdpPort.h"
 #include <juce_osc/juce_osc.h>
 #include <atomic>
 #include <chrono>
@@ -25,45 +26,18 @@ using Catch::Matchers::WithinAbs;
 
 namespace
 {
-    // Distinct port per test case to avoid cross-test interference if a
-    // prior test's socket teardown races with the next test's bind.
-    constexpr int kTestSenderPort = 9700;
-
-    struct CapturingListener : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
-    {
-        std::atomic<int> messageCount { 0 };
-        juce::String lastAddress;
-        float lastArgs[3] = {};
-        int lastArgCount = 0;
-
-        void oscMessageReceived (const juce::OSCMessage& message) override
-        {
-            lastAddress = message.getAddressPattern().toString();
-            lastArgCount = message.size();
-            for (int i = 0; i < message.size() && i < 3; ++i)
-                lastArgs[i] = message[i].getFloat32();
-            ++messageCount;
-        }
-    };
-
-    // Poll briefly for the loopback message to arrive -- network delivery,
-    // even on localhost, is asynchronous relative to the sending thread.
-    bool waitForMessage (std::atomic<int>& counter, int expectedCount,
-                         int timeoutMs = 2000)
-    {
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds (timeoutMs);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (counter.load() >= expectedCount)
-                return true;
-            std::this_thread::sleep_for (std::chrono::milliseconds (5));
-        }
-        return counter.load() >= expectedCount;
-    }
-
     // Thread-safe capture of every message that reaches the loopback socket.
     // The network thread appends, the test thread reads, so a lock guards the
     // list. Used by the rate/schedule tests (Phase 4 Plan 04-02, D-10).
+    //
+    // WR-06: settle() replaces the old "quiet for 60 ms" wait. It sends a marker
+    // datagram to the same port from a second socket and waits until the receiver
+    // has seen it. Loopback delivers a datagram into the receiving socket's queue
+    // inside sendto(), and the receive thread reads that queue in order, so by the
+    // time the marker arrives every datagram sent before settle() was called has
+    // already been recorded. The wait ends on that event, not on a timer, so a slow
+    // machine makes it longer instead of making the count wrong. Markers are not
+    // recorded as entries.
     struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
     {
         struct Entry
@@ -73,10 +47,22 @@ namespace
             int argCount = 0;
         };
 
+        explicit RecordingCapture (int port)
+        {
+            markerSender.connect ("127.0.0.1", port);
+        }
+
         void oscMessageReceived (const juce::OSCMessage& message) override
         {
+            const auto address = message.getAddressPattern().toString();
+            if (address == kMarkerAddress)
+            {
+                ++markersSeen;
+                return;
+            }
+
             Entry e;
-            e.address  = message.getAddressPattern().toString();
+            e.address  = address;
             e.argCount = message.size();
             for (int i = 0; i < message.size() && i < 3; ++i)
                 e.args[i] = message[i].getFloat32();
@@ -113,67 +99,65 @@ namespace
             return entries.empty() ? Entry {} : entries.back();
         }
 
-        // Polls until the count has not changed for quietMs, then returns it.
-        int waitUntilQuiet (int quietMs = 60, int timeoutMs = 3000) const
+        // Waits for every datagram sent so far to be recorded, then returns the count.
+        int settle (int timeoutMs = 5000)
         {
+            const int token = ++markersSent;
+            markerSender.send (juce::OSCMessage (juce::OSCAddressPattern (kMarkerAddress)));
+
             const auto deadline = std::chrono::steady_clock::now()
                                 + std::chrono::milliseconds (timeoutMs);
-            int seen = count();
-            auto lastChange = std::chrono::steady_clock::now();
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                std::this_thread::sleep_for (std::chrono::milliseconds (5));
-                const int now = count();
-                if (now != seen)
-                {
-                    seen = now;
-                    lastChange = std::chrono::steady_clock::now();
-                }
-                else if (std::chrono::steady_clock::now() - lastChange
-                         >= std::chrono::milliseconds (quietMs))
-                {
-                    break;
-                }
-            }
+            while (markersSeen.load() < token && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for (std::chrono::milliseconds (1));
             return count();
         }
 
+        static constexpr const char* kMarkerAddress = "/spatialcore-test/settle";
+
         mutable juce::CriticalSection lock;
         std::vector<Entry> entries;
+        juce::OSCSender markerSender;
+        std::atomic<int> markersSent { 0 };
+        std::atomic<int> markersSeen { 0 };
     };
 }
 
 TEST_CASE ("ADMOSCSender: sendPosition emits /adm/obj/N/aed with 1-based object numbering", "[osc][send]")
 {
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    CapturingListener listener;
-    REQUIRE (receiver.connect (kTestSenderPort));
-    receiver.addListener (&listener);
+    RecordingCapture capture (port);
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
 
     ADMOSCSender sender;
-    REQUIRE (sender.connect ("127.0.0.1", kTestSenderPort));
+    REQUIRE (sender.connect ("127.0.0.1", port));
 
     // objectIndex 0 (0-based) -> wire address /adm/obj/1/aed (1-based)
     sender.sendPosition (0, -45.0f, 30.0f, 0.6f);
 
-    REQUIRE (waitForMessage (listener.messageCount, 1));
-    CHECK (listener.lastAddress == "/adm/obj/1/aed");
-    REQUIRE (listener.lastArgCount == 3);
-    CHECK_THAT (listener.lastArgs[0], WithinAbs (-45.0f, 0.5f));
-    CHECK_THAT (listener.lastArgs[1], WithinAbs (30.0f, 0.5f));
-    CHECK_THAT (listener.lastArgs[2], WithinAbs (0.6f, 0.01f));
+    REQUIRE (capture.settle() == 1);
+    const auto m = capture.last();
+    CHECK (m.address == "/adm/obj/1/aed");
+    REQUIRE (m.argCount == 3);
+    CHECK_THAT (m.args[0], WithinAbs (-45.0f, 0.5f));
+    CHECK_THAT (m.args[1], WithinAbs (30.0f, 0.5f));
+    CHECK_THAT (m.args[2], WithinAbs (0.6f, 0.01f));
 
-    receiver.removeListener (&listener);
+    receiver.removeListener (&capture);
     sender.disconnect();
     receiver.disconnect();
 }
 
 TEST_CASE ("ADMOSCSender: sendPosition ignores calls while disconnected", "[osc][send][edge]")
 {
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    CapturingListener listener;
-    REQUIRE (receiver.connect (kTestSenderPort + 1));
-    receiver.addListener (&listener);
+    RecordingCapture capture (port);
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
 
     ADMOSCSender sender;
     CHECK_FALSE (sender.isConnected());
@@ -182,31 +166,31 @@ TEST_CASE ("ADMOSCSender: sendPosition ignores calls while disconnected", "[osc]
     // of gating all sends on oscSendConnected).
     sender.sendPosition (0, 10.0f, 10.0f, 1.0f);
 
-    // Give any accidental send time to arrive before asserting it did not.
-    std::this_thread::sleep_for (std::chrono::milliseconds (100));
-    CHECK (listener.messageCount.load() == 0);
+    // settle() proves everything sent so far has been delivered, so zero is a fact, not a timeout.
+    CHECK (capture.settle() == 0);
 
-    receiver.removeListener (&listener);
+    receiver.removeListener (&capture);
     receiver.disconnect();
 }
 
 TEST_CASE ("ADMOSCSender: sendPosition ignores out-of-range object index", "[osc][send][edge]")
 {
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    CapturingListener listener;
-    REQUIRE (receiver.connect (kTestSenderPort + 2));
-    receiver.addListener (&listener);
+    RecordingCapture capture (port);
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
 
     ADMOSCSender sender;
-    REQUIRE (sender.connect ("127.0.0.1", kTestSenderPort + 2));
+    REQUIRE (sender.connect ("127.0.0.1", port));
 
     sender.sendPosition (-1, 10.0f, 10.0f, 1.0f);   // below range
     sender.sendPosition (MAX_SOURCES, 10.0f, 10.0f, 1.0f); // at/above range (0-based, so == out of range)
 
-    std::this_thread::sleep_for (std::chrono::milliseconds (100));
-    CHECK (listener.messageCount.load() == 0);
+    CHECK (capture.settle() == 0);
 
-    receiver.removeListener (&listener);
+    receiver.removeListener (&capture);
     sender.disconnect();
     receiver.disconnect();
 }
@@ -219,9 +203,10 @@ TEST_CASE ("ADMOSCSender: sendPosition ignores out-of-range object index", "[osc
 TEST_CASE ("ADMOSCSender: a 60 Hz caller moving an object sends 30 messages per second, none while still",
            "[osc][send][rate][static][tracer]")
 {
-    constexpr int port = 9730;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -239,10 +224,10 @@ TEST_CASE ("ADMOSCSender: a 60 Hz caller moving an object sends 30 messages per 
             az = (float) (k + 1);
             sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
         }
-        capture.waitUntilQuiet();
+        capture.settle();
     }
 
-    const int moving = capture.waitUntilQuiet();
+    const int moving = capture.settle();
     CHECK (moving >= 87);
     CHECK (moving <= 93);
 
@@ -250,14 +235,14 @@ TEST_CASE ("ADMOSCSender: a 60 Hz caller moving an object sends 30 messages per 
     // (a change is sent at the next slot). Let that settle, then baseline.
     for (int k = 180; k < 186; ++k)
         sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
-    const int settled = capture.waitUntilQuiet();
+    const int settled = capture.settle();
     CHECK (settled - moving <= 1);
 
     // 2 more simulated seconds, position unchanged: nothing is sent.
     for (int k = 186; k < 306; ++k)
         sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
 
-    CHECK (capture.waitUntilQuiet() == settled);
+    CHECK (capture.settle() == settled);
 
     receiver.removeListener (&capture);
     sender.disconnect();
@@ -269,7 +254,7 @@ namespace
     // Drives one moving object at callerHz for `seconds` simulated seconds with
     // +-jitterSeconds of timing noise, waiting for the wire to go quiet after
     // each simulated second so few datagrams are ever in flight.
-    void runMovingCaller (ADMOSCSender& sender, const RecordingCapture& capture,
+    void runMovingCaller (ADMOSCSender& sender, RecordingCapture& capture,
                           double callerHz, int seconds, double jitterSeconds,
                           double startSeconds = 0.0)
     {
@@ -291,7 +276,7 @@ namespace
                 sender.tick (&az, &el, &dist, &enabled, 1,
                              startSeconds + k * period + jitter);
             }
-            capture.waitUntilQuiet();
+            capture.settle();
         }
     }
 
@@ -310,10 +295,11 @@ TEST_CASE ("ADMOSCSender: any caller rate from 30 to 120 Hz gets 30 messages per
 {
     const int hz = GENERATE (120, 60, 50, 30);
     CAPTURE (hz);
-    const int port = 9731 + (hz == 120 ? 0 : hz == 60 ? 1 : hz == 50 ? 2 : 3);
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
 
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -322,7 +308,7 @@ TEST_CASE ("ADMOSCSender: any caller rate from 30 to 120 Hz gets 30 messages per
 
     runMovingCaller (sender, capture, (double) hz, 10, 0.002);
 
-    const int total = capture.waitUntilQuiet();
+    const int total = capture.settle();
     INFO ("messages over 10 simulated seconds at " << hz << " Hz: " << total);
     CHECK (total >= 290);
     CHECK (total <= 310);
@@ -335,9 +321,10 @@ TEST_CASE ("ADMOSCSender: any caller rate from 30 to 120 Hz gets 30 messages per
 TEST_CASE ("ADMOSCSender: a caller at exactly 1/60 s spacing gets 30 messages per second",
            "[osc][send][rate]")
 {
-    constexpr int port = 9735;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -346,7 +333,7 @@ TEST_CASE ("ADMOSCSender: a caller at exactly 1/60 s spacing gets 30 messages pe
 
     runMovingCaller (sender, capture, 60.0, 10, 0.0);
 
-    const int total = capture.waitUntilQuiet();
+    const int total = capture.settle();
     INFO ("messages over 10 simulated seconds at exact 1/60 s: " << total);
     CHECK (total >= 290);
     CHECK (total <= 310);
@@ -359,9 +346,10 @@ TEST_CASE ("ADMOSCSender: a caller at exactly 1/60 s spacing gets 30 messages pe
 TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 30 messages in a second",
            "[osc][send][rate][realtime]")
 {
-    constexpr int port = 9736;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -385,7 +373,7 @@ TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 3
     }
     const double elapsed = std::chrono::duration<double> (lastCall - start).count();
 
-    const int total = capture.waitUntilQuiet();
+    const int total = capture.settle();
     INFO ("messages from 60 wall-clock calls: " << total << " over " << elapsed << " s");
     CHECK (elapsed >= 0.9);
     CHECK ((double) total >= 30.0 * elapsed - 5.0);
@@ -404,9 +392,10 @@ TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 3
 TEST_CASE ("ADMOSCSender: after a one second stall the next second is 30 messages, not a burst",
            "[osc][send][rate][gap]")
 {
-    constexpr int port = 9737;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -414,7 +403,7 @@ TEST_CASE ("ADMOSCSender: after a one second stall the next second is 30 message
     REQUIRE (sender.connect ("127.0.0.1", port));
 
     runMovingCaller (sender, capture, 60.0, 1, 0.0);
-    const int beforeStall = capture.waitUntilQuiet();
+    const int beforeStall = capture.settle();
 
     // No calls for one second, then one second of 60 Hz calls with movement.
     float az = 1000.0f;
@@ -426,7 +415,7 @@ TEST_CASE ("ADMOSCSender: after a one second stall the next second is 30 message
         sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
     }
 
-    const int afterStall = capture.waitUntilQuiet();
+    const int afterStall = capture.settle();
     INFO ("messages in the second after the stall: " << (afterStall - beforeStall));
     CHECK (afterStall - beforeStall >= 29);
     CHECK (afterStall - beforeStall <= 31);
@@ -439,9 +428,10 @@ TEST_CASE ("ADMOSCSender: after a one second stall the next second is 30 message
 TEST_CASE ("ADMOSCSender: an object's first position is sent even at exactly (0, 0, 0)",
            "[osc][send][first]")
 {
-    constexpr int port = 9738;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -452,7 +442,7 @@ TEST_CASE ("ADMOSCSender: an object's first position is sent even at exactly (0,
     const bool enabled = true;
     sender.tick (&az, &el, &dist, &enabled, 1, 0.0);
 
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
     const auto m = capture.last();
     CHECK (m.address == "/adm/obj/1/aed");
     REQUIRE (m.argCount == 3);
@@ -468,9 +458,10 @@ TEST_CASE ("ADMOSCSender: an object's first position is sent even at exactly (0,
 TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degrees is",
            "[osc][send][deadband]")
 {
-    constexpr int port = 9739;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -482,15 +473,15 @@ TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degre
 
     float az = 0.0f;
     sender.tick (&az, &el, &dist, &enabled, 1, 0.0);          // first send
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
 
     az = 0.1f;
     sender.tick (&az, &el, &dist, &enabled, 1, 1.0 / 30.0);   // not greater than 0.1
-    CHECK (capture.waitUntilQuiet() == 1);
+    CHECK (capture.settle() == 1);
 
     az = 0.2f;
     sender.tick (&az, &el, &dist, &enabled, 1, 2.0 / 30.0);   // greater
-    REQUIRE (capture.waitUntilQuiet() == 2);
+    REQUIRE (capture.settle() == 2);
     CHECK_THAT (capture.last().args[0], WithinAbs (0.2f, 1.0e-6f));
 
     receiver.removeListener (&capture);
@@ -501,9 +492,10 @@ TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degre
 TEST_CASE ("ADMOSCSender: a non-finite position is never sent and does not silence the object (WR-01)",
            "[osc][send][deadband][nan]")
 {
-    constexpr int port = 9757;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -513,7 +505,7 @@ TEST_CASE ("ADMOSCSender: a non-finite position is never sent and does not silen
     const bool enabled = true;
     float az = 10.0f, el = 0.0f, dist = 0.5f;
     sender.tick (&az, &el, &dist, &enabled, 1, 0.0);           // first send
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
 
     // One NaN frame on each axis in turn, then +-infinity: nothing reaches the wire.
     const float nan = std::numeric_limits<float>::quiet_NaN();
@@ -525,12 +517,12 @@ TEST_CASE ("ADMOSCSender: a non-finite position is never sent and does not silen
     badAz = inf; badEl = -inf;
     sender.tick (&badAz, &el, &dist, &enabled, 1, 4.0 / 30.0);
     sender.tick (&az, &badEl, &dist, &enabled, 1, 5.0 / 30.0);
-    CHECK (capture.waitUntilQuiet() == 1);
+    CHECK (capture.settle() == 1);
 
     // The next finite, moved position is sent: the dead-band reference was not poisoned.
     az = 25.0f;
     sender.tick (&az, &el, &dist, &enabled, 1, 6.0 / 30.0);
-    REQUIRE (capture.waitUntilQuiet() == 2);
+    REQUIRE (capture.settle() == 2);
     CHECK_THAT (capture.last().args[0], WithinAbs (25.0f, 1.0e-6f));
 
     receiver.removeListener (&capture);
@@ -541,9 +533,10 @@ TEST_CASE ("ADMOSCSender: a non-finite position is never sent and does not silen
 TEST_CASE ("ADMOSCSender: still objects are silent and one moved object sends one message",
            "[osc][send][static]")
 {
-    constexpr int port = 9740;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -555,18 +548,18 @@ TEST_CASE ("ADMOSCSender: still objects are silent and one moved object sends on
     tickObjects (sender, 0.0, az, enabled, 3);                 // first send, 3 messages
     az[0] = 40.0f; az[1] = 50.0f; az[2] = 60.0f;
     tickObjects (sender, 1.0 / 30.0, az, enabled, 3);          // moved, 3 messages
-    REQUIRE (capture.waitUntilQuiet() == 6);
+    REQUIRE (capture.settle() == 6);
 
     for (int k = 4; k < 124; ++k)                              // 2 simulated seconds still
         tickObjects (sender, k / 60.0, az, enabled, 3);
-    CHECK (capture.waitUntilQuiet() == 6);
+    CHECK (capture.settle() == 6);
 
     az[2] = 90.0f;                                             // move object index 2 only
     tickObjects (sender, 124 / 60.0, az, enabled, 3);
     tickObjects (sender, 125 / 60.0, az, enabled, 3);
     tickObjects (sender, 126 / 60.0, az, enabled, 3);
 
-    CHECK (capture.waitUntilQuiet() == 7);
+    CHECK (capture.settle() == 7);
     CHECK (capture.countFor ("/adm/obj/3/aed") == 3);
     CHECK (capture.last().address == "/adm/obj/3/aed");
     CHECK_THAT (capture.last().args[0], WithinAbs (90.0f, 1.0e-6f));
@@ -579,9 +572,10 @@ TEST_CASE ("ADMOSCSender: still objects are silent and one moved object sends on
 TEST_CASE ("ADMOSCSender: connect and reconnect send every enabled object once, never a disabled one",
            "[osc][send][connect]")
 {
-    constexpr int port = 9741;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -592,17 +586,17 @@ TEST_CASE ("ADMOSCSender: connect and reconnect send every enabled object once, 
     const float az[4] = { 10.0f, 20.0f, 30.0f, 40.0f };
 
     tickObjects (sender, 0.0, az, enabled, 4);
-    REQUIRE (capture.waitUntilQuiet() == 3);
+    REQUIRE (capture.settle() == 3);
 
     for (int k = 1; k < 61; ++k)                               // a still second
         tickObjects (sender, k / 60.0, az, enabled, 4);
-    CHECK (capture.waitUntilQuiet() == 3);
+    CHECK (capture.settle() == 3);
 
     sender.disconnect();
     REQUIRE (sender.connect ("127.0.0.1", port));
 
     tickObjects (sender, 2.0, az, enabled, 4);                 // nothing moved
-    CHECK (capture.waitUntilQuiet() == 6);
+    CHECK (capture.settle() == 6);
     CHECK (capture.countFor ("/adm/obj/1/aed") == 2);
     CHECK (capture.countFor ("/adm/obj/2/aed") == 2);
     CHECK (capture.countFor ("/adm/obj/3/aed") == 2);
@@ -616,9 +610,10 @@ TEST_CASE ("ADMOSCSender: connect and reconnect send every enabled object once, 
 TEST_CASE ("ADMOSCSender: an object enabled again is sent once, and nothing is sent while it is disabled",
            "[osc][send][reenable]")
 {
-    constexpr int port = 9742;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -630,22 +625,22 @@ TEST_CASE ("ADMOSCSender: an object enabled again is sent once, and nothing is s
     const bool oneOff[2]  = { true, false };
 
     tickObjects (sender, 0.0, az, both, 2);                    // both sent
-    REQUIRE (capture.waitUntilQuiet() == 2);
+    REQUIRE (capture.settle() == 2);
 
     // Disabled for one call between slots, enabled again at the same position.
     tickObjects (sender, 1.0 / 60.0, az, oneOff, 2);
     tickObjects (sender, 2.0 / 60.0, az, both, 2);             // slot
-    CHECK (capture.waitUntilQuiet() == 3);
+    CHECK (capture.settle() == 3);
     CHECK (capture.last().address == "/adm/obj/2/aed");
 
     // Disabled across a whole slot: nothing is sent for it.
     tickObjects (sender, 3.0 / 60.0, az, oneOff, 2);
     tickObjects (sender, 4.0 / 60.0, az, oneOff, 2);           // slot, still disabled
-    CHECK (capture.waitUntilQuiet() == 3);
+    CHECK (capture.settle() == 3);
 
     tickObjects (sender, 5.0 / 60.0, az, both, 2);
     tickObjects (sender, 6.0 / 60.0, az, both, 2);             // slot
-    CHECK (capture.waitUntilQuiet() == 4);
+    CHECK (capture.settle() == 4);
     CHECK (capture.countFor ("/adm/obj/2/aed") == 3);
     CHECK (capture.countFor ("/adm/obj/1/aed") == 1);
 
@@ -684,9 +679,10 @@ namespace
 TEST_CASE ("ADMOSCSender: queued replies go out in object then kind order with the right formats",
            "[osc][send][query]")
 {
-    constexpr int port = 9752;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -702,7 +698,7 @@ TEST_CASE ("ADMOSCSender: queued replies go out in object then kind order with t
     sender.queueReply (0, ADMPositionQuery::azim, 30.0f, 10.0f, 0.5f);
     tickSilent (sender, 0.0);
 
-    REQUIRE (capture.waitUntilQuiet() == 6);
+    REQUIRE (capture.settle() == 6);
 
     const char* addresses[] = { "/adm/obj/1/azim", "/adm/obj/1/elev", "/adm/obj/1/dist",
                                 "/adm/obj/1/aed",  "/adm/obj/1/xyz",  "/adm/obj/5/aed" };
@@ -736,9 +732,10 @@ TEST_CASE ("ADMOSCSender: queued replies go out in object then kind order with t
 TEST_CASE ("ADMOSCSender: 1000 queries for one (object, kind) before a slot make one reply with the last value",
            "[osc][send][query]")
 {
-    constexpr int port = 9753;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -749,13 +746,13 @@ TEST_CASE ("ADMOSCSender: 1000 queries for one (object, kind) before a slot make
         sender.queueReply (2, ADMPositionQuery::aed, (float) i * 0.1f, 0.0f, 0.5f);
     tickSilent (sender, 0.0);
 
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
     CHECK (capture.at (0).address == "/adm/obj/3/aed");
     CHECK_THAT (capture.at (0).args[0], WithinAbs (99.9f, 1.0e-3f));
 
     // The reply was consumed: the next slot sends nothing.
     tickSilent (sender, 1.0 / 30.0);
-    CHECK (capture.waitUntilQuiet() == 1);
+    CHECK (capture.settle() == 1);
 
     receiver.removeListener (&capture);
     sender.disconnect();
@@ -765,9 +762,10 @@ TEST_CASE ("ADMOSCSender: 1000 queries for one (object, kind) before a slot make
 TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while disconnected or for bad input",
            "[osc][send][query]")
 {
-    constexpr int port = 9754;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -777,7 +775,7 @@ TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while 
     sender.queueReply (0, ADMPositionQuery::aed, 1.0f, 2.0f, 0.5f);
     REQUIRE (sender.connect ("127.0.0.1", port));
     tickSilent (sender, 0.0);
-    CHECK (capture.waitUntilQuiet() == 0);
+    CHECK (capture.settle() == 0);
 
     // Bad input is dropped: out-of-range index, non-finite value, unknown kind.
     sender.queueReply (-1, ADMPositionQuery::aed, 1.0f, 2.0f, 0.5f);
@@ -786,14 +784,14 @@ TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while 
     sender.queueReply (0, ADMPositionQuery::aed, 1.0f, INFINITY, 0.5f);
     sender.queueReply (0, static_cast<ADMPositionQuery> (9), 1.0f, 2.0f, 0.5f);
     tickSilent (sender, 1.0 / 30.0);
-    CHECK (capture.waitUntilQuiet() == 0);
+    CHECK (capture.settle() == 0);
 
     // A valid reply queued between slots waits for the next slot.
     sender.queueReply (1, ADMPositionQuery::azim, 45.0f, 0.0f, 0.5f);
     tickSilent (sender, 1.0 / 30.0 + 0.010);
-    CHECK (capture.waitUntilQuiet() == 0);
+    CHECK (capture.settle() == 0);
     tickSilent (sender, 2.0 / 30.0);
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
     CHECK (capture.at (0).address == "/adm/obj/2/azim");
 
     // Disconnect drops a pending reply: it must not appear after a reconnect.
@@ -801,7 +799,7 @@ TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while 
     sender.disconnect();
     REQUIRE (sender.connect ("127.0.0.1", port));
     tickSilent (sender, 10.0);
-    CHECK (capture.waitUntilQuiet() == 1);
+    CHECK (capture.settle() == 1);
 
     receiver.removeListener (&capture);
     sender.disconnect();
@@ -811,9 +809,10 @@ TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while 
 TEST_CASE ("ADMOSCSender: a reply neither suppresses nor triggers a position send",
            "[osc][send][query]")
 {
-    constexpr int port = 9755;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -826,24 +825,24 @@ TEST_CASE ("ADMOSCSender: a reply neither suppresses nor triggers a position sen
 
     // First slot: the first position goes out once.
     sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 0.0);
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
     CHECK (capture.at (0).address == "/adm/obj/1/aed");
 
     // Object still, reply queued: only the reply goes out at the next slot.
     sender.queueReply (0, ADMPositionQuery::xyz, 20.0f, 0.0f, 0.5f);
     sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 1.0 / 30.0);
-    REQUIRE (capture.waitUntilQuiet() == 2);
+    REQUIRE (capture.settle() == 2);
     CHECK (capture.at (1).address == "/adm/obj/1/xyz");
 
     // The reply did not reset the dead-band reference: still no position send.
     sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 2.0 / 30.0);
-    CHECK (capture.waitUntilQuiet() == 2);
+    CHECK (capture.settle() == 2);
 
     // Object moved and a reply queued: both go out, position first.
     az[0] = 40.0f;
     sender.queueReply (0, ADMPositionQuery::azim, 40.0f, 0.0f, 0.5f);
     sender.tick (az, el, dist, enabled, (int) MAX_SOURCES, 3.0 / 30.0);
-    REQUIRE (capture.waitUntilQuiet() == 4);
+    REQUIRE (capture.settle() == 4);
     CHECK (capture.at (2).address == "/adm/obj/1/aed");
     CHECK (capture.at (3).address == "/adm/obj/1/azim");
 
@@ -855,9 +854,10 @@ TEST_CASE ("ADMOSCSender: a reply neither suppresses nor triggers a position sen
 TEST_CASE ("ADMOSCSender: an xyz reply fed back into ADMOSCReceiver reproduces the position",
            "[osc][send][query]")
 {
-    constexpr int port = 9756;
+    const int port = test::findFreeUdpPort();
+    REQUIRE (port > 0);
     juce::OSCReceiver receiver;
-    RecordingCapture capture;
+    RecordingCapture capture (port);
     REQUIRE (receiver.connect (port));
     receiver.addListener (&capture);
 
@@ -866,7 +866,7 @@ TEST_CASE ("ADMOSCSender: an xyz reply fed back into ADMOSCReceiver reproduces t
 
     sender.queueReply (0, ADMPositionQuery::xyz, 120.0f, -20.0f, 0.7f);
     tickSilent (sender, 0.0);
-    REQUIRE (capture.waitUntilQuiet() == 1);
+    REQUIRE (capture.settle() == 1);
     const auto reply = capture.at (0);
     REQUIRE (reply.argCount == 3);
 
