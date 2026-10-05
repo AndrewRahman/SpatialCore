@@ -167,6 +167,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: 04-07: SpatialCoreDemo is off by default (SPATIALCORE_BUILD_EXAMPLES, top-level only); it keeps TrajectoryEngine off the audio thread by copying output into atomics on the message thread and sets TrajectoryState::reverse itself; selftest proves osc, query, trajectory and map through RenderEngine
 - [Phase 04]: 04-08: gate listing check greps 'ui:' (CTest drops the space after the ui: prefix); README documents it
 - [Phase 04]: 04-08: EXTR-04 ticked on all-automated evidence; EXTR-05 (D-03 screenshots) and DATA-02 (D-22 title) stay unticked, pending human approval at the Phase 4 end-of-phase review
+- [Phase 04]: Code review --fix (2026-10-05), 5 review rounds to clean, ledger 18/18 fixed: ADMOSCSender skips non-finite positions and connect() drops queued replies; /xyz rescales an overflowing triple keeping direction; wrapAzimuth bounded (infinity -> NaN for the hold-last-good sanitiser); object numbers are 1-2 digits; ADMPositionQuery moved to its own header with a kCount_ sentinel; OSC param/global values documented finite-but-unbounded (not clamped); network tests use OS-assigned ports and token markers instead of fixed ports and quiet periods
 - [Phase 04]: end-of-phase review 2026-10-05: D-03 screenshots approved (drag to az 90, d 0.8 as designed), EXTR-05 ticked; D-22 title rejected (DM Sans Bold too small), documented revert applied (PresetSaveOverlay back to BASE, [ui][fonts][spy] overlay exemption pins 1 request, item 4 removed from the OSD row), gate re-run green, DATA-02 ticked
 
 ### Pending Todos
@@ -189,7 +190,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
 - **[Phase 2] OSD-side follow-ups** — release notes for the audible changes, four OSD docs describing VBIP as squared gains, delete OSD's local SH/VBAP copies at migration (`02-09-SUMMARY.md`). Tracked in PROJECT.md External Dependencies.
 
-- **[Phase 4] Code review warnings open** — `04-REVIEW.md` has 6 warnings, all advisory. Schedule first: WR-01 (a NaN position becomes the sender's dead-band reference and silences that object until re-enable/reconnect) and WR-04 (`/xyz` components above ~1.8e19 overflow, giving the wrong elevation). WR-05 notes `wrapAzimuth` in `TrajectoryEngine.h` still loops without bound for non-azimuth parameters — relevant to Phase 5.
+- **[Phase 4] Code review warnings** — RESOLVED 2026-10-05 by `/gsd-code-review 04 --fix` (5 review rounds, ledger 18/18 fixed, `04-REVIEW.md` clean). `wrapAzimuth` is bounded; the Windows branches of both `findFreeUdpPort` copies are uncompiled until Phase 6 CI.
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
 

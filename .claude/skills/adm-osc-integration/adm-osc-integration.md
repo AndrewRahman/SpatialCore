@@ -168,7 +168,7 @@ void sendOSCPositions() {
 
 ### Answering position queries
 
-An ADM-OSC position message with no arguments (for example `/adm/obj/4/xyz`) is a query: the device is asking for the object's current value. `ADMOSCReceiver` reports it through `Listener::admPositionQueried (objectIndex, kind)` and holds no positions itself. The consumer answers from its own state by calling `ADMOSCSender::queueReply (objectIndex, kind, az, el, dist)`. The reply goes out on the next 30 Hz slot, one pending reply per (object, kind), and only while the sender is connected.
+An ADM-OSC position message with no arguments (for example `/adm/obj/4/xyz`) is a query: the device is asking for the object's current value. `ADMOSCReceiver` reports it through `Listener::admPositionQueried (objectIndex, kind)` and holds no positions itself. The consumer answers from its own state by calling `ADMOSCSender::queueReply (objectIndex, kind, az, el, dist)`. The reply goes out on the next 30 Hz slot, one pending reply per (object, kind), and only while the sender is connected. `connect` and `disconnect` both drop replies still pending, so a reply never reaches a destination it was not queued for. `ADMPositionQuery` lives in its own header (`OSC/ADMPositionQuery.h`) and ends in a `kCount_` sentinel: add a new kind before it.
 
 The reply goes to the sender's configured host and port, not to the address the query came from. This deviates from the ADM-OSC text because `juce::OSCReceiver` does not expose a packet's source address, and it means a spoofed query cannot reflect traffic at a third party (D-20). The listener method is defaulted, so a consumer that does not override it simply ignores queries.
 
