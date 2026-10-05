@@ -191,6 +191,10 @@ namespace
         return ctx;
     }
 
+    constexpr std::array<OutputFormat, 6> kAmbisonicsFormats {
+        OutputFormat::AmbisonicsFOA, OutputFormat::AmbisonicsSOA, OutputFormat::AmbisonicsHOA,
+        OutputFormat::Ambisonics4OA, OutputFormat::Ambisonics5OA, OutputFormat::Ambisonics6OA };
+
     int channelsFor (OutputFormat format)
     {
         return OutputFormatRegistry::getInfo (format).requiredChannels;
@@ -226,4 +230,130 @@ TEST_CASE ("Realtime: a cold-start 7.1.4 render of 12 moving objects allocates a
     CHECK (counts.frees == 0);
     CHECK (counts.locks == 0);
     CHECK (finite);
+}
+
+TEST_CASE ("Realtime: every Ambisonics format renders moving distance without allocating",
+           "[rt][rt-alloc][rt-lock][ambi]")
+{
+    requireRealtimeTrapCanary();
+
+    for (const OutputFormat format : kAmbisonicsFormats)
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, kBlockSize);
+        engine->setOutputFormat (format);
+
+        const RenderBlockContext ctx = makeEngineContext();
+        const int numOutCh = channelsFor (format);
+
+        MovingScene scene;
+        OutputBank out;
+        bool finite = false;
+        const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, numOutCh,
+                                                   kBlockCount, kBlockSize, finite);
+
+        CAPTURE ((int) format, numOutCh, counts.allocs, counts.frees, counts.locks);
+        CHECK (counts.allocs == 0);
+        CHECK (counts.frees == 0);
+        CHECK (counts.locks == 0);
+        CHECK (finite);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// D-10: the NFC fix must store bit-for-bit the coefficients the old temporary stored.
+// The formula below is a test-local copy of the update in RenderEngine::renderAmbisonicsOutput
+// (same clamps, same float operations, c = 343, reference radius 1.5 m).
+// ----------------------------------------------------------------------------
+TEST_CASE ("Ambisonics NFC: the in-place array assignment stores the old coefficients bit for bit",
+           "[ambi][nfc][d10]")
+{
+    constexpr float c = 343.0f;
+    constexpr float referenceRadius = 1.5f;
+    constexpr float pi = juce::MathConstants<float>::pi;
+    const double rates[] = { 44100.0, 48000.0, 96000.0 };
+    const float distances[] = { 0.05f, 0.1f, 0.25f, 0.5f, 1.0f, 1.5f, 2.0f, 5.0f, 10.0f };
+
+    int combinations = 0;
+
+    for (const double sr : rates)
+    {
+        for (int n = 1; n <= 6; ++n)
+        {
+            for (const float distance : distances)
+            {
+                const float r = std::max (0.05f, distance);
+                float fPole = static_cast<float> (n) * c / (2.0f * pi * r);
+                float fZero = static_cast<float> (n) * c / (2.0f * pi * referenceRadius);
+                const float maxFreq = static_cast<float> (sr) * 0.25f;
+                fPole = std::min (fPole, maxFreq);
+                fZero = std::min (fZero, maxFreq);
+                const float wPole = std::tan (pi * fPole / static_cast<float> (sr));
+                const float wZero = std::tan (pi * fZero / static_cast<float> (sr));
+                const float b0 = (1.0f + wZero);
+                const float b1 = (wZero - 1.0f);
+                const float a0 = (1.0f + wPole);
+                const float a1 = (wPole - 1.0f);
+
+                const juce::dsp::IIR::Coefficients<float> oldWay (b0 / a0, b1 / a0, 1.0f, a1 / a0);
+
+                // prepare() installs this placeholder; the render path then assigns the array into it.
+                juce::dsp::IIR::Coefficients<float> newWay (1.0f, 0.0f, 1.0f, 0.0f);
+                newWay = std::array<float, 4> { b0 / a0, b1 / a0, 1.0f, a1 / a0 };
+
+                CAPTURE (sr, n, distance);
+                REQUIRE (oldWay.coefficients.size() == newWay.coefficients.size());
+                REQUIRE (std::memcmp (oldWay.getRawCoefficients(), newWay.getRawCoefficients(),
+                                      sizeof (float) * (size_t) oldWay.coefficients.size()) == 0);
+                ++combinations;
+            }
+        }
+    }
+
+    CHECK (combinations == 3 * 6 * 9);
+}
+
+// ----------------------------------------------------------------------------
+// Hidden capture (not run by default, not registered by ctest): writes the six Ambisonics
+// formats' raw output to the file named by SC_CAPTURE_FILE, so the before and after of the NFC
+// fix can be compared with cmp (D-10). Same deterministic run as the [ambi] case, no trap.
+//   SC_CAPTURE_FILE=/tmp/x.bin ./build/tests/SpatialCoreTests "[ambi-nfc-capture]"
+// ----------------------------------------------------------------------------
+TEST_CASE ("Ambisonics NFC: capture the six formats' raw output to SC_CAPTURE_FILE",
+           "[.][ambi-nfc-capture]")
+{
+    const char* path = std::getenv ("SC_CAPTURE_FILE");
+    REQUIRE (path != nullptr);
+
+    const juce::File file (juce::String::fromUTF8 (path));
+    file.deleteFile();
+    juce::FileOutputStream stream (file);
+    REQUIRE (stream.openedOk());
+
+    for (const OutputFormat format : kAmbisonicsFormats)
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, kBlockSize);
+        engine->setOutputFormat (format);
+
+        const RenderBlockContext ctx = makeEngineContext();
+        const int numOutCh = channelsFor (format);
+
+        MovingScene scene;
+        OutputBank out;
+
+        for (int block = 0; block < kBlockCount; ++block)
+        {
+            scene.fill (block, kBlockSize);
+            out.clear();
+            const RenderSources sources = scene.sources (kBlockSize);
+            engine->renderBlock (sources, ctx, out.ptrs, numOutCh);
+
+            for (int ch = 0; ch < numOutCh; ++ch)
+                REQUIRE (stream.write (out.channels[(size_t) ch].data(),
+                                       sizeof (float) * (size_t) kBlockSize));
+        }
+    }
+
+    stream.flush();
 }
