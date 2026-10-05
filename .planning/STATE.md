@@ -22,11 +22,11 @@ milestone_name: milestone
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-04)
+See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 04 — Control Surface & UI
+**Current focus:** Phase 5 — Realtime Safety Hardening
 
 ## Current Position
 
@@ -188,6 +188,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **[Phase 3] BUG-01** — DirectBinaural elevation and front/back cues are deliberately unasserted in `PanningLawTests.cpp`; Phase 3 adds them.
 - **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
 - **[Phase 2] OSD-side follow-ups** — release notes for the audible changes, four OSD docs describing VBIP as squared gains, delete OSD's local SH/VBAP copies at migration (`02-09-SUMMARY.md`). Tracked in PROJECT.md External Dependencies.
+
+- **[Phase 4] Code review warnings open** — `04-REVIEW.md` has 6 warnings, all advisory. Schedule first: WR-01 (a NaN position becomes the sender's dead-band reference and silences that object until re-enable/reconnect) and WR-04 (`/xyz` components above ~1.8e19 overflow, giving the wrong elevation). WR-05 notes `wrapAzimuth` in `TrajectoryEngine.h` still loops without bound for non-azimuth parameters — relevant to Phase 5.
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
 

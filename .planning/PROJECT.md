@@ -47,6 +47,9 @@ Full acceptance text in `.planning/REQUIREMENTS.md`; IDs follow that file.
 - ✓ **EXTR-01** — all 8 algorithms verified against independent oracles (textbook VBAP/VBIP/DBAP, ear 2.1.0); below-horizon VBAP follows ITU-R BS.2127 (EAR); VBIP is textbook DAFx-98; non-finite input never crashes playback — Phase 2
 - ✓ **EXTR-03** — 23 formats resolve, 15 layouts populated, Ambisonics round-trips to order 6 with corrected SN3D at orders 4-6 and one decoder — Phase 2
 - ✓ **VERIFY-01** — Ambisonics convention is AmbiX (ACN, SN3D, no Condon-Shortley phase), stated in code and docs — Phase 2
+- ✓ **EXTR-04** — ADM-OSC (all five address forms over real UDP), the self-clocked 30 Hz sender with query replies, and all 13 trajectory shapes forward and reverse each move a `RenderEngine` object — Phase 4
+- ✓ **EXTR-05** — `SpatialMapComponent` drag, rings and elevation brightness proven in `SpatialCoreUITests` and through `RenderEngine`; demo screenshots approved at review — Phase 4
+- ✓ **DATA-02** — the map loads its own embedded fonts and every embedded font equals its source file; the SAVE PRESET title keeps its original bold font by user ruling (D-22 rejected) — Phase 4
 
 ### Active
 
@@ -57,12 +60,9 @@ Milestone v1 scope. Full detail and acceptance in `.planning/REQUIREMENTS.md`.
 
 **Extraction completion**
 - [ ] **EXTR-02** — Binaural rendering (HRTFDatabase, PartitionedConvolver, BinauralRenderer) complete and verified
-- [ ] **EXTR-04** — ADM-OSC receive/send and trajectory engine complete and verified
-- [ ] **EXTR-05** — UI rendering (SpatialMapComponent, SMLLookAndFeel, widgets) complete and verified
 
 **Embedded data**
 - [ ] **DATA-01** — HRTF SOFA profiles embedded as BinaryData, Git LFS tracked
-- [ ] **DATA-02** — Font BinaryData provided for SMLLookAndFeel
 
 **Realtime safety**
 - [ ] **RTSF-01** — `BinauralRenderer::renderSourceBuffers()` never allocates on the audio thread in release builds
@@ -223,9 +223,12 @@ normal planning decision.
 | P2-D14 | VBIP is textbook single-band VBIP (Pernaux, Boussard & Jot, DAFx-98); dual-band tracked in SpatialCore#20 | ✓ Good — Phase 2; audible change for OSD |
 | P2-D18 | Coplanar-quad triplet tie-break above the horizon is not fixed in v1; tracked as SpatialCore#22 | — Pending |
 | P2-VER | Phase 2 public API changes are additive (`VBAPTriplet::kind()`, `AmbisonicsCodec::getDecodeMatrix` now returns `bool`) — a minor-version bump at the next release (DR-6) | — Pending — next tag |
+| P4-D20 | ADM-OSC position-query replies go to the sender's configured destination, never the packet source — a stated deviation from the ADM-OSC text | ✓ Good — Phase 4; in the OSD release-note row |
+| P4-D19 | Bounce and Line reverse keep their OSD#100 behaviour as intentional exceptions to "reverse retraces forward" (D-13) | ✓ Good — Phase 4; pinned by tests |
+| P4-D22 | SAVE PRESET title stays in its original system bold font; the DM Sans Bold change was rejected at review as too small | ✓ Decided 2026-10-05 — documented exemption in `[ui][fonts][spy]` |
 | DR-18 | **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote, not an accident awaiting cleanup. Development stays on the personal remote until the pipeline is proven, for risk containment: `Spatial-Media-Lab/OpenSpatialDelay` is public and in use by real people right now, so migrating it onto an unproven SpatialCore could break a live plugin. Migration is **gated on proof, not on a date** — SpatialCore, OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner land on the organisation together once the process is proven. `docs/integration-guide.md` carries the working remote as the live instruction and labels the organisation URL as the post-proof destination. | ✓ Decided 2026-08-10 — resolves OQ-5 |
 
 </decisions>
 
 ---
-*Last updated: 2026-10-04 after Phase 2 (Algorithm & Format Verification)*
+*Last updated: 2026-10-05 after Phase 4 (Control Surface & UI)*
