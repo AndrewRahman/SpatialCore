@@ -176,9 +176,16 @@ TEST_CASE ("Fonts: the save-preset title keeps its original single font request"
 
 TEST_CASE ("Fonts: every embedded font resource equals its source file", "[ui][fonts][bytes]")
 {
-    REQUIRE (SpatialCoreUIFontData::namedResourceListSize == 8);
-
     const std::string fontDir = std::string (SPATIALCORE_SOURCE_DIR) + "/fonts/";
+
+    // IN-07: the expected count is the number of .ttf files in fonts/ (the CMake font list embeds each
+    // of them), not a literal, so adding a font does not break this with an unexplained "8".
+    const int ttfFiles = juce::File (fontDir).findChildFiles (juce::File::findFiles, false, "*.ttf").size();
+    INFO ("the embedded font list has " << SpatialCoreUIFontData::namedResourceListSize
+          << " entries but fonts/ holds " << ttfFiles << " .ttf files: "
+          << "add the new font to the SpatialCoreUIFontData source list in CMakeLists.txt (or remove it from fonts/)");
+    REQUIRE (ttfFiles > 0);
+    REQUIRE (SpatialCoreUIFontData::namedResourceListSize == ttfFiles);
 
     for (int i = 0; i < SpatialCoreUIFontData::namedResourceListSize; ++i)
     {
@@ -237,7 +244,61 @@ std::vector<juce::File> uiSourceFiles()
     return files;
 }
 
+// IN-07: the family-name rule is about code, not prose. Blanks out // and /* */ comments (and keeps
+// string and character literals, which is where a family name would be) so a comment that merely
+// mentions "DM Sans" or getTypefaceName cannot fail it. Newlines are kept, so line numbers still match.
+std::string stripComments (const std::string& src)
+{
+    std::string out;
+    out.reserve (src.size());
+    enum class State { code, lineComment, blockComment, string, character } state = State::code;
+
+    for (size_t i = 0; i < src.size(); ++i)
+    {
+        const char c = src[i];
+        const char next = i + 1 < src.size() ? src[i + 1] : '\0';
+
+        switch (state)
+        {
+            case State::code:
+                if (c == '/' && next == '/')       { state = State::lineComment; ++i; }
+                else if (c == '/' && next == '*')  { state = State::blockComment; ++i; }
+                else
+                {
+                    if (c == '"')  state = State::string;
+                    if (c == '\'') state = State::character;
+                    out += c;
+                }
+                break;
+            case State::lineComment:
+                if (c == '\n') { state = State::code; out += c; }
+                break;
+            case State::blockComment:
+                if (c == '*' && next == '/') { state = State::code; ++i; }
+                else if (c == '\n')          { out += c; }
+                break;
+            case State::string:
+            case State::character:
+                out += c;
+                if (c == '\\' && next != '\0') { out += next; ++i; }
+                else if ((state == State::string && c == '"') || (state == State::character && c == '\''))
+                    state = State::code;
+                break;
+        }
+    }
+    return out;
+}
+
 } // namespace
+
+TEST_CASE ("Fonts: the comment stripper keeps code and drops prose", "[ui][fonts][rule]")
+{
+    CHECK (stripComments ("a(); // getTypefaceName\nb();") == "a(); \nb();");
+    CHECK (stripComments ("a(); /* \"DM Sans\" */ b();") == "a();  b();");
+    CHECK (stripComments ("x = \"http://DM Sans\";") == "x = \"http://DM Sans\";");   // // inside a string stays
+    CHECK (stripComments ("c = '\"'; // tail") == "c = '\"'; ");
+    CHECK (stripComments ("s = \"a\\\"//b\";") == "s = \"a\\\"//b\";");           // an escaped quote does not end the string
+}
 
 TEST_CASE ("Fonts: no UI code asks for an SML font by family name", "[ui][fonts][rule]")
 {
@@ -253,24 +314,29 @@ TEST_CASE ("Fonts: no UI code asks for an SML font by family name", "[ui][fonts]
     int typefaceCreations = 0;
     for (auto& f : files)
     {
-        std::istringstream lines (f.loadFileAsString().toStdString());
+        std::istringstream lines (stripComments (f.loadFileAsString().toStdString()));
         std::string line;
         int lineNo = 0;
+        std::string offenders;   // one assertion per file, listing every offending line
         while (std::getline (lines, line))
         {
             ++lineNo;
-            INFO (f.getFullPathName().toStdString() << ":" << lineNo << ": " << line);
-            CHECK_FALSE (std::regex_search (line, familyNameRule()));
+            if (std::regex_search (line, familyNameRule()))
+                offenders += "\n  line " + std::to_string (lineNo) + ": " + line;
 
             if (line.find ("createSystemTypefaceFor") != std::string::npos)
             {
                 ++typefaceCreations;
-                CHECK (line.find ("SpatialCoreUIFontData::") != std::string::npos);
+                if (line.find ("SpatialCoreUIFontData::") == std::string::npos)
+                    offenders += "\n  line " + std::to_string (lineNo) + " (typeface not from SpatialCoreUIFontData): " + line;
             }
         }
+
+        INFO (f.getFullPathName().toStdString() << offenders);
+        CHECK (offenders.empty());
     }
 
-    // SMLLookAndFeel loads 7 and the map 3: the scan really saw the call sites.
+    // SMLLookAndFeel loads 7 and the map 3 (the shared MonoFaces): the scan really saw the call sites.
     CHECK (typefaceCreations >= 7);
 }
 
