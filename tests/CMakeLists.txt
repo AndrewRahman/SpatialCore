@@ -68,6 +68,7 @@ target_compile_definitions(SpatialCoreTests PRIVATE
 add_executable(SpatialCoreUITests
     UI/UITestMain.cpp
     UI/MapRouteTests.cpp
+    UI/SpatialMapComponentTests.cpp
 )
 
 target_link_libraries(SpatialCoreUITests
