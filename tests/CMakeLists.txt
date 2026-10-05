@@ -33,6 +33,7 @@ add_executable(SpatialCoreTests
     Engine/RenderEngineTests.cpp
     Engine/TripleBufferIndexTests.cpp
     Engine/ProfileSwitchTests.cpp
+    Engine/ControlRouteTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
@@ -48,9 +49,15 @@ target_link_libraries(SpatialCoreTests
 # JUCE_UNIT_TESTS=1: exposes ADMOSCReceiver::testProcessOSCMessage() (Phase 8
 # Plan 08-05), the same synchronous test-entry-point guard OSD's own
 # OpenSpatialDelayTests target uses (see root CMakeLists.txt).
+#
+# JUCE_MODAL_LOOPS_PERMITTED=1: juce::MessageManager::runDispatchLoopUntil only
+# exists under this flag (JUCE 9.0.0 juce_MessageManager.h:99-105). A test needs
+# it to pump the message loop so a real-UDP ADMOSCReceiver (MessageLoopCallback)
+# delivers its messages (Phase 4, Plan 04-01).
 target_compile_definitions(SpatialCoreTests PRIVATE
     SPATIALCORE_HRTF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../HRTF"
     JUCE_UNIT_TESTS=1
+    JUCE_MODAL_LOOPS_PERMITTED=1
 )
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
