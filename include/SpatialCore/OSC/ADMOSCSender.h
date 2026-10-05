@@ -88,6 +88,7 @@ private:
     PendingReply pendingReply_[MAX_SOURCES][kNumQueryKinds] = {};
 
     void flushReplies();
+    void clearPendingReplies();   // WR-11: replies belong to the destination they were queued for
 
     float prevAz[MAX_SOURCES]   = {};
     float prevEl[MAX_SOURCES]   = {};

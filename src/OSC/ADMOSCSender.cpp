@@ -5,8 +5,19 @@
 namespace spatialcore
 {
 
+void ADMOSCSender::clearPendingReplies()
+{
+    for (auto& perObject : pendingReply_)
+        for (auto& r : perObject)
+            r.pending = false;
+}
+
 bool ADMOSCSender::connect(const juce::String& host, int port)
 {
+    // WR-11: a reply queued for the old destination (a reconnect to a new host or port, or a
+    // failed connect that dropped the old socket) must not be flushed to the new one.
+    clearPendingReplies();
+
     sendHost = host;
     sendPort = port;
     connected = sender.connect(host, port);
@@ -27,9 +38,7 @@ void ADMOSCSender::disconnect()
     scheduleArmed_ = false;
 
     // A reply queued for the old connection must not leak into the next one.
-    for (auto& perObject : pendingReply_)
-        for (auto& r : perObject)
-            r.pending = false;
+    clearPendingReplies();
 }
 
 void ADMOSCSender::queueReply(int objectIndex, ADMPositionQuery kind,

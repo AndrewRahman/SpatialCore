@@ -725,6 +725,13 @@ TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while 
     tickSilent (sender, 10.0);
     CHECK (capture.settle() == 1);
 
+    // WR-11: connect() while already connected also drops a pending reply, so it cannot be
+    // flushed to the new destination.
+    sender.queueReply (1, ADMPositionQuery::azim, 45.0f, 0.0f, 0.5f);
+    REQUIRE (sender.connect ("127.0.0.1", port));
+    tickSilent (sender, 20.0);
+    CHECK (capture.settle() == 1);
+
     receiver.removeListener (&capture);
     sender.disconnect();
     receiver.disconnect();
