@@ -109,6 +109,25 @@ connector, full ADM-OSC query support beyond positions). See Deferred.
   path the audit names under INTG-02. The audit's other open flows (a format switch during an HRTF
   crossfade; one test with all three engine flags on a binaural block) stay with Phase 5/6, not here.
 
+### Rulings after research (2026-10-05, `04-RESEARCH.md` Open Questions 1, 2, 4, 6)
+- **D-19:** **Bounce and Line keep their current reverse.** They are deliberate exceptions to D-13 (OSD#100):
+  Bounce reverse mirrors the azimuth offset, Line reverse is a half-period shift. Tests assert that
+  behaviour explicitly (RESEARCH Pitfall 2, kinds b and c). The other 10 deterministic shapes are held to
+  `reverse(p) == forward(1-p)`. VERIFICATION records Bounce and Line as intentional exceptions. D-14 does
+  not apply to them, and OSD's motion is unchanged.
+- **D-20:** **Position-query replies (D-08a) go to the sender's configured host:port**, not the packet's
+  source address. `juce::OSCReceiver` does not expose the source (`juce_OSCReceiver.cpp:480`), and the
+  configured address cannot be used for UDP reflection. This is a stated deviation from the ADM-OSC text.
+  Record it in the plan and in the OSD release-note item (D-14).
+- **D-21:** **Harden `ADMOSCReceiver` in the same edit as D-08/D-15.** Accept a value only if it has the
+  expected OSC type (explicit `isInt32()`/`isFloat32()`), ignore everything else, and reject non-finite
+  floats. Clamp elevation to [-90, 90] and distance to [0, 1], and wrap azimuth with a bounded operation
+  (no unbounded `while` loop). Tests cover RESEARCH Pitfalls 5 and 6. Compliant senders are unaffected.
+  The release-note item lists it.
+- **D-22:** **The D-06 font sweep covers `PresetBrowser.cpp:148` as well as the map's 5 fallback sites**
+  (247, 290, 553, 581, 597), so the font-provenance spy test (D-05) is clean across the SML widgets. OSD
+  sets `SMLLookAndFeel` and must look identical.
+
 ### Claude's Discretion
 - UI test target name and structure (e.g. `SpatialCoreUITests` linking `SpatialCoreUI`), and how to run
   JUCE components headless (`ScopedJuceInitialiser_GUI`, simulated `MouseEvent`s or
