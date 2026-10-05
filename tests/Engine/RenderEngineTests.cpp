@@ -1278,3 +1278,136 @@ TEST_CASE ("RenderEngine: all 23 output formats resolve to layouts that agree wi
     CHECK (formatsChecked == 23);
     CHECK (speakerFormats == 15);
 }
+
+// ----------------------------------------------------------------------------
+// SC-18 part 1 — runtime speaker-algorithm selection through the engine
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr int kSc18Channels = 12; // 7.1.4
+
+    using Sc18Render = std::vector<std::vector<float>>;
+
+    // Renders one steady DC source on a 7.1.4 engine that computes its own gains.
+    // algorithmIndex < 0 leaves the engine on its default (never calls the setter).
+    // Several warm-up blocks let gain interpolation settle; the last block is returned.
+    Sc18Render sc18Render (int algorithmIndex, float azimuthDeg, float elevationDeg)
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Surround7_1_4);
+        if (algorithmIndex >= 0)
+            engine.setAlgorithmIndex (algorithmIndex);
+
+        SourceFixture fixture;
+        RenderSources sources = fixture.makeSources();
+        sources.objects[0].azimuthDeg = azimuthDeg;
+        sources.objects[0].elevationDeg = elevationDeg;
+
+        RenderBlockContext ctx;
+        ctx.sampleRate = kSampleRate;
+        ctx.engineComputesGains = true;
+        ctx.engineDerivesDispatch = true;
+
+        Sc18Render out (kSc18Channels, std::vector<float> (kBlockSize, 0.0f));
+        float* outPtrs[kSc18Channels] = {};
+        for (int c = 0; c < kSc18Channels; ++c)
+            outPtrs[c] = out[static_cast<size_t> (c)].data();
+
+        for (int block = 0; block < 32; ++block)
+        {
+            for (auto& ch : out)
+                std::fill (ch.begin(), ch.end(), 0.0f);
+            engine.renderBlock (sources, ctx, outPtrs, kSc18Channels);
+        }
+        return out;
+    }
+
+    float sc18MaxDiff (const Sc18Render& a, const Sc18Render& b)
+    {
+        float worst = 0.0f;
+        for (size_t c = 0; c < a.size(); ++c)
+            for (size_t i = 0; i < a[c].size(); ++i)
+                worst = std::max (worst, std::abs (a[c][i] - b[c][i]));
+        return worst;
+    }
+
+    bool sc18AllFinite (const Sc18Render& r)
+    {
+        for (const auto& ch : r)
+            if (! allFinite (ch.data(), static_cast<int> (ch.size())))
+                return false;
+        return true;
+    }
+}
+
+TEST_CASE ("RenderEngine: a fresh engine defaults to VBAP and an explicit VBAP selection is sample-identical (SC-18)",
+           "[engine][sc18]")
+{
+    RenderEngine fresh;
+    CHECK (fresh.getAlgorithmIndex() == kAlgorithmIndexVBAP);
+
+    const auto byDefault = sc18Render (-1, 45.0f, 0.0f);
+    const auto explicitVbap = sc18Render (kAlgorithmIndexVBAP, 45.0f, 0.0f);
+    CHECK (sc18MaxDiff (byDefault, explicitVbap) == 0.0f);
+    CHECK (sc18AllFinite (byDefault));
+}
+
+TEST_CASE ("RenderEngine: the seven speaker algorithms render pairwise-distinct 7.1.4 output (SC-18)",
+           "[engine][sc18]")
+{
+    // First of these positions at which all 21 pairs differ by more than 1e-3.
+    const float candidates[][2] = { { 45.0f, 20.0f }, { 60.0f, 10.0f }, { 100.0f, 30.0f } };
+
+    bool found = false;
+    for (const auto& pos : candidates)
+    {
+        std::vector<Sc18Render> renders;
+        for (int idx = 0; idx < kNumSpeakerAlgorithmIndices; ++idx)
+        {
+            renders.push_back (sc18Render (idx, pos[0], pos[1]));
+            REQUIRE (sc18AllFinite (renders.back()));
+        }
+
+        bool allDiffer = true;
+        for (int a = 0; a < kNumSpeakerAlgorithmIndices && allDiffer; ++a)
+            for (int b = a + 1; b < kNumSpeakerAlgorithmIndices; ++b)
+                if (sc18MaxDiff (renders[static_cast<size_t> (a)], renders[static_cast<size_t> (b)]) <= 1.0e-3f)
+                {
+                    INFO ("pair " << a << "," << b << " at azimuth " << pos[0] << " elevation " << pos[1]);
+                    allDiffer = false;
+                    break;
+                }
+
+        if (allDiffer)
+        {
+            INFO ("distinctness position: azimuth " << pos[0] << " elevation " << pos[1]);
+            found = true;
+            break;
+        }
+    }
+    CHECK (found);
+}
+
+TEST_CASE ("RenderEngine: the algorithm index clamps, and stereo indices on a speaker layout render as VBAP (SC-18)",
+           "[engine][sc18]")
+{
+    RenderEngine engine;
+    engine.setAlgorithmIndex (-5);
+    CHECK (engine.getAlgorithmIndex() == 0);
+    engine.setAlgorithmIndex (99);
+    CHECK (engine.getAlgorithmIndex() == kNumAlgorithmIndices - 1);
+    CHECK (kNumAlgorithmIndices - 1 == 11);
+
+    const auto vbap = sc18Render (kAlgorithmIndexVBAP, 45.0f, 20.0f);
+    for (int idx = kNumSpeakerAlgorithmIndices; idx < kNumAlgorithmIndices; ++idx)
+    {
+        const auto r = sc18Render (idx, 45.0f, 20.0f);
+        CHECK (sc18AllFinite (r));
+        CHECK (sc18MaxDiff (r, vbap) == 0.0f);
+    }
+
+    // Out-of-range input behaves as the clamped extremes, still finite.
+    CHECK (sc18AllFinite (sc18Render (-5, 45.0f, 20.0f)));
+    CHECK (sc18AllFinite (sc18Render (99, 45.0f, 20.0f)));
+}

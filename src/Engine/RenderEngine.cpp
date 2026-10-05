@@ -291,12 +291,45 @@ RenderEngine::RenderEngine()
 {
     resetLastGoodPositions();
 
+    // SC-18: D-09 index order 0..6 (see kAlgorithmIndex* in RenderEngine.h).
+    speakerAlgorithms_[kAlgorithmIndexAmbisonics] = &ambisonicsAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexConstantPower] = &constantPowerAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexDBAP] = &dbapAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexKNN] = &knnAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexMDAP] = &mdapAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexVBAP] = &vbapAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexVBIP] = &vbipAlgorithm_;
+
     // A fresh engine is playing profile 0 (Simple); both renderers start as that.
     const uint32_t simple = packHRTFStatus (0, HRTFLoadState::Ready, HRTFProfileSource::Simple, HRTFProfileProblem::None);
     rendererMeta_[0].store (simple, std::memory_order_relaxed);
     rendererMeta_[1].store (simple, std::memory_order_relaxed);
     loaderStatusWord_.store (packHRTFStatus (0, HRTFLoadState::Idle, HRTFProfileSource::Simple, HRTFProfileProblem::None),
                              std::memory_order_relaxed);
+}
+
+void RenderEngine::setAlgorithmIndex (int index)
+{
+    // SC-18: clamp on store; the audio thread additionally routes any index
+    // outside the speaker table to VBAP (speakerAlgorithmFor).
+    algorithmIndex_.store (juce::jlimit (0, kNumAlgorithmIndices - 1, index), std::memory_order_relaxed);
+}
+
+int RenderEngine::getAlgorithmIndex() const
+{
+    return algorithmIndex_.load (std::memory_order_relaxed);
+}
+
+const SpatializationAlgorithm& RenderEngine::speakerAlgorithmFor (int index) const
+{
+    // Stereo indices (7..11) and anything outside the table render as VBAP on a
+    // speaker layout. An entry that cannot render to speakers also falls back
+    // to VBAP (mirrors OpenSpatialDelay's supportsSurround() fallback).
+    if (index < 0 || index >= kNumSpeakerAlgorithmIndices)
+        return vbapAlgorithm_;
+
+    const SpatializationAlgorithm* chosen = speakerAlgorithms_[index];
+    return (chosen != nullptr && chosen->supportsSurround()) ? *chosen : vbapAlgorithm_;
 }
 
 RenderEngine::~RenderEngine()
@@ -763,7 +796,7 @@ void RenderEngine::renderBlock (const RenderSources& sources,
 
 //==============================================================================
 // computeObjectGains — SC-13. Fills ctx.objChannelGains (surround/Ambisonics,
-// via surroundAlgorithm_) and ctx.objGains (simple binaural, via
+// via the algorithm chosen by algorithmIndex_) and ctx.objGains (simple binaural, via
 // binauralAlgorithm_) for every object slot. Only called when the consumer
 // sets RenderBlockContext::engineComputesGains, or (binauralOnly, objGains
 // alone) engineSelectsHRTF on a binaural block (WR-06). Does not read or write
@@ -773,6 +806,9 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
                                         RenderBlockContext& ctx, bool binauralOnly)
 {
     LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
+
+    // SC-18: one relaxed load per block, resolved to one algorithm reference.
+    const SpatializationAlgorithm& surroundAlgorithm = speakerAlgorithmFor (algorithmIndex_.load (std::memory_order_relaxed));
 
     for (int t = 0; t < MAX_SOURCES; ++t)
     {
@@ -795,7 +831,7 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
         };
 
         if (! binauralOnly)
-            surroundAlgorithm_.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
+            surroundAlgorithm.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
 
         BinauralContext binCtx { binauralProfileIndex_, ctx.sampleRate, kDefaultBinauralProfiles };
         ctx.objGains[t] = binauralAlgorithm_.computeBinauralGains (pos, binCtx);

@@ -56,11 +56,11 @@ namespace spatialcore
 //
 // SC-13 (opt-in): when a consumer sets RenderBlockContext::engineComputesGains,
 // the engine additionally owns per-object gain computation for the
-// discrete-surround/Ambisonics path (objChannelGains, via a fixed
-// VBAPAlgorithm) and the simple-binaural path (objGains, via
-// DirectBinauralAlgorithm + kDefaultBinauralProfiles) — the consumer no
-// longer hand-builds a LayoutContext or dispatches an algorithm itself for
-// those two fields. The flag defaults false, so a consumer that still
+// discrete-surround/Ambisonics path (objChannelGains, via the speaker
+// algorithm chosen with setAlgorithmIndex(), VBAP by default — SC-18) and
+// the simple-binaural path (objGains, via DirectBinauralAlgorithm +
+// kDefaultBinauralProfiles) — the consumer no longer hand-builds a
+// LayoutContext or dispatches an algorithm itself for those two fields. The flag defaults false, so a consumer that still
 // precomputes these fields sees unchanged behaviour. Stereo-variant gains
 // (objGainL/objGainR) remain consumer-side always — that math is not a
 // SpatializationAlgorithm (D-06).
@@ -176,8 +176,9 @@ struct RenderBlockContext
     bool useHRTF = false;
 
     // SC-13: when true, RenderEngine computes objChannelGains/objGains
-    // internally (via a fixed VBAPAlgorithm for surround/Ambisonics and
-    // DirectBinauralAlgorithm for simple binaural) before dispatch, instead
+    // internally (via the speaker algorithm selected with setAlgorithmIndex(),
+    // VBAP by default, for surround/Ambisonics and DirectBinauralAlgorithm for
+    // simple binaural) before dispatch, instead
     // of reading consumer-precomputed values. Defaults false so every
     // existing caller — including SpatialCore's own RenderEngineTests — sees
     // byte-for-byte unchanged behaviour; this is additive, not a major bump.
@@ -216,6 +217,31 @@ struct RenderBlockContext
     // warm-up are timed in samples"). The flag itself is additive, not a major bump.
     bool engineSelectsHRTF = false;
 };
+
+//==============================================================================
+// SC-18: algorithm index map for RenderEngine::setAlgorithmIndex().
+//
+// This is the saved-preset contract shared with OpenSpatialDelay: its editor
+// ids are index + 1 and its stereo modes are index - 7. Never renumber or
+// reorder these.
+//==============================================================================
+inline constexpr int kAlgorithmIndexAmbisonics = 0;
+inline constexpr int kAlgorithmIndexConstantPower = 1;
+inline constexpr int kAlgorithmIndexDBAP = 2;
+inline constexpr int kAlgorithmIndexKNN = 3;
+inline constexpr int kAlgorithmIndexMDAP = 4;
+inline constexpr int kAlgorithmIndexVBAP = 5;
+inline constexpr int kAlgorithmIndexVBIP = 6;
+inline constexpr int kAlgorithmIndexEqualPower = 7;
+inline constexpr int kAlgorithmIndexStereoVBAP = 8;
+inline constexpr int kAlgorithmIndexXYPair = 9;
+inline constexpr int kAlgorithmIndexMSEncode = 10;
+inline constexpr int kAlgorithmIndexBlumlein = 11;
+inline constexpr int kNumAlgorithmIndices = 12;
+inline constexpr int kNumSpeakerAlgorithmIndices = 7;
+
+static_assert (kNumSpeakerAlgorithmIndices + 1 == NUM_ALGORITHMS,
+               "The speaker algorithm list plus DirectBinaural must cover every algorithm in AllAlgorithms.h");
 
 //==============================================================================
 // EngineState — every implicit render-state dependency the 5 render* methods
@@ -313,6 +339,20 @@ public:
     // index convention (1-based, clamped to 0..4 internally via index - 1).
     //--------------------------------------------------------------------------
     void setBinauralProfileIndex (int index) { binauralProfileIndex_ = index; }
+
+    //--------------------------------------------------------------------------
+    // SC-18: selects the algorithm that computes objChannelGains when
+    // engineComputesGains is set. Callable from any non-audio thread; lock-free
+    // (one relaxed atomic store). The value is clamped to
+    // [0, kNumAlgorithmIndices - 1]. renderBlock() reads it once per block and
+    // only when engineComputesGains is set. Indices 0..6 select the speaker
+    // algorithm; 7..11 are the stereo modes (their gain math arrives with SC-18
+    // part 2), and a speaker layout rendered with a stereo index uses VBAP. The
+    // default is VBAP, so a consumer that never calls this renders exactly as
+    // before.
+    //--------------------------------------------------------------------------
+    void setAlgorithmIndex (int index);
+    int getAlgorithmIndex() const;
 
     struct LayoutState
     {
@@ -462,7 +502,7 @@ private:
     //--------------------------------------------------------------------------
     // SC-13: engine-owned gain computation, used only when the consumer sets
     // RenderBlockContext::engineComputesGains. Fills ctx.objChannelGains (via
-    // surroundAlgorithm_) and ctx.objGains (via binauralAlgorithm_) for every
+    // the algorithm chosen by algorithmIndex_) and ctx.objGains (via binauralAlgorithm_) for every
     // live object. Does not touch objGainL/objGainR/stereoMode (D-06 — those
     // stay consumer-side, not a SpatializationAlgorithm concern).
     //--------------------------------------------------------------------------
@@ -645,9 +685,20 @@ private:
     // --- SC-13: engine-owned gain computation state ---
     // Algorithms are stateless per the project convention, so a plain member
     // instance allocates nothing and is safe to call from the audio thread.
-    // Fixed to VBAP/DirectBinaural deliberately: runtime algorithm selection
-    // is SPAT-01 (a later, separate concern) and must not be pulled forward.
-    VBAPAlgorithm surroundAlgorithm_;
+    // SC-18: the seven speaker algorithms are plain members chosen per block
+    // through speakerAlgorithms_; algorithmIndex_ is the only thing the
+    // audio thread reads (VBAP by default). DirectBinaural stays fixed for
+    // the simple-binaural path.
+    AmbisonicsAlgorithm ambisonicsAlgorithm_;
+    ConstantPowerAlgorithm constantPowerAlgorithm_;
+    DBAPAlgorithm dbapAlgorithm_;
+    KNNAlgorithm knnAlgorithm_;
+    MDAPAlgorithm mdapAlgorithm_;
+    VBAPAlgorithm vbapAlgorithm_;
+    VBIPAlgorithm vbipAlgorithm_;
+    const SpatializationAlgorithm* speakerAlgorithms_[kNumSpeakerAlgorithmIndices] = {};
+    std::atomic<int> algorithmIndex_ { kAlgorithmIndexVBAP };
+    const SpatializationAlgorithm& speakerAlgorithmFor (int index) const;
     DirectBinauralAlgorithm binauralAlgorithm_;
     RenderBlockContext gainScratch_;
     int binauralProfileIndex_ = 1;
