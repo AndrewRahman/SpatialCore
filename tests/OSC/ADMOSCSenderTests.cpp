@@ -706,6 +706,7 @@ TEST_CASE ("ADMOSCSender: a reply is held until the next slot and ignored while 
     sender.queueReply (0, ADMPositionQuery::aed, NAN, 2.0f, 0.5f);
     sender.queueReply (0, ADMPositionQuery::aed, 1.0f, INFINITY, 0.5f);
     sender.queueReply (0, static_cast<ADMPositionQuery> (9), 1.0f, 2.0f, 0.5f);
+    sender.queueReply (0, ADMPositionQuery::kCount_, 1.0f, 2.0f, 0.5f);   // the sentinel is not a query (WR-01)
     tickSilent (sender, 1.0 / 30.0);
     CHECK (capture.settle() == 0);
 

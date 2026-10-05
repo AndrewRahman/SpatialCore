@@ -90,6 +90,7 @@ void ADMOSCSender::flushReplies()
                     msg.addFloat32( r.c * std::sin(el));
                     break;
                 }
+                case ADMPositionQuery::kCount_: break;   // sentinel, never queued (k < kNumQueryKinds)
             }
             sender.send(msg);
         }
