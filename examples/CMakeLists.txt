@@ -22,4 +22,5 @@ target_compile_definitions(SpatialCoreDemo
 target_link_libraries(SpatialCoreDemo
     PRIVATE
         SpatialCoreUI
-        SpatialCore)
+        SpatialCore
+        juce::juce_audio_devices)

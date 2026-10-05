@@ -3,7 +3,12 @@
 // Modes:
 //   SpatialCoreDemo --screenshots <dir>   no window, no audio device: writes before-drag.png and
 //                                         after-drag.png, prints the report, exits 0 or 1
-//   SpatialCoreDemo                       interactive: a window with the map
+//   SpatialCoreDemo --selftest            no window, no audio device: drives the OSC, query,
+//                                         trajectory and map routes through RenderEngine on
+//                                         loopback ports 9790 and 9791, exits 0 on PASS, else 1
+//   SpatialCoreDemo [--osc-in <port>] [--osc-out <port>]
+//                                         interactive: a window with the map, the default audio
+//                                         device, ADM-OSC in on 4002 and out to 127.0.0.1:4003
 
 #include "DemoComponent.h"
 
@@ -29,9 +34,13 @@ public:
             return;
         }
 
-        component = std::make_unique<DemoComponent>();
-        component->prepareRender (48000.0, 512);
-        window = std::make_unique<MainWindow> (getApplicationName(), *component, *this);
+        if (args.contains ("--selftest"))
+        {
+            runSelfTest();
+            return;
+        }
+
+        runInteractive (args);
     }
 
     void shutdown() override
@@ -68,6 +77,40 @@ private:
     {
         setApplicationReturnValue (ok ? 0 : 1);
         quit();
+    }
+
+    static int portOption (const juce::StringArray& args, const juce::String& flag, int fallback)
+    {
+        const int at = args.indexOf (flag);
+        return (at >= 0 && at + 1 < args.size()) ? args[at + 1].getIntValue() : fallback;
+    }
+
+    void runInteractive (const juce::StringArray& args)
+    {
+        component = std::make_unique<DemoComponent>();
+
+        // Opening the audio device calls prepareRender() with the device's rate and buffer size.
+        const auto audioError = component->startAudio();
+        if (audioError.isNotEmpty())
+            std::cerr << "audio device: " << audioError.toStdString() << "\n";
+
+        const int inPort = portOption (args, "--osc-in", 4002);
+        const int outPort = portOption (args, "--osc-out", 4003);
+        if (component->startOsc (inPort, outPort))
+            std::cout << "ADM-OSC in on " << inPort << ", out to 127.0.0.1:" << outPort << "\n";
+        else
+            std::cerr << "ADM-OSC not started: ports " << inPort << " and " << outPort
+                      << " conflict or cannot be opened\n";
+
+        component->startUpdates();
+        window = std::make_unique<MainWindow> (getApplicationName(), *component, *this);
+    }
+
+    void runSelfTest()
+    {
+        component = std::make_unique<DemoComponent>();
+        component->prepareRender (48000.0, 512);
+        component->runSelfTest ([this] (bool ok) { finish (ok); });
     }
 
     void runScreenshots (const juce::StringArray& args, int flagIndex)
