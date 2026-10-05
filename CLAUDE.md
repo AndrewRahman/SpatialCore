@@ -20,9 +20,9 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 | Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, engine-owned HRTF profile switching (`setHRTFProfile`, an engine-owned background loader, a lock-free status) with the opt-in `engineSelectsHRTF` flag, a Simple-path cue bank (rear, up and down filter branches ahead of the Woodworth gains), a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
 | Core | `Core/SpatialMath.h` | `softClip()`, `outputLimiter()` (tanh soft ceiling), `distanceAttenuation()`, plus the shared position/gain types in `Core/Types.h` |
 | I/O | `IO/*.h` | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
-| OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
+| OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/): type-checks every argument, rejects non-finite values, clamps ranges, and reports a position message with no arguments as a query through `Listener::admPositionQueried`. ADM-OSC Send keeps its own 30 Hz clock in `tick` (any timer of 30 Hz or more gives 30 Hz), stays silent while objects are still, sends an object's first position and every enabled object on connect and re-enable, and answers queries with `queueReply`, sent to its configured destination |
 | Trajectory | `Trajectory/*.h` | 13 shapes, origin-point architecture, forward/reverse |
-| UI | `UI/*.h` | SpatialMapComponent, SMLLookAndFeel, ReverseSlider, IndicatorToggle, StyledButton |
+| UI | `UI/*.h` | SpatialMapComponent (loads its own embedded JetBrains Mono, so it renders SML fonts under any look-and-feel), SMLLookAndFeel, ReverseSlider, IndicatorToggle, StyledButton |
 
 ### Key Interfaces
 
@@ -107,7 +107,8 @@ class SpatializationAlgorithm {
 - **Framework:** JUCE 9.0.0, C++17, CMake 3.22+
 - **Dependencies:** libmysofa v1.3.5 (FetchContent; a consumer that already provides a `mysofa-static` target, as OpenSpatialDelay does with its own v1.3.2 pin, keeps its own copy), zlib (system)
 - **HRTF data:** the 5 Git-LFS-tracked SOFA files are embedded at build time as BinaryData (`SpatialCoreHRTFData`, linked privately into `SpatialCore`), so a consumer that links SpatialCore needs no install step and no path. `SPATIALCORE_EMBED_ALL_HRTF` (default ON) embeds all five; OFF embeds only `mit_kemar_large_pinna.sofa` (profile 5) for the future installer (SUITE-01). A file with the same name as a built-in, placed in `/Library/Application Support/Spatial Media Lab/HRTF/` (macOS) or `%ProgramData%\Spatial Media Lab\HRTF\` (Windows, implemented but not verified), overrides that built-in at the next profile switch; no per-user folder is consulted and SpatialCore never creates or writes the folder. Configure stops with "git lfs pull" if an HRTF file is still an LFS pointer. The tests read the source-tree files through `SPATIALCORE_HRTF_DIR`. While OpenSpatialDelay still embeds its own `HRTFData` the two sets are both linked (about 2 x 58 MB) until its migration deletes its copy.
-- **Tests:** Catch2 v3.7.1 via FetchContent
+- **Tests:** Catch2 v3.7.1 via FetchContent. Two executables: `SpatialCoreTests` and `SpatialCoreUITests` (the only target that links `SpatialCoreUI`; its ctest names start with `ui:`). The local gate builds every target in Debug and runs both executables, then builds every target in Release and runs `ctest --test-dir build-release/tests`. CI runs zero tests until Phase 6 (CI-01), so this local gate is the only gate. The exact commands are in `README.md` "Local test gate"
+- **Demo:** `SpatialCoreDemo` (in `examples/`) sits behind `SPATIALCORE_BUILD_EXAMPLES` (default OFF, top-level builds only). It is the worked example of wiring ADM-OSC, trajectories and the map into `RenderEngine`, with `--screenshots <dir>` and `--selftest` modes
 
 ## Versioning
 Semantic versioning: `vMAJOR.MINOR.PATCH`

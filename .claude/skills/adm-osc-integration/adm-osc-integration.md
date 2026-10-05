@@ -133,7 +133,7 @@ bool isOscOverriding(int objIdx) {
 
 ### OSC Send
 
-Broadcast object positions at 30Hz with position-change gating:
+Broadcast object positions at 30Hz with position-change gating. SpatialCore's `ADMOSCSender::tick` does this for you and keeps its own 30 Hz clock, so call it from any timer of 30 Hz or more. The sketch below shows the generic pattern:
 
 ```cpp
 juce::OSCSender oscSender;
@@ -141,7 +141,7 @@ float lastSentAz[MAX_OBJECTS] = {};
 float lastSentEl[MAX_OBJECTS] = {};
 float lastSentDist[MAX_OBJECTS] = {};
 
-// Called from 60Hz timer (every other tick = 30Hz)
+// Called at 30Hz (SpatialCore's ADMOSCSender::tick gates its own 30Hz rate from any faster timer)
 void sendOSCPositions() {
     if (!oscSendEnabled || !oscSender.isConnected()) return;
 
@@ -165,6 +165,12 @@ void sendOSCPositions() {
     }
 }
 ```
+
+### Answering position queries
+
+An ADM-OSC position message with no arguments (for example `/adm/obj/4/xyz`) is a query: the device is asking for the object's current value. `ADMOSCReceiver` reports it through `Listener::admPositionQueried (objectIndex, kind)` and holds no positions itself. The consumer answers from its own state by calling `ADMOSCSender::queueReply (objectIndex, kind, az, el, dist)`. The reply goes out on the next 30 Hz slot, one pending reply per (object, kind), and only while the sender is connected.
+
+The reply goes to the sender's configured host and port, not to the address the query came from. This deviates from the ADM-OSC text because `juce::OSCReceiver` does not expose a packet's source address, and it means a spoofed query cannot reflect traffic at a third party (D-20). The listener method is defaulted, so a consumer that does not override it simply ignores queries.
 
 ### Port and Connection Management
 

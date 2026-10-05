@@ -125,6 +125,17 @@ public:
 > audio thread.
 > See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
+### Wiring OSC, trajectories and the map into RenderEngine
+
+`examples/demo/DemoComponent.cpp` is the worked example: ADM-OSC in and out, trajectories and the spatial map all driving `RenderEngine`. Build it with `-DSPATIALCORE_BUILD_EXAMPLES=ON` (see the README), and run `SpatialCoreDemo --selftest` to see all three routes reach the renderer. The rules it follows:
+
+- **Control stays on the message thread.** OSC input, the trajectory timer and map drags all run there. The consumer merges OSC updates that carry NaN for an axis they did not send (it keeps the stored value for that axis), then copies each object's position into per-object `std::atomic` values. The audio thread only loads those atomics and calls `renderBlock`. It never reads `ADMOSCReceiver`, `TrajectoryEngine` or the map.
+- **Let the engine compute gains and dispatch.** Set `engineComputesGains` and `engineDerivesDispatch` on the `RenderBlockContext`.
+- **Answer position queries.** Override `ADMOSCReceiver::Listener::admPositionQueried` and call `ADMOSCSender::queueReply` from your own state. The reply goes to the sender's configured destination, not to the device that asked. Tick the sender from a timer of 30 Hz or more; it keeps its own 30 Hz clock.
+- **Set `reverse` yourself.** `TrajectoryEngine::getState` always reports `TrajectoryState::reverse` as false. Set it from your own per-object flag on the state before you pass it to `SpatialMapComponent::setTrajectoryState`, as the demo does.
+
+Security: `ADMOSCReceiver::connect (port)` listens on every network interface and ADM-OSC has no authentication, so any device on the local network can move objects. The receiver type-checks, clamps and bounds what it accepts, but it cannot tell a friendly sender from another one. Run `oscPortsConflict` before connecting so the plugin does not receive its own output, and tell users to use OSC only on a network they trust.
+
 ## Step 5: PluginEditor — Using SpatialCore UI
 
 ```cpp
@@ -417,6 +428,8 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(YourPluginTests tests/YourTests.cpp)
 target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
 ```
+
+SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README; CI runs zero tests until Phase 6.
 
 ## Preset System
 
