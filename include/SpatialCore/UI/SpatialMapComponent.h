@@ -128,7 +128,17 @@ private:
     // component-level setLookAndFeel does not change, so without these the labels would fall back
     // to the system sans. The bytes are the same ones SMLLookAndFeel loads, so the render under
     // SML is unchanged.
-    juce::Typeface::Ptr monoRegular_, monoMedium_, monoBold_;
+    //
+    // The three faces are parsed once and shared by every live map (IN-05), not once per instance;
+    // they are released when the last map is destroyed. The constructor asserts none is null, because
+    // a null typeface would make FontOptions fall back to the default look-and-feel, which is exactly
+    // what D-06 exists to prevent.
+    struct MonoFaces
+    {
+        MonoFaces();
+        juce::Typeface::Ptr regular, medium, bold;
+    };
+    juce::SharedResourcePointer<MonoFaces> monoFaces_;
 
     std::array<ObjectInfo, MAX_SOURCES> objects = {};
     std::array<TrajectoryEngine::TrajectoryState, MAX_SOURCES> trajectoryStates = {};  // v0.9: trajectory origin + state

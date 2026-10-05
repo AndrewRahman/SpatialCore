@@ -34,14 +34,20 @@ const juce::Colour SpatialMapComponent::objectColours[SpatialMapComponent::MAX_S
     juce::Colour (0xffE963A6),  // 12 rose       — hsl(330, 75%, 65%)
 };
 
+SpatialMapComponent::MonoFaces::MonoFaces()
+{
+    // Embedded JetBrains Mono, loaded the way SMLLookAndFeel loads it (D-05, D-06)
+    regular = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoRegular_ttf, SpatialCoreUIFontData::JetBrains_MonoRegular_ttfSize);
+    medium  = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoMedium_ttf,  SpatialCoreUIFontData::JetBrains_MonoMedium_ttfSize);
+    bold    = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoBold_ttf,    SpatialCoreUIFontData::JetBrains_MonoBold_ttfSize);
+
+    // IN-05: a null face would silently resolve through the default look-and-feel instead.
+    jassert (regular != nullptr && medium != nullptr && bold != nullptr);
+}
+
 SpatialMapComponent::SpatialMapComponent (int numObjects)
     : numObjects_ (juce::jlimit (0, MAX_SOURCES, numObjects))
 {
-    // Embedded JetBrains Mono, loaded the way SMLLookAndFeel loads it (D-05, D-06)
-    monoRegular_ = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoRegular_ttf, SpatialCoreUIFontData::JetBrains_MonoRegular_ttfSize);
-    monoMedium_  = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoMedium_ttf,  SpatialCoreUIFontData::JetBrains_MonoMedium_ttfSize);
-    monoBold_    = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoBold_ttf,    SpatialCoreUIFontData::JetBrains_MonoBold_ttfSize);
-
     generateStars();
 }
 
@@ -248,7 +254,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
 
     // Ring labels: distance values at 30° (lower-right), meter values at 210° (upper-left)
     g.setColour (textEtched.withAlpha (0.45f));
-    g.setFont (makeFont (monoRegular_, 9.0f));
+    g.setFont (makeFont (monoFaces_->regular, 9.0f));
     for (int ri = 1; ri <= 4; ++ri)
     {
         float r = ri * 0.25f;
@@ -290,7 +296,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
 
     // Cardinals — JetBrains Mono Medium, wide tracking, larger text
     g.setColour (textEtched);
-    g.setFont (makeFont (monoMedium_, 14.0f, 0.2f));
+    g.setFont (makeFont (monoFaces_->medium, 14.0f, 0.2f));
     g.drawText ("F",  juce::Rectangle<float> (cx - 30.0f, cy - radius - 20.0f, 60.0f, 16.0f), juce::Justification::centred);
     g.drawText ("B",  juce::Rectangle<float> (cx - 30.0f, cy + radius + 4.0f,  60.0f, 16.0f), juce::Justification::centred);
     g.drawText ("L",  juce::roundToInt (cx - radius - 22), juce::roundToInt (cy - 8),  24, 16, juce::Justification::centred);
@@ -552,7 +558,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
         //    GlyphArrangement getBoundingBox() centers on actual pixel bounds (no descent offset).
         {
             auto labelColour = isAbove ? juce::Colour (0xff161820) : objectColours[i];
-            juce::Font labelFont = makeFont (monoBold_, 10.0f);
+            juce::Font labelFont = makeFont (monoFaces_->bold, 10.0f);
             juce::GlyphArrangement glyphs;
             juce::String numText (i + 1);
             glyphs.addLineOfText (labelFont, numText, 0.0f, 0.0f);
@@ -579,7 +585,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
         {
             float labelOffsetY = isAbove ? -(half + 14.0f) : (half + 2.0f);
             g.setColour (objectColours[i].withAlpha (0.85f));
-            g.setFont (makeFont (monoRegular_, 11.0f));
+            g.setFont (makeFont (monoFaces_->regular, 11.0f));
             juce::String elText = (elDeg > 0.0f ? "+" : "")
                                 + juce::String (juce::roundToInt (elDeg))
                                 + juce::String::charToString (0x00B0);
@@ -594,7 +600,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
                             ? pos.y + half + 14.0f    // below elevation label
                             : pos.y + half + 1.0f;    // normal position
             g.setColour (accentStellar);
-            g.setFont (makeFont (monoBold_, 10.0f));
+            g.setFont (makeFont (monoFaces_->bold, 10.0f));
             g.drawText ("OSC", juce::roundToInt (pos.x - half - 2), juce::roundToInt (oscLabelY),
                         juce::roundToInt (dotSize + 4), 10, juce::Justification::centred);
         }
