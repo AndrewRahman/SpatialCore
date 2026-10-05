@@ -60,7 +60,7 @@ namespace
     {
 #if JUCE_WINDOWS
         // No O_NONBLOCK or fstat equivalent through juce::FileInputStream; existsAsFile excludes
-        // directories, and the cap is still enforced while reading. Not built or run in CI today.
+        // directories, and the cap is still enforced while reading. Built by OSP's Windows CI job.
         if (! file.existsAsFile())
             return false;
 
@@ -69,7 +69,7 @@ namespace
         if (! in.openedOk() || in.getTotalLength() > cap)
             return false;
 
-        in.readIntoMemoryBlock (out, static_cast<ssize_t> (cap) + 1);
+        in.readIntoMemoryBlock (out, static_cast<juce::pointer_sized_int> (cap) + 1);
         return static_cast<juce::int64> (out.getSize()) <= cap;
 #else
         // O_NOCTTY: a symlink behind the name may point at a terminal device, and opening one
