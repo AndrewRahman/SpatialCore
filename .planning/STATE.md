@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 04
 current_phase_name: Control Surface & UI
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-10-05T08:43:54.597Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-10-05T08:53:09.303Z"
 last_activity: 2026-10-05
 last_activity_desc: Phase 04 execution started
-state_head: cd399f86021bb52abb2e2cd69275a79b6f1b63fe
+state_head: 57e22a4b20c6e9f81a4b144509c902b62e7de514
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 34
-  completed_plans: 29
+  completed_plans: 30
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04)
 ## Current Position
 
 Phase: 04 (Control Surface & UI) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-05 — Phase 04 execution started
 
@@ -106,6 +106,7 @@ Progress: [█████░░░░░] 50%
 | Phase 04 P01 | 16 min | 2 tasks | 3 files |
 | Phase 04 P02 | 18 min | 2 tasks | 3 files |
 | Phase 04 P03 | 14 min | 3 tasks | 8 files |
+| Phase 04 P04-04 | 8 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -154,6 +155,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: 04-02: ADMOSCSender keeps its own 30 Hz schedule (tick with nowSeconds, stall resync, first/connect/re-enable send once, silent while still); the five-argument tick OSD calls delegates to it on the hi-res wall clock. Measured 300 messages per 10 s at 120/60/50 Hz callers, 299 at 30 Hz with jitter
 - [Phase 04]: 04-03: query replies go to the sender's configured host:port, never the packet source (D-20); disconnect() clears pending replies
 - [Phase 04]: 04-03: ADMOSCReceiver reads an argument only after its OSC type is known; NaN/inf drop the whole message, azimuth wrapped once, elevation/distance/partial axes clamped (D-21)
+- [Phase 04]: 04-04: no trajectory library change; ten shapes retrace forward exactly (max error 0.0), Bounce and Line reverse pinned as intentional OSD#100 exceptions (D-19)
 
 ### Pending Todos
 
@@ -194,7 +196,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-05T08:43:54.539Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-10-05T08:53:09.246Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
