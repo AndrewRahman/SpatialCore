@@ -347,6 +347,16 @@ target_compile_definitions(SpatialCoreUI PUBLIC JUCE_USE_CURL=0)
 
 target_compile_features(SpatialCoreUI PUBLIC cxx_std_17)
 
+# --- Demo app (examples/) ---
+# Off by default so OpenSpatialDelay and every other consumer that add_subdirectory()s
+# SpatialCore never builds it (Phase 4, D-02). Top-level builds only. It is the worked example
+# of wiring ADM-OSC, trajectories and the map into RenderEngine, and it writes the screenshots
+# for the one human look at the map (D-03).
+option(SPATIALCORE_BUILD_EXAMPLES "Build the SpatialCore demo app in examples/" OFF)
+if(PROJECT_IS_TOP_LEVEL AND SPATIALCORE_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
 # --- Tests ---
 option(SPATIALCORE_BUILD_TESTS "Build SpatialCore tests" ON)
 if(SPATIALCORE_BUILD_TESTS)
