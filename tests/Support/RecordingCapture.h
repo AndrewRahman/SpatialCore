@@ -26,6 +26,10 @@ namespace spatialcore::test
 // for a count. A marker that arrives after its own settle() call timed out therefore cannot
 // satisfy a later call. A timeout is a test failure (FAIL), never a quiet return, because a
 // count taken without the marker proves nothing about datagrams still in flight.
+//
+// WR-12: declare a RecordingCapture BEFORE the juce::OSCReceiver it is added to. Locals unwind in
+// reverse order, so the receiver (and its network thread, which holds a pointer to this listener)
+// is destroyed first, even when settle() or the constructor throws.
 struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
 {
     struct Entry

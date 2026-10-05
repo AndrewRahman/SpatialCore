@@ -429,8 +429,8 @@ TEST_CASE ("ADM-OSC query: /adm/obj/4/xyz with no arguments over UDP is answered
     REQUIRE (queryPort > 0);
     REQUIRE (returnPort != queryPort);
 
-    juce::OSCReceiver deviceReturn;
     RecordingCapture capture (returnPort);
+    juce::OSCReceiver deviceReturn;
     REQUIRE (deviceReturn.connect (returnPort));
     deviceReturn.addListener (&capture);
 
