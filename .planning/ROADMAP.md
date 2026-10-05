@@ -26,7 +26,7 @@ yet consume SpatialCore; the migration is unstarted.
 - [x] **Phase 1: Documentation Truth & Contract Freeze** - Every public number matches the tree, and CLAUDE.md stops mis-steering future sessions (completed 2026-08-15)
 - [x] **Phase 2: Algorithm & Format Verification** - Ambisonics convention stated; gain paths verified against the panning laws (completed 2026-10-04)
 - [x] **Phase 3: Binaural Defects & HRTF Packaging** - The two inherited binaural bugs are fixed and a consumer gets HRTF data by linking (completed 2026-10-04)
-- [ ] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction
+- [x] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction (completed 2026-10-05)
 - [ ] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds
 - [ ] **Phase 6: Consumer Readiness & CI** - OSD can submodule, link, and build — proven in CI
 
@@ -203,7 +203,7 @@ not link — so UI verification here is by interaction, not by unit test.
 
 **Already verified**: `DATA-02` is done — `fonts/*.ttf` are compiled in as JUCE BinaryData.
 `ADMOSCReceiver.cpp:43` bounds-checks correctly, closing the original RTSF-04 as a non-finding.
-**Plans**: 8/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 8/8 plans complete (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 **UI hint**: yes
 
 Plans:
@@ -290,7 +290,7 @@ External Dependencies.
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
-| 4. Control Surface & UI | 8/8 | In Progress|  |
+| 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
