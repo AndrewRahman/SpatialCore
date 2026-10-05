@@ -520,18 +520,27 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     lfeFilter.reset();
 
     // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
+    //
+    // Same ordering rule as the LFE filter above: every NFC update installs
+    // FIRST-order coefficients, so the placeholder must be first-order too and
+    // be assigned BEFORE prepare()/reset() sizes the state. A second-order
+    // placeholder (the former 1 kHz all-pass) made Filter::check() reallocate on
+    // the audio thread when an order that became active after the distance
+    // settled was first processed (SpatialCore#21). Identity is an exact
+    // pass-through until the first NFC update replaces it.
     for (int obj = 0; obj < MAX_SOURCES; ++obj)
     {
         for (int n = 0; n < kMaxAmbiOrder; ++n)
         {
+            *nfcFilters[obj][n].coefficients =
+                juce::dsp::IIR::Coefficients<float> (1.0f, 0.0f, 1.0f, 0.0f);
             nfcFilters[obj][n].prepare (spec);
             nfcFilters[obj][n].reset();
-            *nfcFilters[obj][n].coefficients =
-                *juce::dsp::IIR::Coefficients<float>::makeAllPass (sampleRate, 1000.0f);
         }
         prevNfcDistance[obj] = -1.0f;  // Force coefficient update on first block
         smoothedNfcDistance[obj] = 0.0f;
     }
+    lastNfcAmbiOrder_ = -1;
 
     // HRTF convolution: prepare both renderers (double-buffered)
     binauralRenderers[0].prepare (sampleRate, maxBlockSize);
@@ -1368,6 +1377,19 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
     // RenderBlockContext per-block (D-02: renderBlock stays a pure function
     // of its inputs, no hidden dependency on prepare()'s cached rate).
     const double sr = blockCtx.sampleRate;
+
+    // An order change activates (or deactivates) filters whose coefficients
+    // were last written under a different order, and the distance gate below
+    // would not rewrite them while the distance stays settled. Invalidate
+    // every object's last-written distance so this block's update recomputes
+    // every active order (SpatialCore#21). No allocation: coefficients are
+    // assigned first-order into state already sized for first order.
+    if (ambiOrder != lastNfcAmbiOrder_)
+    {
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            prevNfcDistance[t] = -1.0f;
+        lastNfcAmbiOrder_ = ambiOrder;
+    }
 
     for (int t = 0; t < MAX_SOURCES; ++t)
     {

@@ -1692,6 +1692,13 @@ TEST_CASE ("RenderEngine: a render thread always sees one of the formats a write
 // ============================================================================
 namespace
 {
+    // The NFC update is deliberately gated on the smoothed distance moving by
+    // more than 0.01 m, so even a fresh engine's coefficients lag the settled
+    // distance by up to 0.01 m: at 5 m that is 0.01 / 5 = 2e-3 relative DC
+    // gain, which the engine under comparison shares. 5e-3 is that bound with
+    // margin; the placeholder defect this guards against was ~70% relative.
+    constexpr float kSc19RelTolerance = 5e-3f;
+
     // One live object (azimuth 30, elevation 20, distance 0.5 = 5 m, DC 0.5)
     // rendered through the Ambisonics path with explicit consumer flags.
     struct Sc19Rig
@@ -1791,7 +1798,7 @@ TEST_CASE ("RenderEngine: raising the Ambisonics order mid-stream filters the ne
 
     REQUIRE (scale > 1e-4f); // non-vacuous
     CHECK (a.lastBlockFinite (16));
-    CHECK (worstGap <= 1e-3f * scale);
+    CHECK (worstGap <= kSc19RelTolerance * scale);
 }
 
 TEST_CASE ("RenderEngine: lowering then raising the Ambisonics order matches a fresh 6th-order engine on ACN 4..48 (SC-19, SpatialCore#21)",
@@ -1811,5 +1818,5 @@ TEST_CASE ("RenderEngine: lowering then raising the Ambisonics order matches a f
 
     REQUIRE (scale > 1e-4f);
     CHECK (a.lastBlockFinite (49));
-    CHECK (worstGap <= 1e-3f * scale);
+    CHECK (worstGap <= kSc19RelTolerance * scale);
 }

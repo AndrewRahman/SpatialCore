@@ -691,6 +691,7 @@ private:
     juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // 12 objects x 6 orders
     float smoothedNfcDistance[MAX_SOURCES] = {};
     float prevNfcDistance[MAX_SOURCES] = {};
+    int   lastNfcAmbiOrder_ = -1;  // order the NFC filters were last updated for (SpatialCore#21)
     int   cachedMaxrEOrder = -1;
     float cachedMaxrE[kMaxAmbiOrder + 1] = {};
 
