@@ -29,11 +29,15 @@ constexpr int kControlsHeight = 40;
 // A UDP port the OS reports as free, for the self-test's loopback pair (so it never collides
 // with another run or another app on a fixed number). juce::DatagramSocket cannot bind port 0,
 // so this binds a plain socket to port 0, reads the assigned port and closes it. 0 on failure.
+// This is a deliberate twin of spatialcore::test::findFreeUdpPort in tests/Support/FreeUdpPort.h:
+// the demo must not include test headers, so a fix to one body must be made in the other too.
 int findFreeUdpPort()
 {
    #if JUCE_WINDOWS
-    WSADATA wsa;
-    if (WSAStartup (MAKEWORD (2, 2), &wsa) != 0)
+    // Started once per process: WSAStartup is reference counted, and a call per lookup would
+    // never be paired with a WSACleanup (IN-11).
+    static const bool winsockStarted = [] { WSADATA wsa; return WSAStartup (MAKEWORD (2, 2), &wsa) == 0; }();
+    if (! winsockStarted)
         return 0;
     const SOCKET s = ::socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s == INVALID_SOCKET)
