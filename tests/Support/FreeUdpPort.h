@@ -9,7 +9,9 @@
 // juce::DatagramSocket::bindToPort rejects port 0, so the port is found with a plain
 // socket: bind to 0.0.0.0:0 (the wildcard JUCE's receiver binds, no SO_REUSEADDR), read back what the OS assigned, close.
 // The window between that close and the caller's own bind is a few microseconds and the
-// OS does not hand a just-assigned ephemeral port to someone else in it.
+// OS is unlikely to hand a just-freed ephemeral port to someone else in it, but nothing
+// guarantees that: a concurrent process doing the same lookup could be given the same
+// port. The tests accept that small residual risk.
 
 #if defined(_WIN32)
  #include <winsock2.h>
@@ -28,8 +30,10 @@ namespace spatialcore::test
 inline int findFreeUdpPort()
 {
 #if defined(_WIN32)
-    WSADATA wsa;
-    if (WSAStartup (MAKEWORD (2, 2), &wsa) != 0)
+    // Started once per process: WSAStartup is reference counted, and a call per lookup
+    // would never be paired with a WSACleanup.
+    static const bool winsockStarted = [] { WSADATA wsa; return WSAStartup (MAKEWORD (2, 2), &wsa) == 0; }();
+    if (! winsockStarted)
         return 0;
     const SOCKET s = ::socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s == INVALID_SOCKET)
