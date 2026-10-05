@@ -1,9 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <SpatialCore/OSC/ADMOSCSender.h>
 #include <juce_osc/juce_osc.h>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <vector>
 
@@ -249,6 +251,356 @@ TEST_CASE ("ADMOSCSender: a 60 Hz caller moving an object sends 30 messages per 
         sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
 
     CHECK (capture.waitUntilQuiet() == settled);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+namespace
+{
+    // Drives one moving object at callerHz for `seconds` simulated seconds with
+    // +-jitterSeconds of timing noise, waiting for the wire to go quiet after
+    // each simulated second so few datagrams are ever in flight.
+    void runMovingCaller (ADMOSCSender& sender, const RecordingCapture& capture,
+                          double callerHz, int seconds, double jitterSeconds,
+                          double startSeconds = 0.0)
+    {
+        juce::Random rng (42);
+        const double period = 1.0 / callerHz;
+        const int callsPerSecond = (int) std::lround (callerHz);
+        float az = 0.0f;
+        const float el = 0.0f, dist = 0.5f;
+        const bool enabled = true;
+
+        for (int s = 0; s < seconds; ++s)
+        {
+            for (int c = 0; c < callsPerSecond; ++c)
+            {
+                const int k = s * callsPerSecond + c;
+                const double jitter = jitterSeconds > 0.0
+                    ? (rng.nextDouble() * 2.0 - 1.0) * jitterSeconds : 0.0;
+                az += 1.0f;
+                sender.tick (&az, &el, &dist, &enabled, 1,
+                             startSeconds + k * period + jitter);
+            }
+            capture.waitUntilQuiet();
+        }
+    }
+
+    void tickObjects (ADMOSCSender& sender, double t, const float* az,
+                      const bool* enabled, int n)
+    {
+        const float el[MAX_SOURCES] = {};
+        const float dist[MAX_SOURCES] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
+                                          0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        sender.tick (az, el, dist, enabled, n, t);
+    }
+}
+
+TEST_CASE ("ADMOSCSender: any caller rate from 30 to 120 Hz gets 30 messages per second with jitter",
+           "[osc][send][rate]")
+{
+    const int hz = GENERATE (120, 60, 50, 30);
+    CAPTURE (hz);
+    const int port = 9731 + (hz == 120 ? 0 : hz == 60 ? 1 : hz == 50 ? 2 : 3);
+
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    runMovingCaller (sender, capture, (double) hz, 10, 0.002);
+
+    const int total = capture.waitUntilQuiet();
+    INFO ("messages over 10 simulated seconds at " << hz << " Hz: " << total);
+    CHECK (total >= 290);
+    CHECK (total <= 310);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: a caller at exactly 1/60 s spacing gets 30 messages per second",
+           "[osc][send][rate]")
+{
+    constexpr int port = 9735;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    runMovingCaller (sender, capture, 60.0, 10, 0.0);
+
+    const int total = capture.waitUntilQuiet();
+    INFO ("messages over 10 simulated seconds at exact 1/60 s: " << total);
+    CHECK (total >= 290);
+    CHECK (total <= 310);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 30 messages in a second",
+           "[osc][send][rate][realtime]")
+{
+    constexpr int port = 9736;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    float az = 0.0f;
+    const float el = 0.0f, dist = 0.5f;
+    const bool enabled = true;
+
+    // About one second of 60 Hz wall-clock calls. A loaded machine stretches the
+    // sleeps, so the rate is judged against the elapsed time actually measured.
+    const auto start = std::chrono::steady_clock::now();
+    auto lastCall = start;
+    for (int i = 0; i < 60; ++i)
+    {
+        az += 1.0f;
+        sender.tick (&az, &el, &dist, &enabled, 1);
+        lastCall = std::chrono::steady_clock::now();
+        juce::Thread::sleep (16);
+    }
+    const double elapsed = std::chrono::duration<double> (lastCall - start).count();
+
+    const int total = capture.waitUntilQuiet();
+    INFO ("messages from 60 wall-clock calls: " << total << " over " << elapsed << " s");
+    CHECK (elapsed >= 0.9);
+    CHECK ((double) total >= 30.0 * elapsed - 5.0);
+    CHECK ((double) total <= 30.0 * elapsed + 5.0);
+    if (elapsed < 1.1)
+    {
+        CHECK (total >= 25);
+        CHECK (total <= 35);
+    }
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: after a one second stall the next second is 30 messages, not a burst",
+           "[osc][send][rate][gap]")
+{
+    constexpr int port = 9737;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    runMovingCaller (sender, capture, 60.0, 1, 0.0);
+    const int beforeStall = capture.waitUntilQuiet();
+
+    // No calls for one second, then one second of 60 Hz calls with movement.
+    float az = 1000.0f;
+    const float el = 0.0f, dist = 0.5f;
+    const bool enabled = true;
+    for (int k = 120; k < 180; ++k)
+    {
+        az += 1.0f;
+        sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
+    }
+
+    const int afterStall = capture.waitUntilQuiet();
+    INFO ("messages in the second after the stall: " << (afterStall - beforeStall));
+    CHECK (afterStall - beforeStall >= 29);
+    CHECK (afterStall - beforeStall <= 31);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: an object's first position is sent even at exactly (0, 0, 0)",
+           "[osc][send][first]")
+{
+    constexpr int port = 9738;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    const float az = 0.0f, el = 0.0f, dist = 0.0f;
+    const bool enabled = true;
+    sender.tick (&az, &el, &dist, &enabled, 1, 0.0);
+
+    REQUIRE (capture.waitUntilQuiet() == 1);
+    const auto m = capture.last();
+    CHECK (m.address == "/adm/obj/1/aed");
+    REQUIRE (m.argCount == 3);
+    CHECK (m.args[0] == 0.0f);
+    CHECK (m.args[1] == 0.0f);
+    CHECK (m.args[2] == 0.0f);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degrees is",
+           "[osc][send][deadband]")
+{
+    constexpr int port = 9739;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    const float el = 0.0f, dist = 0.0f;
+    const bool enabled = true;
+
+    float az = 0.0f;
+    sender.tick (&az, &el, &dist, &enabled, 1, 0.0);          // first send
+    REQUIRE (capture.waitUntilQuiet() == 1);
+
+    az = 0.1f;
+    sender.tick (&az, &el, &dist, &enabled, 1, 1.0 / 30.0);   // not greater than 0.1
+    CHECK (capture.waitUntilQuiet() == 1);
+
+    az = 0.2f;
+    sender.tick (&az, &el, &dist, &enabled, 1, 2.0 / 30.0);   // greater
+    REQUIRE (capture.waitUntilQuiet() == 2);
+    CHECK_THAT (capture.last().args[0], WithinAbs (0.2f, 1.0e-6f));
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: still objects are silent and one moved object sends one message",
+           "[osc][send][static]")
+{
+    constexpr int port = 9740;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    const bool enabled[3] = { true, true, true };
+    float az[3] = { 10.0f, 20.0f, 30.0f };
+    tickObjects (sender, 0.0, az, enabled, 3);                 // first send, 3 messages
+    az[0] = 40.0f; az[1] = 50.0f; az[2] = 60.0f;
+    tickObjects (sender, 1.0 / 30.0, az, enabled, 3);          // moved, 3 messages
+    REQUIRE (capture.waitUntilQuiet() == 6);
+
+    for (int k = 4; k < 124; ++k)                              // 2 simulated seconds still
+        tickObjects (sender, k / 60.0, az, enabled, 3);
+    CHECK (capture.waitUntilQuiet() == 6);
+
+    az[2] = 90.0f;                                             // move object index 2 only
+    tickObjects (sender, 124 / 60.0, az, enabled, 3);
+    tickObjects (sender, 125 / 60.0, az, enabled, 3);
+    tickObjects (sender, 126 / 60.0, az, enabled, 3);
+
+    CHECK (capture.waitUntilQuiet() == 7);
+    CHECK (capture.countFor ("/adm/obj/3/aed") == 3);
+    CHECK (capture.last().address == "/adm/obj/3/aed");
+    CHECK_THAT (capture.last().args[0], WithinAbs (90.0f, 1.0e-6f));
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: connect and reconnect send every enabled object once, never a disabled one",
+           "[osc][send][connect]")
+{
+    constexpr int port = 9741;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    const bool enabled[4] = { true, true, true, false };
+    const float az[4] = { 10.0f, 20.0f, 30.0f, 40.0f };
+
+    tickObjects (sender, 0.0, az, enabled, 4);
+    REQUIRE (capture.waitUntilQuiet() == 3);
+
+    for (int k = 1; k < 61; ++k)                               // a still second
+        tickObjects (sender, k / 60.0, az, enabled, 4);
+    CHECK (capture.waitUntilQuiet() == 3);
+
+    sender.disconnect();
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    tickObjects (sender, 2.0, az, enabled, 4);                 // nothing moved
+    CHECK (capture.waitUntilQuiet() == 6);
+    CHECK (capture.countFor ("/adm/obj/1/aed") == 2);
+    CHECK (capture.countFor ("/adm/obj/2/aed") == 2);
+    CHECK (capture.countFor ("/adm/obj/3/aed") == 2);
+    CHECK (capture.countFor ("/adm/obj/4/aed") == 0);
+
+    receiver.removeListener (&capture);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+TEST_CASE ("ADMOSCSender: an object enabled again is sent once, and nothing is sent while it is disabled",
+           "[osc][send][reenable]")
+{
+    constexpr int port = 9742;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    const float az[2] = { 10.0f, 20.0f };
+    const bool both[2]    = { true, true };
+    const bool oneOff[2]  = { true, false };
+
+    tickObjects (sender, 0.0, az, both, 2);                    // both sent
+    REQUIRE (capture.waitUntilQuiet() == 2);
+
+    // Disabled for one call between slots, enabled again at the same position.
+    tickObjects (sender, 1.0 / 60.0, az, oneOff, 2);
+    tickObjects (sender, 2.0 / 60.0, az, both, 2);             // slot
+    CHECK (capture.waitUntilQuiet() == 3);
+    CHECK (capture.last().address == "/adm/obj/2/aed");
+
+    // Disabled across a whole slot: nothing is sent for it.
+    tickObjects (sender, 3.0 / 60.0, az, oneOff, 2);
+    tickObjects (sender, 4.0 / 60.0, az, oneOff, 2);           // slot, still disabled
+    CHECK (capture.waitUntilQuiet() == 3);
+
+    tickObjects (sender, 5.0 / 60.0, az, both, 2);
+    tickObjects (sender, 6.0 / 60.0, az, both, 2);             // slot
+    CHECK (capture.waitUntilQuiet() == 4);
+    CHECK (capture.countFor ("/adm/obj/2/aed") == 3);
+    CHECK (capture.countFor ("/adm/obj/1/aed") == 1);
 
     receiver.removeListener (&capture);
     sender.disconnect();
