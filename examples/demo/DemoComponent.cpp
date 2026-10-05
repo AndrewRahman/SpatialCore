@@ -468,6 +468,10 @@ void DemoComponent::renderAudio (float* const* out, int numChannels, int numSamp
 
 float DemoComponent::measureLeftRight (int index)
 {
+    // IN-06a: this renders on the message thread and shares engine_, tone_, tonePhase_ and
+    // enabled_ with the audio callback, so it is only valid while no device is running.
+    jassert (deviceManager_.getCurrentAudioDevice() == nullptr);
+
     std::array<bool, kNumObjects> saved {};
     for (int i = 0; i < kNumObjects; ++i)
     {
@@ -624,7 +628,11 @@ void DemoComponent::runSelfTest (std::function<void (bool)> done)
     startUpdates();
 
     rig_->sender.send ("/adm/obj/1/aed", 90.0f, 0.0f, 0.5f);
-    juce::Timer::callAfterDelay (300, [this] { selfTestOsc(); });
+    juce::Timer::callAfterDelay (300, [weak = juce::WeakReference<DemoComponent> (this)]
+    {
+        if (weak != nullptr)   // IN-06c: the app may quit before the step fires
+            weak->selfTestOsc();
+    });
 }
 
 void DemoComponent::selfTestOsc()
@@ -636,7 +644,11 @@ void DemoComponent::selfTestOsc()
     // No arguments: a query for the object's position. xyz, because the sender's own position
     // broadcasts use /aed and would otherwise be indistinguishable from a reply.
     rig_->sender.send (juce::OSCMessage ("/adm/obj/1/xyz"));
-    juce::Timer::callAfterDelay (300, [this] { selfTestQuery(); });
+    juce::Timer::callAfterDelay (300, [weak = juce::WeakReference<DemoComponent> (this)]
+    {
+        if (weak != nullptr)   // IN-06c: the app may quit before the step fires
+            weak->selfTestQuery();
+    });
 }
 
 void DemoComponent::selfTestQuery()

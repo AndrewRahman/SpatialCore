@@ -94,8 +94,8 @@ public:
     // One trajectory step for every object whose shape is not None; the timer calls it with 1/60 s.
     void stepTrajectories (float dt);
 
-    // Headless check of the three control routes and the query reply, on loopback ports 9790 (in)
-    // and 9791 (out). Prints one SELFTEST line per check, then SELFTEST RESULT; `done` receives
+    // Headless check of the three control routes and the query reply, on a pair of free loopback
+    // ports chosen by the OS. Prints one SELFTEST line per check, then SELFTEST RESULT; `done` receives
     // the overall result. Needs the message loop to be running.
     void runSelfTest (std::function<void (bool)> done);
 
@@ -135,7 +135,8 @@ private:
     bool writePng (const juce::File& file);
     juce::String describe (const char* label, float leftRight) const;
 
-    // Self-test steps, chained through Timer::callAfterDelay so the message loop delivers OSC.
+    // Self-test steps, chained through Timer::callAfterDelay (guarded by a WeakReference) so the
+    // message loop delivers OSC.
     struct SelfTestRig;
     void selfTestReport (const juce::String& check, bool ok, const juce::String& detail);
     void selfTestFinish();
@@ -154,7 +155,12 @@ private:
     bool controlsVisible_ = true;
     int selectedObject_ = 0;
 
-    // The audio thread reads these; the message thread writes them.
+    // The audio thread reads these; the message thread writes them. Each object's azimuth,
+    // elevation and distance are three separate relaxed atomics, so a block that starts while the
+    // message thread is mid-update can pair the new azimuth with the previous distance for that one
+    // block (IN-06b). That is inaudible for a demo's tone sources and costs no lock. A consumer that
+    // needs the triple to be consistent should publish it through a seqlock or a triple buffer (as
+    // RenderEngine does for its layout), never through a mutex on the audio thread.
     std::array<std::atomic<float>, kNumObjects> az_ {};
     std::array<std::atomic<float>, kNumObjects> el_ {};
     std::array<std::atomic<float>, kNumObjects> dist_ {};
@@ -185,5 +191,7 @@ private:
     std::function<void (bool)> selfTestDone_;
     juce::StringArray selfTestFailures_;
 
+    // Lets the delayed self-test steps check the component is still alive before they run.
+    JUCE_DECLARE_WEAK_REFERENCEABLE (DemoComponent)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DemoComponent)
 };
