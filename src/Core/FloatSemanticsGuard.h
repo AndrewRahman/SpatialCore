@@ -15,12 +15,13 @@
 // value is ever NaN or infinite and fold those tests to "finite", so a
 // non-finite position would reach the audio path again with no diagnostic.
 //
-// ADMOSCReceiver.cpp includes it for a different reason (IN-16): it has no
-// isfinite / isnan test of its own. It forwards a single-axis /azim, /elev or
-// /dist message with the other two axes set to the NAN macro, a sentinel the
-// consumer's Listener detects with std::isnan to update only the received
-// axis. Under finite-math-only that NaN is undefined behaviour, so the
-// sentinel contract the consumer relies on needs the same IEEE semantics.
+// ADMOSCReceiver.cpp includes it for two reasons. IN-16: it forwards a
+// single-axis /azim, /elev or /dist message with the other two axes set to the
+// NAN macro, a sentinel the consumer's Listener detects with std::isnan to
+// update only the received axis; under finite-math-only that NaN is undefined
+// behaviour, so the sentinel contract needs IEEE semantics. D-21 (Phase 4): it
+// also rejects a non-finite wire value with std::isfinite so a NaN in a packet
+// cannot pose as that "axis not sent" sentinel, and that test must not fold away.
 //
 // CMakeLists.txt keeps fast-math off the SpatialCore target; this turns that
 // comment into a build failure in every including translation unit, whichever

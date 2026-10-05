@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
 #include <SpatialCore/OSC/ADMOSCSender.h>
+#include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <chrono>
 #include <cmath>
 #include <thread>
@@ -560,4 +561,263 @@ TEST_CASE ("ADM-OSC query: a no-argument message to any other property or object
     CHECK (listener.positionCallCount == 0);
     CHECK (listener.paramCallCount == 0);
     CHECK (listener.globalCallCount == 0);
+}
+
+// ----------------------------------------------------------------------------
+// Input hardening (Phase 4 Plan 04-03, D-21, T-04-05, T-04-06). The datagrams are
+// unauthenticated: a wrong-typed argument, a NaN or an out-of-range number must
+// neither assert, nor reach the consumer as a position, nor hang a wrap loop.
+// ----------------------------------------------------------------------------
+
+namespace
+{
+    // One argument of any type, so the tests can send what a hostile or sloppy
+    // device might.
+    juce::OSCMessage oneArg (const juce::String& address, const juce::OSCArgument& arg)
+    {
+        juce::OSCMessage m (address);
+        m.addArgument (arg);
+        return m;
+    }
+
+    juce::OSCMessage threeFloats (const juce::String& address, float a, float b, float c)
+    {
+        juce::OSCMessage m (address);
+        m.addFloat32 (a);
+        m.addFloat32 (b);
+        m.addFloat32 (c);
+        return m;
+    }
+}
+
+TEST_CASE ("ADMOSCReceiver: a wrong-typed argument is ignored, not read with the wrong getter",
+           "[osc][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    // A string where a number belongs: previously getInt32() on a string, which is
+    // 0 in Release and a JUCE assertion in Debug (Pitfall 5).
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/enabled", juce::OSCArgument (juce::String ("on"))));
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/trajectory", juce::OSCArgument (juce::String ("circle"))));
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/direction", juce::OSCArgument (juce::String ("fwd"))));
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/input", juce::OSCArgument (juce::String ("1"))));
+    receiver->testProcessOSCMessage (oneArg ("/osd/global/drywet", juce::OSCArgument (juce::String ("0.5"))));
+    // An int32 where only float32 is accepted (position axes, /doppler /pitch /speed).
+    receiver->testProcessOSCMessage (oneArg ("/adm/obj/1/azim", juce::OSCArgument (90)));
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/doppler", juce::OSCArgument (1)));
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/pitch", juce::OSCArgument (1)));
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/speed", juce::OSCArgument (1)));
+    // A string in a position triple.
+    juce::OSCMessage aed ("/adm/obj/1/aed");
+    aed.addFloat32 (10.0f);
+    aed.addString ("x");
+    aed.addFloat32 (0.5f);
+    receiver->testProcessOSCMessage (aed);
+
+    CHECK (listener.paramCallCount == 0);
+    CHECK (listener.globalCallCount == 0);
+    CHECK (listener.positionCallCount == 0);
+}
+
+TEST_CASE ("ADMOSCReceiver: int32 is still accepted for the switch and index parameters",
+           "[osc][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/1/enabled", juce::OSCArgument (1)));
+    REQUIRE (listener.paramCallCount == 1);
+    CHECK (listener.lastParamName == "enabled");
+    CHECK (listener.lastParamValue == 1.0f);
+
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/2/trajectory", juce::OSCArgument (3)));
+    CHECK (listener.lastParamName == "trajectory");
+    CHECK (listener.lastParamValue == 3.0f);
+
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/2/direction", juce::OSCArgument (-1)));
+    CHECK (listener.lastParamName == "direction");
+    CHECK (listener.lastParamValue == -1.0f);
+
+    receiver->testProcessOSCMessage (oneArg ("/osd/obj/2/input", juce::OSCArgument (4)));
+    CHECK (listener.lastParamName == "input");
+    CHECK (listener.lastParamValue == 4.0f);
+
+    receiver->testProcessOSCMessage (oneArg ("/osd/global/delaytime", juce::OSCArgument (2)));
+    REQUIRE (listener.globalCallCount == 1);
+    CHECK (listener.lastGlobalProperty == "delaytime");
+    CHECK (listener.lastGlobalValue == 2.0f);
+
+    // float32 keeps working for the same properties.
+    sendOSC (*receiver, "/osd/obj/1/enabled", { 0.0f });
+    CHECK (listener.lastParamValue == 0.0f);
+    sendOSC (*receiver, "/osd/global/drywet", { 0.25f });
+    CHECK (listener.lastGlobalValue == 0.25f);
+}
+
+TEST_CASE ("ADMOSCReceiver: NaN and infinity anywhere in a message drop the whole message",
+           "[osc][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", nan, 0.0f, 0.5f));
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 10.0f, nan, 0.5f));
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 10.0f, 0.0f, inf));
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", -inf, 0.0f, 0.5f));
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/xyz", 0.1f, nan, 0.2f));
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/xyz", inf, 0.1f, 0.2f));
+    sendOSC (*receiver, "/adm/obj/1/azim", { nan });
+    sendOSC (*receiver, "/adm/obj/1/azim", { inf });
+    sendOSC (*receiver, "/adm/obj/1/elev", { nan });
+    sendOSC (*receiver, "/adm/obj/1/dist", { -inf });
+    sendOSC (*receiver, "/adm/obj/1/x", { nan });
+    sendOSC (*receiver, "/osd/obj/1/speed", { inf });
+    sendOSC (*receiver, "/osd/obj/1/doppler", { nan });
+    sendOSC (*receiver, "/osd/obj/1/enabled", { nan });
+    sendOSC (*receiver, "/osd/global/drywet", { inf });
+
+    CHECK (listener.positionCallCount == 0);
+    CHECK (listener.paramCallCount == 0);
+    CHECK (listener.globalCallCount == 0);
+}
+
+TEST_CASE ("ADMOSCReceiver: elevation, distance and partial cartesian axes are clamped to their range",
+           "[osc][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 30.0f, 120.0f, 0.5f));
+    CHECK (listener.lastEl == 90.0f);
+    CHECK (listener.lastAz == 30.0f);
+
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 30.0f, -120.0f, 0.5f));
+    CHECK (listener.lastEl == -90.0f);
+
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 30.0f, 0.0f, 5.0f));
+    CHECK (listener.lastDist == 1.0f);
+
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 30.0f, 0.0f, -1.0f));
+    CHECK (listener.lastDist == 0.0f);
+
+    sendOSC (*receiver, "/adm/obj/1/elev", { 500.0f });
+    CHECK (listener.lastEl == 90.0f);
+
+    sendOSC (*receiver, "/adm/obj/1/dist", { 9.0f });
+    CHECK (listener.lastDist == 1.0f);
+
+    sendOSC (*receiver, "/adm/obj/1/x", { 7.0f });
+    CHECK (listener.lastParamName == "x");
+    CHECK (listener.lastParamValue == 1.0f);
+
+    sendOSC (*receiver, "/adm/obj/1/y", { -7.0f });
+    CHECK (listener.lastParamName == "y");
+    CHECK (listener.lastParamValue == -1.0f);
+}
+
+TEST_CASE ("ADMOSCReceiver: a huge azimuth is wrapped once and the result is safe for wrapAzimuth",
+           "[osc][edge]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    const float inputs[] = { 181.0f, -181.0f, 540.0f, 1.0e10f, -1.0e10f, 1.0e30f };
+    for (float az : inputs)
+    {
+        DYNAMIC_SECTION ("azimuth " << az)
+        {
+            listener.positionCallCount = 0;
+            receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", az, 0.0f, 0.5f));
+            REQUIRE (listener.positionCallCount == 1);
+            CHECK (std::isfinite (listener.lastAz));
+            CHECK (listener.lastAz >= -180.0f);
+            CHECK (listener.lastAz <= 180.0f);
+
+            // The consumer's subtract-360 loop returns at once on the forwarded value
+            // (on the raw 1e10 it never returns: 1e10 - 360 == 1e10 in float).
+            const float wrapped = wrapAzimuth (listener.lastAz);
+            CHECK (wrapped == listener.lastAz);
+
+            listener.positionCallCount = 0;
+            sendOSC (*receiver, "/adm/obj/1/azim", { az });
+            REQUIRE (listener.positionCallCount == 1);
+            CHECK (listener.lastAz >= -180.0f);
+            CHECK (listener.lastAz <= 180.0f);
+        }
+    }
+
+    // Everything huge at once: finite, in range, distance and elevation at their limits.
+    listener.positionCallCount = 0;
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", 1.0e30f, 1.0e30f, 1.0e30f));
+    REQUIRE (listener.positionCallCount == 1);
+    CHECK (std::isfinite (listener.lastAz));
+    CHECK (listener.lastAz >= -180.0f);
+    CHECK (listener.lastAz <= 180.0f);
+    CHECK (listener.lastEl == 90.0f);
+    CHECK (listener.lastDist == 1.0f);
+
+    // A huge cartesian triple still comes out finite and in range.
+    listener.positionCallCount = 0;
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/xyz", 1.0e30f, -1.0e30f, 1.0e30f));
+    REQUIRE (listener.positionCallCount == 1);
+    CHECK (std::isfinite (listener.lastAz));
+    CHECK (std::isfinite (listener.lastEl));
+    CHECK (listener.lastDist == 1.0f);
+}
+
+TEST_CASE ("ADMOSCReceiver: in-range float32 messages from a compliant sender forward bit for bit",
+           "[osc][edge][compliant]")
+{
+    RecordingListener listener;
+    auto receiver = createTestReceiver (listener);
+
+    // The BASE conversion, copied so the comparison does not depend on the code under test.
+    const auto baseXyz = [] (float x, float y, float z, float& az, float& el, float& d)
+    {
+        constexpr float kPi = 3.14159265358979323846f;
+        az = std::atan2 (-x, y) * (180.0f / kPi);
+        const float r = std::sqrt (x * x + y * y);
+        el = std::atan2 (z, r) * (180.0f / kPi);
+        d = juce::jlimit (0.0f, 1.0f, std::sqrt (x * x + y * y + z * z));
+    };
+
+    receiver->testProcessOSCMessage (threeFloats ("/adm/obj/1/aed", -179.5f, -89.9f, 0.999f));
+    REQUIRE (listener.positionCallCount == 1);
+    CHECK (listener.lastAz == -179.5f);
+    CHECK (listener.lastEl == -89.9f);
+    CHECK (listener.lastDist == 0.999f);
+
+    sendOSC (*receiver, "/adm/obj/1/azim", { 180.0f });
+    CHECK (listener.lastAz == 180.0f);
+    CHECK (std::isnan (listener.lastEl));
+    CHECK (std::isnan (listener.lastDist));
+
+    sendOSC (*receiver, "/adm/obj/1/azim", { -180.0f });
+    CHECK (listener.lastAz == -180.0f);
+
+    sendOSC (*receiver, "/adm/obj/1/elev", { 45.25f });
+    CHECK (listener.lastEl == 45.25f);
+    CHECK (std::isnan (listener.lastAz));
+
+    sendOSC (*receiver, "/adm/obj/1/dist", { 0.0f });
+    CHECK (listener.lastDist == 0.0f);
+
+    float az, el, d;
+    baseXyz (0.3f, -0.4f, 0.5f, az, el, d);
+    sendOSC (*receiver, "/adm/obj/1/xyz", { 0.3f, -0.4f, 0.5f });
+    CHECK (listener.lastAz == az);
+    CHECK (listener.lastEl == el);
+    CHECK (listener.lastDist == d);
+
+    sendOSC (*receiver, "/adm/obj/1/y", { -0.4f });
+    CHECK (listener.lastParamName == "y");
+    CHECK (listener.lastParamValue == -0.4f);
+
+    sendOSC (*receiver, "/osd/obj/3/speed", { 0.37f });
+    CHECK (listener.lastParamObjectIndex == 2);
+    CHECK (listener.lastParamValue == 0.37f);
 }

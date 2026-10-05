@@ -1,5 +1,5 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
-#include "../Core/FloatSemanticsGuard.h"   // WR-04/IN-16: the NaN axis sentinel needs IEEE semantics
+#include "../Core/FloatSemanticsGuard.h"   // WR-04/IN-16/D-21: the NaN sentinel and the isfinite checks need IEEE semantics
 #include <cmath>
 
 namespace spatialcore
@@ -20,6 +20,52 @@ static inline void cartesianToPolar (float x, float y, float z,
 }
 
 //==============================================================================
+// Argument readers and range limits for untrusted input (Phase 4, D-21, T-04-05,
+// T-04-06). The datagrams are unauthenticated, so an argument is read only after
+// its OSC type is known: juce::OSCArgument::getFloat32()/getInt32() on the wrong
+// type asserts in Debug and returns garbage in Release. In-range float32 values
+// from a compliant ADM-OSC sender pass through unchanged, bit for bit.
+//==============================================================================
+
+// float32 with a finite value; false for any other type, NaN or infinity.
+static inline bool readFloat (const juce::OSCArgument& arg, float& out)
+{
+    if (! arg.isFloat32())
+        return false;
+    const float v = arg.getFloat32();
+    if (! std::isfinite (v))
+        return false;
+    out = v;
+    return true;
+}
+
+// float32 (finite) or int32, for the on/off and index parameters that senders
+// have always been allowed to write as either; false for any other type.
+static inline bool readNumeric (const juce::OSCArgument& arg, float& out)
+{
+    if (arg.isInt32())
+    {
+        out = static_cast<float> (arg.getInt32());
+        return true;
+    }
+    return readFloat (arg, out);
+}
+
+// Leaves [-180, 180] untouched; anything else is mapped into range with ONE
+// remainder operation, so 1e10 and 1e30 cost the same as 181 (a consumer's
+// subtract-360 loop on the raw value would not return).
+static inline float wrapAzimuthBounded (float azDeg)
+{
+    if (azDeg >= -180.0f && azDeg <= 180.0f)
+        return azDeg;
+    return std::remainder (azDeg, 360.0f);
+}
+
+static inline float clampElevation (float elDeg)   { return juce::jlimit (-90.0f, 90.0f, elDeg); }
+static inline float clampDistance (float dist)     { return juce::jlimit (0.0f, 1.0f, dist); }
+static inline float clampCartesian (float v)       { return juce::jlimit (-1.0f, 1.0f, v); }
+
+//==============================================================================
 // OSC Receive -- message thread callback (MessageLoopCallback). Accepts
 // ADM-OSC standard (/adm/obj/N/) and OSD custom (/osd/obj/N/, /osd/global/)
 // address grammar, moved verbatim from
@@ -27,7 +73,8 @@ static inline void cartesianToPolar (float x, float y, float z,
 // message-parsing logic unchanged (Pitfall 4); only the dispatch target
 // changes from direct member calls (handleOSCPosition/handleOSCParam) to the
 // Listener callback interface, since this class no longer has access to
-// APVTS/processor state directly.
+// APVTS/processor state directly. Phase 4 adds the no-argument query branch
+// (D-08a) and the type, finiteness and range checks above (D-21).
 //==============================================================================
 void ADMOSCReceiver::oscMessageReceived (const juce::OSCMessage& message)
 {
@@ -72,85 +119,73 @@ void ADMOSCReceiver::oscMessageReceived (const juce::OSCMessage& message)
         // updates the axis that was actually received. Cartesian /x /y /z
         // partial-update state (oscCartesianX/Y/Z) also stays owned by the
         // consumer for the same reason -- forwarded as raw single-axis params.
-        if (property == "/azim" && message.size() >= 1 && message[0].isFloat32())
+        // Because NaN is that sentinel, a NaN (or infinity) in the INPUT drops the
+        // whole message instead of being forwarded as "axis not sent" (D-21).
+        float a = 0.0f, b = 0.0f, c = 0.0f;
+
+        if (property == "/azim")
         {
-            listeners.call ([objIdx, v = message[0].getFloat32()] (Listener& l)
-            { l.admPositionReceived (objIdx, v, NAN, NAN); });
+            if (readFloat (message[0], a))
+                listeners.call ([objIdx, v = wrapAzimuthBounded (a)] (Listener& l)
+                { l.admPositionReceived (objIdx, v, NAN, NAN); });
         }
-        else if (property == "/elev" && message.size() >= 1 && message[0].isFloat32())
+        else if (property == "/elev")
         {
-            listeners.call ([objIdx, v = message[0].getFloat32()] (Listener& l)
-            { l.admPositionReceived (objIdx, NAN, v, NAN); });
+            if (readFloat (message[0], a))
+                listeners.call ([objIdx, v = clampElevation (a)] (Listener& l)
+                { l.admPositionReceived (objIdx, NAN, v, NAN); });
         }
-        else if (property == "/dist" && message.size() >= 1 && message[0].isFloat32())
+        else if (property == "/dist")
         {
-            listeners.call ([objIdx, v = message[0].getFloat32()] (Listener& l)
-            { l.admPositionReceived (objIdx, NAN, NAN, v); });
+            if (readFloat (message[0], a))
+                listeners.call ([objIdx, v = clampDistance (a)] (Listener& l)
+                { l.admPositionReceived (objIdx, NAN, NAN, v); });
         }
-        else if (property == "/aed" && message.size() >= 3
-                 && message[0].isFloat32() && message[1].isFloat32() && message[2].isFloat32())
+        else if (property == "/aed")
         {
-            float az = message[0].getFloat32(), el = message[1].getFloat32(), d = message[2].getFloat32();
-            listeners.call ([objIdx, az, el, d] (Listener& l)
-            { l.admPositionReceived (objIdx, az, el, d); });
+            if (message.size() >= 3
+                && readFloat (message[0], a) && readFloat (message[1], b) && readFloat (message[2], c))
+            {
+                const float az = wrapAzimuthBounded (a), el = clampElevation (b), d = clampDistance (c);
+                listeners.call ([objIdx, az, el, d] (Listener& l)
+                { l.admPositionReceived (objIdx, az, el, d); });
+            }
         }
-        else if (property == "/xyz" && message.size() >= 3
-                 && message[0].isFloat32() && message[1].isFloat32() && message[2].isFloat32())
+        else if (property == "/xyz")
         {
-            float azDeg, elDeg, dist;
-            cartesianToPolar (message[0].getFloat32(), message[1].getFloat32(),
-                              message[2].getFloat32(), azDeg, elDeg, dist);
-            listeners.call ([objIdx, azDeg, elDeg, dist] (Listener& l)
-            { l.admPositionReceived (objIdx, azDeg, elDeg, dist); });
+            if (message.size() >= 3
+                && readFloat (message[0], a) && readFloat (message[1], b) && readFloat (message[2], c))
+            {
+                float azDeg, elDeg, dist;
+                cartesianToPolar (a, b, c, azDeg, elDeg, dist);
+                listeners.call ([objIdx, azDeg, elDeg, dist] (Listener& l)
+                { l.admPositionReceived (objIdx, azDeg, elDeg, dist); });
+            }
         }
-        else if ((property == "/x" || property == "/y" || property == "/z")
-                 && message.size() >= 1 && message[0].isFloat32())
+        else if (property == "/x" || property == "/y" || property == "/z")
         {
             // Partial Cartesian axis update -- consumer owns the running
             // (x, y, z) state and recomputes polar position on receipt
             // (mirrors the pre-move oscCartesianX/Y/Z member fields).
-            listeners.call ([objIdx, property, v = message[0].getFloat32()] (Listener& l)
-            { l.admObjectParamReceived (objIdx, property.substring (1), v); });
+            if (readFloat (message[0], a))
+                listeners.call ([objIdx, property, v = clampCartesian (a)] (Listener& l)
+                { l.admObjectParamReceived (objIdx, property.substring (1), v); });
         }
         // --- Per-object non-position params (/osd/obj/N/ only) ---
-        else if (property == "/enabled" && message.size() >= 1)
+        // float32 only: the continuous controls.
+        else if (property == "/doppler" || property == "/pitch" || property == "/speed")
         {
-            float v = message[0].isFloat32() ? message[0].getFloat32()
-                                             : static_cast<float> (message[0].getInt32());
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "enabled", v); });
+            if (readFloat (message[0], a))
+                listeners.call ([objIdx, name = property.substring (1), a] (Listener& l)
+                { l.admObjectParamReceived (objIdx, name, a); });
         }
-        else if (property == "/doppler" && message.size() >= 1 && message[0].isFloat32())
+        // float32 or int32: the switches and indices senders may write as either.
+        else if (property == "/enabled" || property == "/trajectory"
+                 || property == "/direction" || property == "/input")
         {
-            float v = message[0].getFloat32();
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "doppler", v); });
-        }
-        else if (property == "/pitch" && message.size() >= 1 && message[0].isFloat32())
-        {
-            float v = message[0].getFloat32();
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "pitch", v); });
-        }
-        else if (property == "/trajectory" && message.size() >= 1)
-        {
-            float v = message[0].isFloat32() ? message[0].getFloat32()
-                                             : static_cast<float> (message[0].getInt32());
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "trajectory", v); });
-        }
-        else if (property == "/speed" && message.size() >= 1 && message[0].isFloat32())
-        {
-            float v = message[0].getFloat32();
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "speed", v); });
-        }
-        else if (property == "/direction" && message.size() >= 1)
-        {
-            float v = message[0].isFloat32() ? message[0].getFloat32()
-                                             : static_cast<float> (message[0].getInt32());
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "direction", v); });
-        }
-        else if (property == "/input" && message.size() >= 1)
-        {
-            float v = message[0].isFloat32() ? message[0].getFloat32()
-                                             : static_cast<float> (message[0].getInt32());
-            listeners.call ([objIdx, v] (Listener& l) { l.admObjectParamReceived (objIdx, "input", v); });
+            if (readNumeric (message[0], a))
+                listeners.call ([objIdx, name = property.substring (1), a] (Listener& l)
+                { l.admObjectParamReceived (objIdx, name, a); });
         }
     }
     // --- /osd/global/... — global parameter messages ---
@@ -158,8 +193,9 @@ void ADMOSCReceiver::oscMessageReceived (const juce::OSCMessage& message)
     {
         auto property = address.substring (12);  // skip "/osd/global/" → "delaytime" etc.
         if (message.size() < 1) return;
-        float val = message[0].isFloat32() ? message[0].getFloat32()
-                                           : static_cast<float> (message[0].getInt32());
+
+        float val = 0.0f;
+        if (! readNumeric (message[0], val)) return;
 
         listeners.call ([property, val] (Listener& l) { l.admGlobalParamReceived (property, val); });
     }

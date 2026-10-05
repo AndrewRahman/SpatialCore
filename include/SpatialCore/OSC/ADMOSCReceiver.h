@@ -48,13 +48,13 @@ public:
         // trajectory|speed|direction|input). objectIndex is 0-based; paramName
         // is the raw OSC property name (e.g. "enabled", "doppler") -- the
         // consumer maps this to its own parameter ID scheme.
-        virtual void admObjectParamReceived (int objectIndex, const juce::String& paramName,
-                                             float value) {}
+        virtual void admObjectParamReceived (int /*objectIndex*/, const juce::String& /*paramName*/,
+                                             float /*value*/) {}
 
         // Global param (/osd/global/<property>). propertyName is the raw OSC
         // property name (e.g. "delaytime", "drywet") -- the consumer maps
         // this to its own parameter ID scheme.
-        virtual void admGlobalParamReceived (const juce::String& propertyName, float value) {}
+        virtual void admGlobalParamReceived (const juce::String& /*propertyName*/, float /*value*/) {}
 
         // A device sent /adm/obj/N/ or /osd/obj/N/ azim|elev|dist|aed|xyz with no
         // arguments: it asks for the object's current position. Message thread.
