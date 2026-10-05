@@ -14,6 +14,12 @@ public:
     /** The broadcast rate is fixed at 30 Hz whatever rate the caller's timer runs at. */
     static constexpr double kSendIntervalSeconds = 1.0 / 30.0;
 
+    /** Dead-band of tick(): an enabled object is re-sent only when azimuth or elevation moved by more
+        than kAngleDeadBandDeg, or distance by more than kDistanceDeadBand (a change of exactly the
+        dead-band is not sent). The first position, connect and re-enable send regardless (IN-08). */
+    static constexpr float kAngleDeadBandDeg  = 0.1f;
+    static constexpr float kDistanceDeadBand  = 0.001f;
+
     ADMOSCSender() { forceSend_.fill (true); }
 
     bool connect(const juce::String& host, int port);

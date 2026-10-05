@@ -178,7 +178,8 @@ void ADMOSCSender::tick(const float* azimuthsDeg, const float* elevationsDeg,
         const float dEl   = std::abs(elevationsDeg[i] - prevEl[i]);
         const float dDist = std::abs(distances[i]     - prevDist[i]);
 
-        if (forceSend_[(size_t) i] || dAz > 0.1f || dEl > 0.1f || dDist > 0.001f)
+        if (forceSend_[(size_t) i] || dAz > kAngleDeadBandDeg || dEl > kAngleDeadBandDeg
+            || dDist > kDistanceDeadBand)
         {
             sendPosition(i, azimuthsDeg[i], elevationsDeg[i], distances[i]);
 

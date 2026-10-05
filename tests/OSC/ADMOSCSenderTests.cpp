@@ -364,7 +364,7 @@ TEST_CASE ("ADMOSCSender: an object's first position is sent even at exactly (0,
     receiver.disconnect();
 }
 
-TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degrees is",
+TEST_CASE ("ADMOSCSender: a change of exactly the dead-band is not sent, twice the dead-band is",
            "[osc][send][deadband]")
 {
     const int port = test::findFreeUdpPort();
@@ -384,14 +384,28 @@ TEST_CASE ("ADMOSCSender: a change of exactly 0.1 degrees is not sent, 0.2 degre
     sender.tick (&az, &el, &dist, &enabled, 1, 0.0);          // first send
     REQUIRE (capture.settle() == 1);
 
-    az = 0.1f;
-    sender.tick (&az, &el, &dist, &enabled, 1, 1.0 / 30.0);   // not greater than 0.1
+    // IN-08: the dead-band comes from the class, not a number restated here.
+    const float angleBand = ADMOSCSender::kAngleDeadBandDeg;
+    const float distBand  = ADMOSCSender::kDistanceDeadBand;
+
+    az = angleBand;
+    sender.tick (&az, &el, &dist, &enabled, 1, 1.0 / 30.0);   // not greater than the dead-band
     CHECK (capture.settle() == 1);
 
-    az = 0.2f;
+    az = 2.0f * angleBand;
     sender.tick (&az, &el, &dist, &enabled, 1, 2.0 / 30.0);   // greater
     REQUIRE (capture.settle() == 2);
-    CHECK_THAT (capture.last().args[0], WithinAbs (0.2f, 1.0e-6f));
+    CHECK_THAT (capture.last().args[0], WithinAbs (2.0f * angleBand, 1.0e-6f));
+
+    // Distance has its own, smaller dead-band.
+    float movedDist = distBand;
+    sender.tick (&az, &el, &movedDist, &enabled, 1, 3.0 / 30.0);
+    CHECK (capture.settle() == 2);
+
+    movedDist = 2.0f * distBand;
+    sender.tick (&az, &el, &movedDist, &enabled, 1, 4.0 / 30.0);
+    REQUIRE (capture.settle() == 3);
+    CHECK_THAT (capture.last().args[2], WithinAbs (2.0f * distBand, 1.0e-6f));
 
     receiver.removeListener (&capture);
     sender.disconnect();
