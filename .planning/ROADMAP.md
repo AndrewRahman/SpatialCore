@@ -203,7 +203,7 @@ not link — so UI verification here is by interaction, not by unit test.
 
 **Already verified**: `DATA-02` is done — `fonts/*.ttf` are compiled in as JUCE BinaryData.
 `ADMOSCReceiver.cpp:43` bounds-checks correctly, closing the original RTSF-04 as a non-finding.
-**Plans**: 1/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 2/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 **UI hint**: yes
 
 Plans:
@@ -211,7 +211,7 @@ Plans:
 - [x] 04-01-PLAN.md — OSC route to the renderer: real UDP ADM-OSC moves rendered sound; every position address proven through RouteRenderRig; build trees configured *(wave 1)*
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 04-02-PLAN.md — Self-clocked 30 Hz sender: silent while still, first send at zero, send-all on connect and re-enable, fake-clock proofs (D-07, D-08b, D-09, D-10) *(wave 2)*
+- [x] 04-02-PLAN.md — Self-clocked 30 Hz sender: silent while still, first send at zero, send-all on connect and re-enable, fake-clock proofs (D-07, D-08b, D-09, D-10) *(wave 2)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 04-03-PLAN.md — ADM-OSC position queries answered to the configured destination (D-08a, D-20), receiver hardening (D-21), unused-parameter warnings gone (D-15) *(wave 3)*
@@ -290,7 +290,7 @@ External Dependencies.
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
-| 4. Control Surface & UI | 1/8 | In Progress|  |
+| 4. Control Surface & UI | 2/8 | In Progress|  |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
