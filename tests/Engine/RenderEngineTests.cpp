@@ -1684,3 +1684,132 @@ TEST_CASE ("RenderEngine: a render thread always sees one of the formats a write
     CHECK (unexpected.load() == 0);
     CHECK (blocks.load() > 0);
 }
+
+// ============================================================================
+// SC-19 / SpatialCore#21 — a mid-stream Ambisonics order change must filter
+// the newly active orders exactly like an engine that started at that order,
+// and no NFC filter may change order (reallocate state) on the audio thread.
+// ============================================================================
+namespace
+{
+    // One live object (azimuth 30, elevation 20, distance 0.5 = 5 m, DC 0.5)
+    // rendered through the Ambisonics path with explicit consumer flags.
+    struct Sc19Rig
+    {
+        static constexpr int kMaxCh = 49; // 6th order
+
+        RenderEngine engine;
+        SourceFixture fixture;
+        RenderSources sources;
+        RenderBlockContext ctx;
+        std::vector<std::vector<float>> outStorage;
+        float* outPtrs[kMaxCh] = {};
+
+        Sc19Rig()
+            : outStorage (kMaxCh, std::vector<float> (kBlockSize, 0.0f))
+        {
+            engine.prepare (kSampleRate, kBlockSize);
+            engine.setOutputFormat (OutputFormat::AmbisonicsHOA);
+            sources = fixture.makeSources();
+            sources.objects[0].azimuthDeg = 30.0f;
+            sources.objects[0].elevationDeg = 20.0f;
+            sources.objects[0].distance = 0.5f;
+            ctx.sampleRate = kSampleRate;
+            ctx.isAmbiOutput = true;
+            for (int c = 0; c < kMaxCh; ++c)
+                outPtrs[c] = outStorage[static_cast<size_t> (c)].data();
+        }
+
+        void render (int order, int blocks)
+        {
+            ctx.ambiOrder = order;
+            const int numCh = (order + 1) * (order + 1);
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (auto& ch : outStorage)
+                    std::fill (ch.begin(), ch.end(), 0.0f);
+                engine.renderBlock (sources, ctx, outPtrs, numCh);
+            }
+        }
+
+        float lastBlockMean (int acn) const
+        {
+            const auto& ch = outStorage[static_cast<size_t> (acn)];
+            double sum = 0.0;
+            for (float v : ch)
+                sum += v;
+            return static_cast<float> (sum / static_cast<double> (ch.size()));
+        }
+
+        bool lastBlockFinite (int numCh) const
+        {
+            for (int c = 0; c < numCh; ++c)
+                if (! allFinite (outStorage[static_cast<size_t> (c)].data(), kBlockSize))
+                    return false;
+            return true;
+        }
+    };
+
+    // Largest |mean| of B over ACN [first, last], and the largest A-B gap.
+    void sc19Compare (const Sc19Rig& a, const Sc19Rig& b, int first, int last,
+                      float& scale, float& worstGap, int& worstAcn)
+    {
+        scale = 0.0f;
+        worstGap = 0.0f;
+        worstAcn = first;
+        for (int acn = first; acn <= last; ++acn)
+        {
+            const float mb = b.lastBlockMean (acn);
+            scale = std::max (scale, std::abs (mb));
+            const float gap = std::abs (a.lastBlockMean (acn) - mb);
+            if (gap > worstGap)
+            {
+                worstGap = gap;
+                worstAcn = acn;
+            }
+        }
+    }
+}
+
+TEST_CASE ("RenderEngine: raising the Ambisonics order mid-stream filters the new orders like a fresh 3rd-order engine (SC-19, SpatialCore#21)",
+           "[engine][sc19]")
+{
+    Sc19Rig a, b;
+    a.render (1, 200);
+    a.render (3, 200);
+    b.render (3, 400);
+
+    float scale = 0.0f, worstGap = 0.0f;
+    int worstAcn = 4;
+    sc19Compare (a, b, 4, 15, scale, worstGap, worstAcn);
+
+    // RED evidence: print the ACN 4..15 means of both engines.
+    for (int acn = 4; acn <= 15; ++acn)
+        std::printf ("SC19-MEANS acn=%d A=%.6f B=%.6f\n", acn, a.lastBlockMean (acn), b.lastBlockMean (acn));
+    std::printf ("SC19-RESULT scale=%.6f worstGap=%.6f worstAcn=%d\n", scale, worstGap, worstAcn);
+    std::fflush (stdout);
+
+    REQUIRE (scale > 1e-4f); // non-vacuous
+    CHECK (a.lastBlockFinite (16));
+    CHECK (worstGap <= 1e-3f * scale);
+}
+
+TEST_CASE ("RenderEngine: lowering then raising the Ambisonics order matches a fresh 6th-order engine on ACN 4..48 (SC-19, SpatialCore#21)",
+           "[engine][sc19]")
+{
+    Sc19Rig a, b;
+    a.render (3, 150);
+    a.render (1, 150);
+    a.render (6, 200);
+    b.render (6, 500);
+
+    float scale = 0.0f, worstGap = 0.0f;
+    int worstAcn = 4;
+    sc19Compare (a, b, 4, 48, scale, worstGap, worstAcn);
+    std::printf ("SC19-RESULT-6 scale=%.6f worstGap=%.6f worstAcn=%d\n", scale, worstGap, worstAcn);
+    std::fflush (stdout);
+
+    REQUIRE (scale > 1e-4f);
+    CHECK (a.lastBlockFinite (49));
+    CHECK (worstGap <= 1e-3f * scale);
+}
