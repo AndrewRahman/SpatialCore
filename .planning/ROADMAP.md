@@ -203,7 +203,7 @@ not link — so UI verification here is by interaction, not by unit test.
 
 **Already verified**: `DATA-02` is done — `fonts/*.ttf` are compiled in as JUCE BinaryData.
 `ADMOSCReceiver.cpp:43` bounds-checks correctly, closing the original RTSF-04 as a non-finding.
-**Plans**: 4/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
+**Plans**: 5/8 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, so each wave holds exactly one plan)
 **UI hint**: yes
 
 Plans:
@@ -220,7 +220,7 @@ Plans:
 - [x] 04-04-PLAN.md — Trajectory route to the renderer; reverse for all 13 shapes, Bounce and Line kept as the D-19 exceptions *(wave 4)*
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 04-05-PLAN.md — SpatialCoreUITests target: map drag moves rendered sound; drag, distance ring and elevation opacity checked in pixels; UI tests in the local gate (D-01, D-17) *(wave 5)*
+- [x] 04-05-PLAN.md — SpatialCoreUITests target: map drag moves rendered sound; drag, distance ring and elevation opacity checked in pixels; UI tests in the local gate (D-01, D-17) *(wave 5)*
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 04-06-PLAN.md — Fonts from embedded data only: map-owned JetBrains Mono, overlay title, spy, byte and code-rule tests (DATA-02, D-05, D-06, D-22) *(wave 6)*
@@ -290,7 +290,7 @@ External Dependencies.
 | 1. Documentation Truth & Contract Freeze | 5/5 | Complete    | 2026-08-15 |
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
-| 4. Control Surface & UI | 4/8 | In Progress|  |
+| 4. Control Surface & UI | 5/8 | In Progress|  |
 | 5. Realtime Safety Hardening | 0/TBD | Not started | - |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
