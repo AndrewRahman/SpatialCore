@@ -45,6 +45,14 @@ requiring the consumer to precompute them. Stereo-variant gains (`objGainL`/
 `objGainR`) always stay consumer-side — stereo gain math is not a
 `SpatializationAlgorithm` concern.
 
+`RenderEngine::setAlgorithmIndex (int)` / `getAlgorithmIndex()` (SC-18) select the speaker
+algorithm that computes `objChannelGains` when `engineComputesGains` is set. The index map is
+OpenSpatialDelay's 12-entry saved-preset map (`kAlgorithmIndexAmbisonics` 0, `...ConstantPower` 1,
+`...DBAP` 2, `...KNN` 3, `...MDAP` 4, `...VBAP` 5, `...VBIP` 6, then the stereo modes 7..11; never
+renumber). The default is VBAP, so a consumer that never calls it renders as before. The setter is
+lock-free (one relaxed atomic store, clamped) and the engine reads it once per block. Stereo-mode
+gains follow in SC-18 part 2.
+
 `RenderBlockContext::engineDerivesDispatch` (default `false`, SC-16) is the opt-in flag
 that lets `RenderEngine` derive its own dispatch from the layout it renders against.
 `renderBlock()` acquires the engine's layout once per block; when the flag is set it

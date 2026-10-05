@@ -123,6 +123,11 @@ public:
 > apart (SC-16). Call `setOutputFormat()` from the message thread only, and treat
 > `getActiveLayout()` / `getActiveOutputFormat()` as the writer-thread view, not for the
 > audio thread.
+> Choose the speaker algorithm with `engine.setAlgorithmIndex (kAlgorithmIndex...)` (SC-18),
+> from any non-audio thread: the index map is OpenSpatialDelay's 12-entry saved-preset map
+> (0 Ambisonics, 1 Constant Power, 2 DBAP, 3 KNN, 4 MDAP, 5 VBAP, 6 VBIP, 7..11 the stereo
+> modes), the default is VBAP, and `renderBlock()` reads it once per block when
+> `engineComputesGains` is set. Stereo-mode gains follow in SC-18 part 2.
 > See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
 ## Step 5: PluginEditor — Using SpatialCore UI
