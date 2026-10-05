@@ -69,6 +69,7 @@ add_executable(SpatialCoreUITests
     UI/UITestMain.cpp
     UI/MapRouteTests.cpp
     UI/SpatialMapComponentTests.cpp
+    UI/FontProvenanceTests.cpp
 )
 
 target_link_libraries(SpatialCoreUITests
@@ -80,6 +81,7 @@ target_link_libraries(SpatialCoreUITests
 
 target_compile_definitions(SpatialCoreUITests PRIVATE
     JUCE_UNIT_TESTS=1
+    SPATIALCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)

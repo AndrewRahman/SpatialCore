@@ -123,6 +123,13 @@ private:
 
     int numObjects_ = 0;
 
+    // The map owns its embedded JetBrains Mono so it renders the SML fonts under any look-and-feel
+    // (D-06). JUCE resolves a typeface-less Font through the default look-and-feel, which a
+    // component-level setLookAndFeel does not change, so without these the labels would fall back
+    // to the system sans. The bytes are the same ones SMLLookAndFeel loads, so the render under
+    // SML is unchanged.
+    juce::Typeface::Ptr monoRegular_, monoMedium_, monoBold_;
+
     std::array<ObjectInfo, MAX_SOURCES> objects = {};
     std::array<TrajectoryEngine::TrajectoryState, MAX_SOURCES> trajectoryStates = {};  // v0.9: trajectory origin + state
     std::array<bool, MAX_SOURCES> oscOverride = {};  // v0.6: per-object OSC override indicator

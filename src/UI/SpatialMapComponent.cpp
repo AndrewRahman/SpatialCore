@@ -1,5 +1,5 @@
 #include <SpatialCore/UI/SpatialMapComponent.h>
-#include <SpatialCore/UI/SMLLookAndFeel.h>
+#include "SpatialCoreUIFontData.h"
 #include <cmath>
 
 namespace spatialcore
@@ -37,6 +37,11 @@ const juce::Colour SpatialMapComponent::objectColours[SpatialMapComponent::MAX_S
 SpatialMapComponent::SpatialMapComponent (int numObjects)
     : numObjects_ (juce::jlimit (0, MAX_SOURCES, numObjects))
 {
+    // Embedded JetBrains Mono, loaded the way SMLLookAndFeel loads it (D-05, D-06)
+    monoRegular_ = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoRegular_ttf, SpatialCoreUIFontData::JetBrains_MonoRegular_ttfSize);
+    monoMedium_  = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoMedium_ttf,  SpatialCoreUIFontData::JetBrains_MonoMedium_ttfSize);
+    monoBold_    = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoBold_ttf,    SpatialCoreUIFontData::JetBrains_MonoBold_ttfSize);
+
     generateStars();
 }
 
@@ -147,7 +152,6 @@ void SpatialMapComponent::setObjectState (int index, float azimuthDeg, float ele
 
 void SpatialMapComponent::paint (juce::Graphics& g)
 {
-    auto* lf = dynamic_cast<SMLLookAndFeel*> (&getLookAndFeel());
     float radius = std::min (getWidth(), getHeight()) * 0.45f;
     float cx = getWidth()  * 0.5f;
     float cy = getHeight() * 0.5f;
@@ -244,8 +248,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
 
     // Ring labels: distance values at 30° (lower-right), meter values at 210° (upper-left)
     g.setColour (textEtched.withAlpha (0.45f));
-    if (lf) g.setFont (makeFont (lf->jetbrainsRegular, 9.0f));
-    else    g.setFont (juce::FontOptions (9.0f));
+    g.setFont (makeFont (monoRegular_, 9.0f));
     for (int ri = 1; ri <= 4; ++ri)
     {
         float r = ri * 0.25f;
@@ -287,8 +290,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
 
     // Cardinals — JetBrains Mono Medium, wide tracking, larger text
     g.setColour (textEtched);
-    if (lf) g.setFont (makeFont (lf->jetbrainsMedium, 14.0f, 0.2f));
-    else    g.setFont (juce::FontOptions (14.0f).withStyle ("Bold"));
+    g.setFont (makeFont (monoMedium_, 14.0f, 0.2f));
     g.drawText ("F",  juce::Rectangle<float> (cx - 30.0f, cy - radius - 20.0f, 60.0f, 16.0f), juce::Justification::centred);
     g.drawText ("B",  juce::Rectangle<float> (cx - 30.0f, cy + radius + 4.0f,  60.0f, 16.0f), juce::Justification::centred);
     g.drawText ("L",  juce::roundToInt (cx - radius - 22), juce::roundToInt (cy - 8),  24, 16, juce::Justification::centred);
@@ -550,8 +552,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
         //    GlyphArrangement getBoundingBox() centers on actual pixel bounds (no descent offset).
         {
             auto labelColour = isAbove ? juce::Colour (0xff161820) : objectColours[i];
-            juce::Font labelFont = lf ? makeFont (lf->jetbrainsBold, 10.0f)
-                                      : juce::Font (juce::FontOptions (10.0f));
+            juce::Font labelFont = makeFont (monoBold_, 10.0f);
             juce::GlyphArrangement glyphs;
             juce::String numText (i + 1);
             glyphs.addLineOfText (labelFont, numText, 0.0f, 0.0f);
@@ -578,8 +579,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
         {
             float labelOffsetY = isAbove ? -(half + 14.0f) : (half + 2.0f);
             g.setColour (objectColours[i].withAlpha (0.85f));
-            if (lf) g.setFont (makeFont (lf->jetbrainsRegular, 11.0f));
-            else    g.setFont (juce::FontOptions (11.0f));
+            g.setFont (makeFont (monoRegular_, 11.0f));
             juce::String elText = (elDeg > 0.0f ? "+" : "")
                                 + juce::String (juce::roundToInt (elDeg))
                                 + juce::String::charToString (0x00B0);
@@ -594,8 +594,7 @@ void SpatialMapComponent::paint (juce::Graphics& g)
                             ? pos.y + half + 14.0f    // below elevation label
                             : pos.y + half + 1.0f;    // normal position
             g.setColour (accentStellar);
-            if (lf) g.setFont (makeFont (lf->jetbrainsBold, 10.0f));
-            else    g.setFont (juce::FontOptions (10.0f).withStyle ("Bold"));
+            g.setFont (makeFont (monoBold_, 10.0f));
             g.drawText ("OSC", juce::roundToInt (pos.x - half - 2), juce::roundToInt (oscLabelY),
                         juce::roundToInt (dotSize + 4), 10, juce::Justification::centred);
         }
