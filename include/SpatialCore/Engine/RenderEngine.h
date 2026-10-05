@@ -56,14 +56,15 @@ namespace spatialcore
 //
 // SC-13 (opt-in): when a consumer sets RenderBlockContext::engineComputesGains,
 // the engine additionally owns per-object gain computation for the
-// discrete-surround/Ambisonics path (objChannelGains, via a fixed
-// VBAPAlgorithm) and the simple-binaural path (objGains, via
-// DirectBinauralAlgorithm + kDefaultBinauralProfiles) — the consumer no
-// longer hand-builds a LayoutContext or dispatches an algorithm itself for
-// those two fields. The flag defaults false, so a consumer that still
-// precomputes these fields sees unchanged behaviour. Stereo-variant gains
-// (objGainL/objGainR) remain consumer-side always — that math is not a
-// SpatializationAlgorithm (D-06).
+// discrete-surround/Ambisonics path (objChannelGains, via the speaker
+// algorithm chosen with setAlgorithmIndex(), VBAP by default — SC-18) and
+// the simple-binaural path (objGains, via DirectBinauralAlgorithm +
+// kDefaultBinauralProfiles) — the consumer no longer hand-builds a
+// LayoutContext or dispatches an algorithm itself for those two fields. The flag defaults false, so a consumer that still
+// precomputes these fields sees unchanged behaviour. SC-18 part 2: on a stereo-variant block
+// the same flag also makes the engine fill objGainL, objGainR and stereoMode (the five stereo
+// modes, indices 7..11 of the algorithm index map, scaled by the block's distance gain); with
+// the flag false the consumer still supplies those three fields itself.
 //
 // Simple (Woodworth) binaural path (BUG-01, SpatialCore#15): the engine applies
 // a position-blended rear/up/down cue bank (SimpleBinauralCues.h) to each mono
@@ -140,11 +141,11 @@ struct RenderBlockContext
     // object (DirectBinauralAlgorithm::computeBinauralGains output).
     BinauralGains objGains[MAX_SOURCES] = {};
 
-    // Stereo-variant path: current-block target L/R gains per object
-    // (computed by the consumer's stereoMode switch — VBAP/XY/MS/Blumlein/
-    // Equal-Power — the gain MATH itself stays in the consumer per D-09,
-    // since it is not a SpatializationAlgorithm and was never touched by
-    // Plan 08-03's algorithm extraction).
+    // Stereo-variant path: current-block target L/R gains per object. By default
+    // the consumer computes them (its stereoMode switch — VBAP/XY/MS/Blumlein/
+    // Equal-Power); when engineComputesGains is set the engine fills objGainL,
+    // objGainR and stereoMode itself on a stereo-variant block (SC-18 part 2,
+    // OSP Phase 3 D-06), overwriting any values supplied here.
     float objGainL[MAX_SOURCES] = {};
     float objGainR[MAX_SOURCES] = {};
     int   stereoMode = 0;
@@ -176,13 +177,15 @@ struct RenderBlockContext
     bool useHRTF = false;
 
     // SC-13: when true, RenderEngine computes objChannelGains/objGains
-    // internally (via a fixed VBAPAlgorithm for surround/Ambisonics and
-    // DirectBinauralAlgorithm for simple binaural) before dispatch, instead
+    // internally (via the speaker algorithm selected with setAlgorithmIndex(),
+    // VBAP by default, for surround/Ambisonics and DirectBinauralAlgorithm for
+    // simple binaural) before dispatch, instead
     // of reading consumer-precomputed values. Defaults false so every
     // existing caller — including SpatialCore's own RenderEngineTests — sees
     // byte-for-byte unchanged behaviour; this is additive, not a major bump.
-    // Scoped strictly to objChannelGains/objGains: objGainL/objGainR (stereo-
-    // variant gains) stay consumer-side per the comment above (D-06).
+    // Fills objChannelGains/objGains and, on a stereo-variant block, objGainL,
+    // objGainR and stereoMode (SC-18 part 2, D-06); with the flag false the
+    // consumer supplies all of these.
     bool engineComputesGains = false;
 
     // SC-16: when true, renderBlock() acquires the engine's layout once for
@@ -195,6 +198,24 @@ struct RenderBlockContext
     // SpatialCore's own RenderEngineTests — sees byte-for-byte unchanged
     // behaviour; this is additive, not a major bump.
     bool engineDerivesDispatch = false;
+
+    // SC-20: click-free output-format switching, opt-in. When true, a block that
+    // sees a newly published layout (setOutputFormat() since the previous block)
+    // does not take it yet: it renders once more with the layout the engine
+    // already holds and fades its output linearly to zero (the last sample is
+    // exactly 0). The next block takes the newest published layout, starts every
+    // render path's gain interpolation at that block's own targets (no glide from
+    // the stale gains of whenever that path last ran) and fades in from zero (the
+    // first sample is exactly 0). The new format is therefore heard one block
+    // later and a switch costs a two-block dip. Several setOutputFormat() calls
+    // between two blocks still give one fade-out and one fade-in, of the last
+    // format. The first block after prepare() never fades, and getBlockLayout()
+    // always reports the layout the block actually rendered (the held one during
+    // the fade-out block). Only the channels the block's path writes are faded;
+    // wait-free, no allocation, lock or logging. Defaults false so every existing
+    // caller, including SpatialCore's own RenderEngineTests, sees byte-for-byte
+    // unchanged behaviour; this is additive, not a major bump.
+    bool engineFadesFormatSwitch = false;
 
     // D-15, engineSelectsHRTF: when true, renderBlock() sets useHRTF itself from its own active renderer
     // (useHRTF = ! isSimpleMode()) after claiming any ready profile, and the consumer's
@@ -216,6 +237,31 @@ struct RenderBlockContext
     // warm-up are timed in samples"). The flag itself is additive, not a major bump.
     bool engineSelectsHRTF = false;
 };
+
+//==============================================================================
+// SC-18: algorithm index map for RenderEngine::setAlgorithmIndex().
+//
+// This is the saved-preset contract shared with OpenSpatialDelay: its editor
+// ids are index + 1 and its stereo modes are index - 7. Never renumber or
+// reorder these.
+//==============================================================================
+inline constexpr int kAlgorithmIndexAmbisonics = 0;
+inline constexpr int kAlgorithmIndexConstantPower = 1;
+inline constexpr int kAlgorithmIndexDBAP = 2;
+inline constexpr int kAlgorithmIndexKNN = 3;
+inline constexpr int kAlgorithmIndexMDAP = 4;
+inline constexpr int kAlgorithmIndexVBAP = 5;
+inline constexpr int kAlgorithmIndexVBIP = 6;
+inline constexpr int kAlgorithmIndexEqualPower = 7;
+inline constexpr int kAlgorithmIndexStereoVBAP = 8;
+inline constexpr int kAlgorithmIndexXYPair = 9;
+inline constexpr int kAlgorithmIndexMSEncode = 10;
+inline constexpr int kAlgorithmIndexBlumlein = 11;
+inline constexpr int kNumAlgorithmIndices = 12;
+inline constexpr int kNumSpeakerAlgorithmIndices = 7;
+
+static_assert (kNumSpeakerAlgorithmIndices + 1 == NUM_ALGORITHMS,
+               "The speaker algorithm list plus DirectBinaural must cover every algorithm in AllAlgorithms.h");
 
 //==============================================================================
 // EngineState — every implicit render-state dependency the 5 render* methods
@@ -301,7 +347,10 @@ public:
     //
     // getActiveOutputFormat() / getActiveLayout() are the WRITER-thread view:
     // the most recently published layout, callable only from the thread that
-    // calls setOutputFormat(), never from the audio thread.
+    // calls setOutputFormat(). A call made on the render thread while a
+    // different thread is the writer is counted (getWriterViewOnRenderThreadCount())
+    // and asserts in debug builds (SC-17). Audio-thread code reads the layout
+    // through getBlockLayout() after renderBlock().
     //--------------------------------------------------------------------------
     void setOutputFormat (OutputFormat format);
     OutputFormat getActiveOutputFormat() const;
@@ -313,6 +362,22 @@ public:
     // index convention (1-based, clamped to 0..4 internally via index - 1).
     //--------------------------------------------------------------------------
     void setBinauralProfileIndex (int index) { binauralProfileIndex_ = index; }
+
+    //--------------------------------------------------------------------------
+    // SC-18: selects the algorithm that computes objChannelGains when
+    // engineComputesGains is set. Callable from any non-audio thread; lock-free
+    // (one relaxed atomic store). The value is clamped to
+    // [0, kNumAlgorithmIndices - 1]. renderBlock() reads it once per block and
+    // only when engineComputesGains is set. Indices 0..6 select the speaker
+    // algorithm; 7..11 are the five stereo modes (Equal Power, Stereo VBAP, XY Pair,
+    // MS Encode, Blumlein), whose gains the engine computes on a stereo-variant block
+    // (SC-18 part 2). A speaker layout rendered with a stereo index uses VBAP, and the
+    // Stereo format rendered with a speaker index uses Equal Power. The
+    // default is VBAP, so a consumer that never calls this renders exactly as
+    // before.
+    //--------------------------------------------------------------------------
+    void setAlgorithmIndex (int index);
+    int getAlgorithmIndex() const;
 
     struct LayoutState
     {
@@ -328,8 +393,32 @@ public:
     // Writer-thread view: the most recently published layout, callable only
     // from the thread that calls setOutputFormat(). Not a per-block snapshot —
     // the audio thread obtains its layout once per block inside renderBlock()
-    // (SC-16) and must never use this accessor.
+    // (SC-16) and must never use this accessor: a call from the render thread
+    // while a different thread is the writer is counted and, in debug builds,
+    // asserts (SC-17). Use getBlockLayout() on the audio thread.
     const LayoutState& getActiveLayout() const;
+
+    //--------------------------------------------------------------------------
+    // SC-17 / SpatialCore#24 ("A+"): the RENDER-thread view of the layout.
+    //
+    // Returns the layout snapshot the most recent renderBlock() acquired and
+    // rendered with. It never acquires: a second acquire could hand back a slot
+    // newer than the one the block used, and a consumer that chose a channel
+    // map from it would pair one format's samples with another format's map.
+    // Valid on the render thread until that thread's next renderBlock(). Before
+    // the first renderBlock() it is the reader's initial slot (the default
+    // Binaural layout). Call it AFTER renderBlock() to learn what the block
+    // rendered.
+    //
+    // Wait-free: one pointer load, no allocation, no lock.
+    //--------------------------------------------------------------------------
+    const LayoutState& getBlockLayout() const noexcept;
+
+    // Diagnostic for tests: how many times getActiveLayout() /
+    // getActiveOutputFormat() was called on the render thread while a different
+    // thread was the writer. 0 for a single-threaded harness that both writes
+    // and renders.
+    int getWriterViewOnRenderThreadCount() const noexcept;
 
     //--------------------------------------------------------------------------
     // Escape hatches (D-02 — leaf classes stay public). Consumers that need
@@ -462,9 +551,9 @@ private:
     //--------------------------------------------------------------------------
     // SC-13: engine-owned gain computation, used only when the consumer sets
     // RenderBlockContext::engineComputesGains. Fills ctx.objChannelGains (via
-    // surroundAlgorithm_) and ctx.objGains (via binauralAlgorithm_) for every
-    // live object. Does not touch objGainL/objGainR/stereoMode (D-06 — those
-    // stay consumer-side, not a SpatializationAlgorithm concern).
+    // the algorithm chosen by algorithmIndex_) and ctx.objGains (via binauralAlgorithm_) for every
+    // live object. On a stereo-variant block it also fills objGainL, objGainR
+    // and stereoMode (SC-18 part 2, D-06), never when binauralOnly is set.
     //--------------------------------------------------------------------------
     // With binauralOnly set (engineSelectsHRTF without engineComputesGains, WR-06) only
     // ctx.objGains is filled and objChannelGains is left as the consumer supplied it.
@@ -478,6 +567,12 @@ private:
     // speaker routing; no render path reads the active-layout state again.
     //--------------------------------------------------------------------------
     const LayoutState& acquireBlockLayout();
+
+    // SC-20: linear fade over the block's samples on every channel the block's
+    // render path wrote (fadeIn: 0 -> 1, otherwise 1 -> 0; a one-sample block uses
+    // 1 for a fade-in and 0 for a fade-out). The endpoints are exact.
+    void applySwitchFade (const RenderBlockContext& ctx, const LayoutState& layout,
+                          float* const* outChannels, int numOutCh, int numSamples, bool fadeIn) const;
 
     // SC-16: overwrites the five dispatch fields in ctx from layout.format.
     // The format is clamped into [0, NUM_OUTPUT_FORMATS - 1] before it is
@@ -620,6 +715,7 @@ private:
     juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // 12 objects x 6 orders
     float smoothedNfcDistance[MAX_SOURCES] = {};
     float prevNfcDistance[MAX_SOURCES] = {};
+    int   lastNfcAmbiOrder_ = -1;  // order the NFC filters were last updated for (SpatialCore#21)
     int   cachedMaxrEOrder = -1;
     float cachedMaxrE[kMaxAmbiOrder + 1] = {};
 
@@ -636,18 +732,55 @@ private:
     //     once per block. The writer never holds the reader's slot (SC-16). ---
     LayoutState layoutBuffers[TripleBufferIndex::kNumSlots];
     TripleBufferIndex layoutSlots_;
+    // SC-20: render-thread state of the opt-in switch fade (reset in prepare()).
+    // fadeInPending_: the held layout has been faded out and the next block takes
+    // the new one. renderedSincePrepare_: a block has rendered since prepare(), so
+    // the held layout is one that actually played. snapInterpolation_: this block
+    // is a fade-in block, so each render path starts its gain interpolation at its
+    // own targets. Present in every build type, never #if'd.
+    bool fadeInPending_ = false;
+    bool renderedSincePrepare_ = false;
+    bool snapInterpolation_ = false;
     // Debug detector for the single-writer contract (WR-09): set while a
     // setOutputFormat() call is in flight so an overlapping second writer
     // trips a jassert. Present in every build type (never #if'd) so the class
     // layout does not depend on the consumer's JUCE_DEBUG setting.
     std::atomic<bool> inSetOutputFormat_ { false };
 
+    // SC-17: render-thread view and writer-view misuse guard. Present in every
+    // build type (never #if'd), like inSetOutputFormat_, so the class layout does
+    // not depend on JUCE_DEBUG. blockLayout_ is touched by the render thread only
+    // (set by renderBlock(), read by getBlockLayout()); the thread hashes are
+    // relaxed bookkeeping, 0 meaning "not seen yet".
+    const LayoutState* blockLayout_ = nullptr;   // set in the constructor
+    std::atomic<std::size_t> renderThreadHash_ { 0 };
+    std::atomic<std::size_t> writerThreadHash_ { 0 };
+    mutable std::atomic<int> writerViewOnRenderThreadCount_ { 0 };
+    // A non-lock-free atomic would put a lock on the audio thread.
+    static_assert (std::atomic<std::size_t>::is_always_lock_free,
+                   "RenderEngine thread bookkeeping requires lock-free std::atomic<size_t>");
+    static_assert (std::atomic<int>::is_always_lock_free,
+                   "RenderEngine thread bookkeeping requires lock-free std::atomic<int>");
+    // Never 0 (0 means unknown).
+    static std::size_t currentThreadHash() noexcept;
+
     // --- SC-13: engine-owned gain computation state ---
     // Algorithms are stateless per the project convention, so a plain member
     // instance allocates nothing and is safe to call from the audio thread.
-    // Fixed to VBAP/DirectBinaural deliberately: runtime algorithm selection
-    // is SPAT-01 (a later, separate concern) and must not be pulled forward.
-    VBAPAlgorithm surroundAlgorithm_;
+    // SC-18: the seven speaker algorithms are plain members chosen per block
+    // through speakerAlgorithms_; algorithmIndex_ is the only thing the
+    // audio thread reads (VBAP by default). DirectBinaural stays fixed for
+    // the simple-binaural path.
+    AmbisonicsAlgorithm ambisonicsAlgorithm_;
+    ConstantPowerAlgorithm constantPowerAlgorithm_;
+    DBAPAlgorithm dbapAlgorithm_;
+    KNNAlgorithm knnAlgorithm_;
+    MDAPAlgorithm mdapAlgorithm_;
+    VBAPAlgorithm vbapAlgorithm_;
+    VBIPAlgorithm vbipAlgorithm_;
+    const SpatializationAlgorithm* speakerAlgorithms_[kNumSpeakerAlgorithmIndices] = {};
+    std::atomic<int> algorithmIndex_ { kAlgorithmIndexVBAP };
+    const SpatializationAlgorithm& speakerAlgorithmFor (int index) const;
     DirectBinauralAlgorithm binauralAlgorithm_;
     RenderBlockContext gainScratch_;
     int binauralProfileIndex_ = 1;

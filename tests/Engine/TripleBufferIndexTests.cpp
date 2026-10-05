@@ -141,3 +141,34 @@ TEST_CASE ("TripleBufferIndex: std::atomic<int> is lock-free on this platform",
     // the atomic it exchanges on never falls back to a lock.
     CHECK (std::atomic<int> {}.is_lock_free());
 }
+
+// SC-20: the reader-side peek the engine's switch fade acts on before acquiring.
+TEST_CASE ("TripleBufferIndex: hasFresh is false initially, true after publish, false after acquireLatest",
+           "[engine][triple-buffer][sc20]")
+{
+    TripleBufferIndex idx;
+    CHECK_FALSE (idx.hasFresh());
+
+    // An acquire with nothing published leaves it false.
+    idx.acquireLatest();
+    CHECK_FALSE (idx.hasFresh());
+
+    idx.publish();
+    CHECK (idx.hasFresh());
+
+    // The peek never moves the reader or clears the bit.
+    const int held = idx.readSlot();
+    CHECK (idx.hasFresh());
+    CHECK (idx.readSlot() == held);
+
+    idx.acquireLatest();
+    CHECK_FALSE (idx.hasFresh());
+
+    // Several publishes before one acquire: still one fresh layout, cleared by one acquire.
+    idx.publish();
+    idx.publish();
+    idx.publish();
+    CHECK (idx.hasFresh());
+    idx.acquireLatest();
+    CHECK_FALSE (idx.hasFresh());
+}

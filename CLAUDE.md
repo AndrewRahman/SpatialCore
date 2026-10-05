@@ -17,7 +17,7 @@ SpatialCore was extracted from OpenSpatialDelay v1.0, where 68% of the codebase 
 |-----------|---------|-------------|
 | Algorithms | `Algorithms/*.h` | 8 spatialization algorithms: ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural. `AllAlgorithms.h`'s `AllAlgorithmTypes` list is the source of truth for the count |
 | Binaural | `Binaural/*.h` | SharedFFTCache (process-global FFT singleton), HRTFDatabase (SOFA/libmysofa; `loadFromBinaryData` reads the embedded profile set `SpatialCoreHRTFData`), `HRTFProfile.h` (the profile table, indices 0-5, 0 = Simple), `HRTFProfileResolver` (shared folder, then embedded copy, then a reported error), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
-| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, engine-owned HRTF profile switching (`setHRTFProfile`, an engine-owned background loader, a lock-free status) with the opt-in `engineSelectsHRTF` flag, a Simple-path cue bank (rear, up and down filter branches ahead of the Woodworth gains), a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
+| Engine | `Engine/RenderEngine.h` | `RenderEngine` — the consumer-facing render facade. Owns the 5 render paths (direct-binaural HRTF, simple binaural Woodworth, stereo variants, Ambisonics HOA, discrete surround), the glitch-free three-slot output-format layout handoff, the double-buffered HRTF-renderer swap, engine-owned HRTF profile switching (`setHRTFProfile`, an engine-owned background loader, a lock-free status) with the opt-in `engineSelectsHRTF` flag, a Simple-path cue bank (rear, up and down filter branches ahead of the Woodworth gains), a per-block layout snapshot with opt-in dispatch derivation (`engineDerivesDispatch`, SC-16) and an opt-in click-free format-switch fade (`engineFadesFormatSwitch`, SC-20), and (opt-in, SC-13) per-object gain computation via `RenderBlockContext::engineComputesGains` |
 | Core | `Core/SpatialMath.h` | `softClip()`, `outputLimiter()` (tanh soft ceiling), `distanceAttenuation()`, plus the shared position/gain types in `Core/Types.h` |
 | I/O | `IO/*.h` | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | OSC | `OSC/*.h` | ADM-OSC Receive (parse /adm/obj/N/): type-checks every argument, rejects non-finite values, clamps ranges, and reports a position message with no arguments as a query through `Listener::admPositionQueried`. ADM-OSC Send keeps its own 30 Hz clock in `tick` (any timer of 30 Hz or more gives 30 Hz), stays silent while objects are still, sends an object's first position and every enabled object on connect and re-enable, and answers queries with `queueReply`, sent to its configured destination |
@@ -41,17 +41,43 @@ public:
 ```
 `RenderBlockContext::engineComputesGains` (default `false`, SC-13) is the opt-in flag
 that lets `RenderEngine` compute `objChannelGains`/`objGains` internally instead of
-requiring the consumer to precompute them. Stereo-variant gains (`objGainL`/
-`objGainR`) always stay consumer-side — stereo gain math is not a
-`SpatializationAlgorithm` concern.
+requiring the consumer to precompute them. SC-18 part 2: on a stereo-variant block the
+same flag also makes the engine fill `objGainL`, `objGainR` and `stereoMode` (the five
+stereo modes, scaled by the block's distance gain); with the flag `false` the consumer still
+supplies them. The stereo math lives in the engine (`computeStereoModeGains`), not in a
+`SpatializationAlgorithm`.
+
+`RenderEngine::setAlgorithmIndex (int)` / `getAlgorithmIndex()` (SC-18) select the speaker
+algorithm that computes `objChannelGains` when `engineComputesGains` is set. The index map is
+OpenSpatialDelay's 12-entry saved-preset map (`kAlgorithmIndexAmbisonics` 0, `...ConstantPower` 1,
+`...DBAP` 2, `...KNN` 3, `...MDAP` 4, `...VBAP` 5, `...VBIP` 6, then the stereo modes 7..11; never
+renumber). The default is VBAP, so a consumer that never calls it renders as before. The setter is
+lock-free (one relaxed atomic store, clamped) and the engine reads it once per block. On the Stereo
+format indices 7..11 select Equal Power, Stereo VBAP, XY Pair, MS Encode and Blumlein (a speaker
+index renders as Equal Power there); on a speaker layout a stereo index renders as VBAP.
+
+`RenderBlockContext::engineFadesFormatSwitch` (default `false`, SC-20, SpatialCore#27) makes an
+output-format switch click-free. A block that sees a newly published layout renders once more
+with the layout the engine already holds and fades its output linearly to zero (last sample
+exactly 0); the next block takes the newest published layout, starts every render path's gain
+interpolation at that block's own targets and fades in from zero (first sample exactly 0). The
+new format is heard one block later and a switch costs a two-block dip (about 21 ms at 512
+samples / 48 kHz); several `setOutputFormat()` calls between two blocks give one fade-out and
+one fade-in, of the last format. The first block after `prepare()` never fades, and
+`getBlockLayout()` reports the layout the block actually rendered (the held one during the
+fade-out block). Only the channels the block's path writes are faded. It rests on the
+reader-side `TripleBufferIndex::hasFresh()` peek (one relaxed load); wait-free, no allocation,
+lock or logging. It is opt-in, so a consumer that does not set it renders byte-for-byte as
+before. A consumer that wants the fade should also avoid republishing the format that is
+already active (each publish costs a dip).
 
 `RenderBlockContext::engineDerivesDispatch` (default `false`, SC-16) is the opt-in flag
 that lets `RenderEngine` derive its own dispatch from the layout it renders against.
 `renderBlock()` acquires the engine's layout once per block; when the flag is set it
 overwrites five fields of the context from that snapshot's format — `activeFormat`,
 `isStereoVariant`, `isBinaural`, `isAmbiOutput` and `ambiOrder` — and the consumer's
-values for them are ignored. `useHRTF`, `stereoMode`, `sampleRate`, `objGainL` and
-`objGainR` stay consumer-supplied. Set it (together with `engineComputesGains`) instead
+values for them are ignored. `useHRTF` and `sampleRate` stay consumer-supplied (and `stereoMode`,
+`objGainL` and `objGainR` too, unless `engineComputesGains` fills them on a stereo-variant block). Set it (together with `engineComputesGains`) instead
 of deriving the dispatch flags from your own format state: a consumer that keeps its own
 copy of the format can read a different switch than the engine's layout holds, which
 pairs one format's dispatch with another format's layout and renders a torn, silent
@@ -96,12 +122,12 @@ class SpatializationAlgorithm {
 ### Design Principles
 - **Lock-free audio path:** No malloc, locks, or logging in any function called from processBlock
 - **Stateless algorithms:** All computation state in context structs, algorithms are pure functions
-- **Three-slot wait-free layout handoff (SC-16):** `RenderEngine` keeps three `LayoutState` slots and a `TripleBufferIndex` that decides which slot each thread may touch. The audio thread's slot is never written, so any number of back-to-back `setOutputFormat()` calls between blocks is safe and the next block renders the last one. `setOutputFormat()` is single-writer, message-thread-only and allocating. `getActiveLayout()` / `getActiveOutputFormat()` are the writer-thread view (the most recently published slot) and must not be called from the audio thread; the audio thread acquires its layout once per block inside `renderBlock()`
+- **Three-slot wait-free layout handoff (SC-16):** `RenderEngine` keeps three `LayoutState` slots and a `TripleBufferIndex` that decides which slot each thread may touch. The audio thread's slot is never written, so any number of back-to-back `setOutputFormat()` calls between blocks is safe and the next block renders the last one. `setOutputFormat()` is single-writer, message-thread-only and allocating. `getActiveLayout()` / `getActiveOutputFormat()` are the writer-thread view (the most recently published slot) and must not be called from the audio thread: a call made on the render thread while a different thread is the writer is counted (`getWriterViewOnRenderThreadCount()`) and asserts in debug builds (SC-17). The audio thread acquires its layout once per block inside `renderBlock()`, and **audio-thread code reads it through `getBlockLayout()` after `renderBlock()`** (SC-17, SpatialCore#24): it returns the snapshot that block rendered with and never acquires a newer one, so a channel map chosen from it cannot tear against the samples. **Migration:** OpenSpatialDelay must replace its `processBlock()` call to `getActiveLayout()` with `getBlockLayout()` before bumping its SpatialCore pin past `ab60c25`
 - **Profile loader and mailbox (DATA-01):** with `setHRTFProfile` the audio thread is the only writer of the active renderer index. The loader thread writes only a renderer the audio thread is not using, and hands it over through a one-slot atomic mailbox that the audio thread claims at the top of a block. No lock, allocation or file access is ever on the audio side of this handoff (the remaining defensive `jassertfalse` plus `resize` guards in `BinauralRenderer` and `renderDirectBinauralHRTF` are RTSF-01, Phase 5, and are reachable only on a prepare-contract violation). The SOFA load (up to 36 MB built in, up to 256 MB from the shared folder) runs on the loader only
 - **Sample-based crossfades with floors:** the convolver crossfade is never shorter than `PartitionedConvolver::kMinCrossfadeSamples` (2048), and the renderer crossfade lasts `max(8 blocks, RenderEngine::kMinRendererXfadeSamples = 4096)` samples, fixed when the fade starts, so a 32-sample host block still gets at least 85 ms at 48 kHz
 - **Per-source HRTF:** 12 independent PartitionedConvolvers for direct binaural rendering
 - **Self-calibrating normalization:** `targetRMS = 1/sqrt(irLen)` ensures consistent levels across HRTF profiles
-- **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — with one stated exception: stereo-variant gains (`objGainL`/`objGainR`) are computed consumer-side always, because that math is not a `SpatializationAlgorithm`
+- **Facade boundary (SC-13):** consumers drive rendering through `RenderEngine` and do not dispatch algorithms or build `LayoutContext`s themselves — including the stereo-variant gains (`objGainL`/`objGainR`/`stereoMode`), which the engine computes itself when `engineComputesGains` is set (SC-18 part 2); with the flag false the consumer supplies them
 
 ## Build System
 - **Framework:** JUCE 9.0.0, C++17, CMake 3.22+

@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <thread>
+#include <functional>
 #include <type_traits>
 
 namespace spatialcore
@@ -289,7 +291,20 @@ private:
 
 RenderEngine::RenderEngine()
 {
+    // SC-17: before the first renderBlock() the render-thread view is the
+    // reader's initial slot (the default Binaural layout).
+    blockLayout_ = &layoutBuffers[static_cast<size_t> (layoutSlots_.readSlot())];
+
     resetLastGoodPositions();
+
+    // SC-18: D-09 index order 0..6 (see kAlgorithmIndex* in RenderEngine.h).
+    speakerAlgorithms_[kAlgorithmIndexAmbisonics] = &ambisonicsAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexConstantPower] = &constantPowerAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexDBAP] = &dbapAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexKNN] = &knnAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexMDAP] = &mdapAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexVBAP] = &vbapAlgorithm_;
+    speakerAlgorithms_[kAlgorithmIndexVBIP] = &vbipAlgorithm_;
 
     // A fresh engine is playing profile 0 (Simple); both renderers start as that.
     const uint32_t simple = packHRTFStatus (0, HRTFLoadState::Ready, HRTFProfileSource::Simple, HRTFProfileProblem::None);
@@ -297,6 +312,30 @@ RenderEngine::RenderEngine()
     rendererMeta_[1].store (simple, std::memory_order_relaxed);
     loaderStatusWord_.store (packHRTFStatus (0, HRTFLoadState::Idle, HRTFProfileSource::Simple, HRTFProfileProblem::None),
                              std::memory_order_relaxed);
+}
+
+void RenderEngine::setAlgorithmIndex (int index)
+{
+    // SC-18: clamp on store; the audio thread additionally routes any index
+    // outside the speaker table to VBAP (speakerAlgorithmFor).
+    algorithmIndex_.store (juce::jlimit (0, kNumAlgorithmIndices - 1, index), std::memory_order_relaxed);
+}
+
+int RenderEngine::getAlgorithmIndex() const
+{
+    return algorithmIndex_.load (std::memory_order_relaxed);
+}
+
+const SpatializationAlgorithm& RenderEngine::speakerAlgorithmFor (int index) const
+{
+    // Stereo indices (7..11) and anything outside the table render as VBAP on a
+    // speaker layout. An entry that cannot render to speakers also falls back
+    // to VBAP (mirrors OpenSpatialDelay's supportsSurround() fallback).
+    if (index < 0 || index >= kNumSpeakerAlgorithmIndices)
+        return vbapAlgorithm_;
+
+    const SpatializationAlgorithm* chosen = speakerAlgorithms_[index];
+    return (chosen != nullptr && chosen->supportsSurround()) ? *chosen : vbapAlgorithm_;
 }
 
 RenderEngine::~RenderEngine()
@@ -481,18 +520,33 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     lfeFilter.reset();
 
     // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
+    //
+    // Same ordering rule as the LFE filter above: every NFC update installs
+    // FIRST-order coefficients, so the placeholder must be first-order too and
+    // be assigned BEFORE prepare()/reset() sizes the state. A second-order
+    // placeholder (the former 1 kHz all-pass) made Filter::check() reallocate on
+    // the audio thread when an order that became active after the distance
+    // settled was first processed (SpatialCore#21). Identity is an exact
+    // pass-through until the first NFC update replaces it.
     for (int obj = 0; obj < MAX_SOURCES; ++obj)
     {
         for (int n = 0; n < kMaxAmbiOrder; ++n)
         {
+            *nfcFilters[obj][n].coefficients =
+                juce::dsp::IIR::Coefficients<float> (1.0f, 0.0f, 1.0f, 0.0f);
             nfcFilters[obj][n].prepare (spec);
             nfcFilters[obj][n].reset();
-            *nfcFilters[obj][n].coefficients =
-                *juce::dsp::IIR::Coefficients<float>::makeAllPass (sampleRate, 1000.0f);
         }
         prevNfcDistance[obj] = -1.0f;  // Force coefficient update on first block
         smoothedNfcDistance[obj] = 0.0f;
     }
+    lastNfcAmbiOrder_ = -1;
+
+    // SC-20: a fresh prepare has played nothing, so the first block takes the
+    // published layout without a fade and no fade-in is owed.
+    fadeInPending_ = false;
+    renderedSincePrepare_ = false;
+    snapInterpolation_ = false;
 
     // HRTF convolution: prepare both renderers (double-buffered)
     binauralRenderers[0].prepare (sampleRate, maxBlockSize);
@@ -681,7 +735,35 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // the SC-13 gain computation and the discrete-surround speaker routing
     // below, so a message-thread format switch landing mid-block cannot pair
     // one format's dispatch with another format's layout.
-    const LayoutState& layout = acquireBlockLayout();
+    //
+    // SC-20 (opt-in): a block that sees a newly published layout renders the
+    // layout it already holds, faded out, and the following block takes the new
+    // one, faded in. The held slot is the reader's own slot, which the writer
+    // never touches, so rendering it needs no acquire; hasFresh() is only a
+    // hint. With the flag false this is exactly the old acquire.
+    bool fadeOutBlock = false;
+    bool fadeInBlock = false;
+    const LayoutState* layoutPtr = nullptr;
+    if (blockCtx.engineFadesFormatSwitch && renderedSincePrepare_ && ! fadeInPending_
+        && layoutSlots_.hasFresh())
+    {
+        layoutPtr = &layoutBuffers[static_cast<size_t> (layoutSlots_.readSlot())];
+        fadeOutBlock = true;
+        fadeInPending_ = true;
+    }
+    else
+    {
+        layoutPtr = &acquireBlockLayout();
+        fadeInBlock = blockCtx.engineFadesFormatSwitch && fadeInPending_;
+        fadeInPending_ = false;
+    }
+    snapInterpolation_ = fadeInBlock;
+    const LayoutState& layout = *layoutPtr;
+    // SC-17: remember the snapshot this block renders with (getBlockLayout()) and
+    // which thread is rendering (the writer-view misuse guard). Relaxed stores of
+    // a pointer and a lock-free atomic: nothing here allocates, locks or logs.
+    blockLayout_ = &layout;
+    renderThreadHash_.store (currentThreadHash(), std::memory_order_relaxed);
 
     // SC-13 / SC-16: when the consumer opts in to either, work on a scratch
     // copy of the context (an assignment into an existing member, no
@@ -759,20 +841,163 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     }
 
     simplePathRanLastBlock_ = ranSimple;
+
+    if (fadeOutBlock || fadeInBlock)
+        applySwitchFade (ctx, layout, outChannels, numOutCh, src.numSamples, fadeInBlock);
+
+    snapInterpolation_ = false;
+    renderedSincePrepare_ = true;
+}
+
+//==============================================================================
+// applySwitchFade — SC-20. A linear ramp over the block on exactly the channels
+// the block's render path wrote, so a consumer's other channels are untouched.
+// The ramp endpoints are exact (0 and 1), and a one-sample block takes the
+// endpoint the block is heading to (fade-out 0, fade-in 1). The channel set
+// mirrors the dispatch chain in renderBlock(): stereo variant and binaural
+// write channels 0-1, Ambisonics the first (order + 1)^2, discrete surround
+// each speaker's channel plus the LFE.
+//==============================================================================
+void RenderEngine::applySwitchFade (const RenderBlockContext& ctx, const LayoutState& layout,
+                                    float* const* outChannels, int numOutCh, int numSamples,
+                                    bool fadeIn) const
+{
+    if (numSamples <= 0 || outChannels == nullptr)
+        return;
+
+    const float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 0.0f;
+    const auto rampAt = [&] (int s)
+    {
+        if (numSamples == 1)
+            return fadeIn ? 1.0f : 0.0f;
+        if (s == numSamples - 1)
+            return fadeIn ? 1.0f : 0.0f;   // exact endpoint, no rounding in s * invN
+        const float frac = static_cast<float> (s) * invN;
+        return fadeIn ? frac : 1.0f - frac;
+    };
+    const auto fadeChannel = [&] (int ch)
+    {
+        if (ch < 0 || ch >= numOutCh || outChannels[ch] == nullptr)
+            return;
+        float* out = outChannels[ch];
+        for (int s = 0; s < numSamples; ++s)
+            out[s] *= rampAt (s);
+    };
+
+    if (ctx.isStereoVariant || ctx.isBinaural)
+    {
+        fadeChannel (0);
+        fadeChannel (1);
+    }
+    else if (ctx.isAmbiOutput)
+    {
+        const int numAmbiCh = std::min ((ctx.ambiOrder + 1) * (ctx.ambiOrder + 1), kMaxAmbiChannels);
+        for (int c = 0; c < numAmbiCh; ++c)
+            fadeChannel (c);
+    }
+    else
+    {
+        // A channel is faded once even if the layout names it twice.
+        constexpr int kMaskChannels = 64;
+        bool written[kMaskChannels] = {};
+        const auto& surLayout = layout.layout;
+        for (int sp = 0; sp < surLayout.numSpeakers; ++sp)
+        {
+            const int ch = surLayout.speakers[sp].channelIndex;
+            if (ch >= 0 && ch < kMaskChannels)
+                written[ch] = true;
+        }
+        if (surLayout.lfeChannelIndex >= 0 && surLayout.lfeChannelIndex < kMaskChannels)
+            written[surLayout.lfeChannelIndex] = true;
+        for (int ch = 0; ch < kMaskChannels && ch < numOutCh; ++ch)
+            if (written[ch])
+                fadeChannel (ch);
+    }
 }
 
 //==============================================================================
 // computeObjectGains — SC-13. Fills ctx.objChannelGains (surround/Ambisonics,
-// via surroundAlgorithm_) and ctx.objGains (simple binaural, via
+// via the algorithm chosen by algorithmIndex_) and ctx.objGains (simple binaural, via
 // binauralAlgorithm_) for every object slot. Only called when the consumer
 // sets RenderBlockContext::engineComputesGains, or (binauralOnly, objGains
-// alone) engineSelectsHRTF on a binaural block (WR-06). Does not read or write
-// objGainL/objGainR/stereoMode — those stay consumer-side (D-06).
+// alone) engineSelectsHRTF on a binaural block (WR-06).
+//
+// SC-18 part 2: on a stereo-variant block it also fills ctx.objGainL/objGainR
+// and ctx.stereoMode from the same algorithm index (indices 7..11 are the five
+// stereo modes; any other index renders as Equal Power), scaled by the block's
+// distance gain. With engineComputesGains false the consumer still supplies
+// those three fields itself.
 //==============================================================================
+namespace
+{
+    // The five stereo modes' gain math, transcribed from OpenSpatialDelay
+    // (PluginProcessor.cpp, stereoMode switch). Positive azimuth = left.
+    // mode: 0 Equal Power, 1 Stereo VBAP, 2 XY Pair, 3 MS Encode, 4 Blumlein.
+    // `dG` is the block distance gain, applied to both channels.
+    void computeStereoModeGains (int mode, float azRad, float dG, float& gainL, float& gainR)
+    {
+        constexpr float halfPi = juce::MathConstants<float>::halfPi;
+        constexpr float deg30 = juce::MathConstants<float>::pi / 6.0f;
+        constexpr float deg45 = juce::MathConstants<float>::pi / 4.0f;
+
+        switch (mode)
+        {
+            case 1: // Stereo VBAP: two virtual speakers at +/-30 degrees
+            {
+                const float lateralPos = -std::sin (azRad); // +1 = right, -1 = left
+                const float tVal = juce::jlimit (0.0f, 1.0f, (lateralPos / std::sin (deg30) + 1.0f) * 0.5f);
+                gainL = std::cos (tVal * halfPi) * dG;
+                gainR = std::sin (tVal * halfPi) * dG;
+                break;
+            }
+            case 2: // XY Pair: coincident cardioid pair at +/-45 degrees
+                gainL = 0.5f * (1.0f + std::cos (azRad - deg45)) * dG;
+                gainR = 0.5f * (1.0f + std::cos (azRad + deg45)) * dG;
+                break;
+            case 3: // MS Encode: subcardioid mid + figure-8 side, L = M + S, R = M - S
+            {
+                const float mid = (0.75f + 0.25f * std::cos (azRad)) * dG;
+                const float side = std::sin (azRad) * dG;
+                gainL = mid + side;
+                gainR = mid - side;
+                break;
+            }
+            case 4: // Blumlein: crossed figure-8 pair at +/-45 degrees
+            {
+                const float lateralPos = -std::sin (azRad);
+                const float tVal = juce::jlimit (0.0f, 1.0f, (lateralPos / std::sin (deg45) + 1.0f) * 0.5f);
+                gainL = std::cos (tVal * halfPi) * dG;
+                gainR = std::sin (tVal * halfPi) * dG;
+                break;
+            }
+            default: // 0: Equal Power pan law
+            {
+                const float pan = (-std::sin (azRad) + 1.0f) * 0.5f; // 0 = left, 1 = right
+                gainL = std::cos (pan * halfPi) * dG;
+                gainR = std::sin (pan * halfPi) * dG;
+                break;
+            }
+        }
+    }
+}
+
 void RenderEngine::computeObjectGains (const RenderSources& sources, const LayoutState& ls,
                                         RenderBlockContext& ctx, bool binauralOnly)
 {
     LayoutContext layoutCtx { ls.layout, ls.vbapTriplets, ls.ambiDecodeMatrix, ls.ambiNumSpeakers };
+
+    // SC-18: one relaxed load per block, resolved to one algorithm reference
+    // (speaker layouts) and, on a stereo-variant block, to one stereo mode.
+    const int algorithmIdx = algorithmIndex_.load (std::memory_order_relaxed);
+    const SpatializationAlgorithm& surroundAlgorithm = speakerAlgorithmFor (algorithmIdx);
+
+    // SC-18 part 2: the stereo gains are engine-owned only on a stereo-variant
+    // block (never on the binauralOnly path, which fills objGains alone). A
+    // speaker index (below Equal Power) renders as Equal Power, mode 0.
+    const bool fillStereoGains = ctx.isStereoVariant && ! binauralOnly;
+    if (fillStereoGains)
+        ctx.stereoMode = juce::jlimit (kAlgorithmIndexEqualPower, kNumAlgorithmIndices - 1, algorithmIdx)
+                         - kAlgorithmIndexEqualPower;
 
     for (int t = 0; t < MAX_SOURCES; ++t)
     {
@@ -781,6 +1006,12 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
         if (! binauralOnly)
             for (int sp = 0; sp < MAX_SPEAKERS; ++sp)
                 ctx.objChannelGains[t][sp] = 0.0f;
+
+        if (fillStereoGains)
+        {
+            ctx.objGainL[t] = 0.0f;
+            ctx.objGainR[t] = 0.0f;
+        }
 
         if (! sources.objectLive[t])
         {
@@ -795,10 +1026,22 @@ void RenderEngine::computeObjectGains (const RenderSources& sources, const Layou
         };
 
         if (! binauralOnly)
-            surroundAlgorithm_.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
+            surroundAlgorithm.computeGains (pos, layoutCtx, ctx.objChannelGains[t], ls.layout.numSpeakers);
 
         BinauralContext binCtx { binauralProfileIndex_, ctx.sampleRate, kDefaultBinauralProfiles };
         ctx.objGains[t] = binauralAlgorithm_.computeBinauralGains (pos, binCtx);
+
+        if (fillStereoGains)
+        {
+            // Block-end target of the consumer's distance gain, matching the
+            // block-rate objDistGain OSD folds into its stereo gains (Pitfall 9).
+            float dG = (sources.distGainPerSample[t] != nullptr && sources.numSamples > 0)
+                           ? sources.distGainPerSample[t][sources.numSamples - 1]
+                           : 1.0f;
+            if (! std::isfinite (dG))
+                dG = 0.0f; // T-03-07: a non-finite consumer gain must not poison the stereo ramp
+            computeStereoModeGains (ctx.stereoMode, pos.azimuthRad, dG, ctx.objGainL[t], ctx.objGainR[t]);
+        }
     }
 }
 
@@ -1103,6 +1346,11 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
         simplePathRanLastBlock_ = true;
     }
 
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            prevBinauralGains[t] = blockCtx.objGains[t];
+
     for (int s = 0; s < numSamples; ++s)
     {
         float frac = static_cast<float> (s) * invN;
@@ -1164,11 +1412,11 @@ void RenderEngine::renderSimpleBinauralWoodworth (const RenderSources& sources,
 }
 
 //==============================================================================
-// renderStereoVariant — verbatim-transplanted (gain math for the 5 stereo
-// modes stays where it was computed, in the consumer, and is handed in via
-// RenderBlockContext.objGainL/objGainR — see the plan's D-09 note: this gain
-// computation is not a SpatializationAlgorithm and was never touched by the
-// Plan 08-03 algorithm extraction).
+// renderStereoVariant — verbatim-transplanted. It renders whatever is in
+// RenderBlockContext.objGainL/objGainR: the consumer's own values by default,
+// or the engine's five stereo modes when engineComputesGains is set
+// (computeObjectGains, SC-18 part 2). The gain math is not a
+// SpatializationAlgorithm; the engine keeps it in computeStereoModeGains.
 //==============================================================================
 void RenderEngine::renderStereoVariant (const RenderSources& sources,
                                           const RenderBlockContext& blockCtx,
@@ -1176,6 +1424,14 @@ void RenderEngine::renderStereoVariant (const RenderSources& sources,
 {
     const int numSamples = sources.numSamples;
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
+
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+        {
+            prevStereoGainL[t] = blockCtx.objGainL[t];
+            prevStereoGainR[t] = blockCtx.objGainR[t];
+        }
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -1236,6 +1492,19 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
     // of its inputs, no hidden dependency on prepare()'s cached rate).
     const double sr = blockCtx.sampleRate;
 
+    // An order change activates (or deactivates) filters whose coefficients
+    // were last written under a different order, and the distance gate below
+    // would not rewrite them while the distance stays settled. Invalidate
+    // every object's last-written distance so this block's update recomputes
+    // every active order (SpatialCore#21). No allocation: coefficients are
+    // assigned first-order into state already sized for first order.
+    if (ambiOrder != lastNfcAmbiOrder_)
+    {
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            prevNfcDistance[t] = -1.0f;
+        lastNfcAmbiOrder_ = ambiOrder;
+    }
+
     for (int t = 0; t < MAX_SOURCES; ++t)
     {
         if (! sources.objectLive[t]) continue;
@@ -1278,6 +1547,12 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
         for (int c = 0; c < numAmbiCh; ++c)
             objSHCoeffs[t][c] = evalSH (c, azRad, elRad) * cachedMaxrE[acnToOrder (c)];
     }
+
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            for (int c = 0; c < numAmbiCh; ++c)
+                prevSHCoeffs[t][c] = objSHCoeffs[t][c];
 
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
 
@@ -1340,6 +1615,12 @@ void RenderEngine::renderDiscreteSurround (const RenderSources& sources,
 
     float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
 
+    // SC-20: the fade-in block of a format switch starts at its own targets.
+    if (snapInterpolation_)
+        for (int t = 0; t < MAX_SOURCES; ++t)
+            for (int sp = 0; sp < numSpeakers; ++sp)
+                prevChannelGains[t][sp] = blockCtx.objChannelGains[t][sp];
+
     for (int s = 0; s < numSamples; ++s)
     {
         float frac = static_cast<float> (s) * invN;
@@ -1396,6 +1677,9 @@ void RenderEngine::setOutputFormat (OutputFormat format)
     const bool overlapped = inSetOutputFormat_.exchange (true, std::memory_order_acquire);
     jassert (! overlapped);
 
+    // SC-17: remember which thread is the writer (the writer-view misuse guard).
+    writerThreadHash_.store (currentThreadHash(), std::memory_order_relaxed);
+
     activateLayout (format);
 
     // On overlap the other writer's call is still in flight and owns the flag.
@@ -1410,9 +1694,39 @@ OutputFormat RenderEngine::getActiveOutputFormat() const
 
 const RenderEngine::LayoutState& RenderEngine::getActiveLayout() const
 {
-    // Writer-thread view: the slot most recently published. Never reached from
-    // the audio thread.
+    // SC-17: the caller is a known render thread and not the known writer ->
+    // writer-view misuse. Count it (every build) and assert (debug). A harness
+    // whose one thread both writes and renders is never flagged, and nothing is
+    // flagged until both threads have been seen.
+    const std::size_t me = currentThreadHash();
+    const std::size_t renderer = renderThreadHash_.load (std::memory_order_relaxed);
+    const std::size_t writer = writerThreadHash_.load (std::memory_order_relaxed);
+    if (renderer != 0 && me == renderer && writer != 0 && me != writer)
+    {
+        writerViewOnRenderThreadCount_.fetch_add (1, std::memory_order_relaxed);
+        jassertfalse;
+    }
+
+    // Writer-thread view: the slot most recently published. Audio-thread code
+    // uses getBlockLayout().
     return layoutBuffers[static_cast<size_t> (layoutSlots_.lastPublishedSlot())];
+}
+
+const RenderEngine::LayoutState& RenderEngine::getBlockLayout() const noexcept
+{
+    // The stored snapshot and nothing else, no new snapshot is taken (SC-17).
+    return *blockLayout_;
+}
+
+int RenderEngine::getWriterViewOnRenderThreadCount() const noexcept
+{
+    return writerViewOnRenderThreadCount_.load (std::memory_order_relaxed);
+}
+
+std::size_t RenderEngine::currentThreadHash() noexcept
+{
+    const std::size_t h = std::hash<std::thread::id> {} (std::this_thread::get_id());
+    return h != 0 ? h : 1;
 }
 
 const RenderEngine::LayoutState& RenderEngine::acquireBlockLayout()

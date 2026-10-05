@@ -10,7 +10,7 @@ enum class OutputFormat
 {
     // Binaural (HRTF head model) -- default
     Binaural = 0,
-    // Stereo (mode selected by algorithm param indices 6-10)
+    // Stereo (mode selected by algorithm indices 7-11: kAlgorithmIndexEqualPower .. kAlgorithmIndexBlumlein, RenderEngine.h)
     Stereo,
     // Surround (ascending channel count)
     Quad, Surround5_0, Surround5_1, Surround7_0, Surround7_1,

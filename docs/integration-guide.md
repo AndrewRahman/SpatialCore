@@ -122,7 +122,32 @@ public:
 > layout snapshot it renders, so a format switch landing mid-block cannot tear them
 > apart (SC-16). Call `setOutputFormat()` from the message thread only, and treat
 > `getActiveLayout()` / `getActiveOutputFormat()` as the writer-thread view, not for the
-> audio thread.
+> audio thread: a call from the render thread while another thread is the writer is
+> counted (`getWriterViewOnRenderThreadCount()`) and asserts in debug builds. Audio-thread
+> code that needs the layout (for example to choose an output channel map) calls
+> `engine.getBlockLayout()` after `renderBlock()` (SC-17): it returns the snapshot that
+> block rendered with and never acquires a newer one. **Migration:** a consumer that calls
+> `getActiveLayout()` from `processBlock()` (OpenSpatialDelay does) must switch to
+> `getBlockLayout()` before bumping its SpatialCore pin past `ab60c25`.
+> Set `ctx.engineFadesFormatSwitch = true` (SC-20) to make a format switch click-free. The
+> block that first sees a newly published layout renders the layout the engine already
+> holds, faded to zero, and the next block takes the new layout and fades it in from zero
+> with its gain interpolation starting at its own targets. The new format is heard one
+> block later and a switch costs a two-block dip (about 21 ms at 512 samples / 48 kHz);
+> several `setOutputFormat()` calls between two blocks give one fade-out and one fade-in of
+> the last format, and the first block after `prepare()` never fades. `getBlockLayout()`
+> reports the layout the block actually rendered, so a channel map chosen from it stays
+> paired with the samples (it is the held layout during the fade-out block). It is wait-free
+> and allocation-free and is opt-in: with the flag false nothing changes. Do not republish
+> the format that is already active, since every publish costs a dip.
+> Choose the speaker algorithm with `engine.setAlgorithmIndex (kAlgorithmIndex...)` (SC-18),
+> from any non-audio thread: the index map is OpenSpatialDelay's 12-entry saved-preset map
+> (0 Ambisonics, 1 Constant Power, 2 DBAP, 3 KNN, 4 MDAP, 5 VBAP, 6 VBIP, 7..11 the stereo
+> modes), the default is VBAP, and `renderBlock()` reads it once per block when
+> `engineComputesGains` is set. With `engineComputesGains` set, the engine also computes the
+> Stereo format's gains (`objGainL`, `objGainR`, `stereoMode`) for indices 7..11 (Equal Power,
+> Stereo VBAP, XY Pair, MS Encode, Blumlein) scaled by the block's distance gain (SC-18 part 2);
+> with the flag false you still supply them yourself.
 > See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
 ### Wiring OSC, trajectories and the map into RenderEngine

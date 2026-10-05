@@ -5,9 +5,11 @@
 #include "../Binaural/BinauralTestUtilities.h"
 #include "../TestNumerics.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <vector>
 
 using namespace spatialcore;
@@ -1277,4 +1279,786 @@ TEST_CASE ("RenderEngine: all 23 output formats resolve to layouts that agree wi
     }
     CHECK (formatsChecked == 23);
     CHECK (speakerFormats == 15);
+}
+
+// ----------------------------------------------------------------------------
+// SC-18 part 1 — runtime speaker-algorithm selection through the engine
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr int kSc18Channels = 12; // 7.1.4
+
+    using Sc18Render = std::vector<std::vector<float>>;
+
+    // Renders one steady DC source on a 7.1.4 engine that computes its own gains.
+    // algorithmIndex < 0 leaves the engine on its default (never calls the setter).
+    // Several warm-up blocks let gain interpolation settle; the last block is returned.
+    Sc18Render sc18Render (int algorithmIndex, float azimuthDeg, float elevationDeg)
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Surround7_1_4);
+        if (algorithmIndex >= 0)
+            engine.setAlgorithmIndex (algorithmIndex);
+
+        SourceFixture fixture;
+        RenderSources sources = fixture.makeSources();
+        sources.objects[0].azimuthDeg = azimuthDeg;
+        sources.objects[0].elevationDeg = elevationDeg;
+
+        RenderBlockContext ctx;
+        ctx.sampleRate = kSampleRate;
+        ctx.engineComputesGains = true;
+        ctx.engineDerivesDispatch = true;
+
+        Sc18Render out (kSc18Channels, std::vector<float> (kBlockSize, 0.0f));
+        float* outPtrs[kSc18Channels] = {};
+        for (int c = 0; c < kSc18Channels; ++c)
+            outPtrs[c] = out[static_cast<size_t> (c)].data();
+
+        for (int block = 0; block < 32; ++block)
+        {
+            for (auto& ch : out)
+                std::fill (ch.begin(), ch.end(), 0.0f);
+            engine.renderBlock (sources, ctx, outPtrs, kSc18Channels);
+        }
+        return out;
+    }
+
+    float sc18MaxDiff (const Sc18Render& a, const Sc18Render& b)
+    {
+        float worst = 0.0f;
+        for (size_t c = 0; c < a.size(); ++c)
+            for (size_t i = 0; i < a[c].size(); ++i)
+                worst = std::max (worst, std::abs (a[c][i] - b[c][i]));
+        return worst;
+    }
+
+    bool sc18AllFinite (const Sc18Render& r)
+    {
+        for (const auto& ch : r)
+            if (! allFinite (ch.data(), static_cast<int> (ch.size())))
+                return false;
+        return true;
+    }
+}
+
+TEST_CASE ("RenderEngine: a fresh engine defaults to VBAP and an explicit VBAP selection is sample-identical (SC-18)",
+           "[engine][sc18]")
+{
+    RenderEngine fresh;
+    CHECK (fresh.getAlgorithmIndex() == kAlgorithmIndexVBAP);
+
+    const auto byDefault = sc18Render (-1, 45.0f, 0.0f);
+    const auto explicitVbap = sc18Render (kAlgorithmIndexVBAP, 45.0f, 0.0f);
+    CHECK (sc18MaxDiff (byDefault, explicitVbap) == 0.0f);
+    CHECK (sc18AllFinite (byDefault));
+}
+
+TEST_CASE ("RenderEngine: the seven speaker algorithms render pairwise-distinct 7.1.4 output (SC-18)",
+           "[engine][sc18]")
+{
+    // First of these positions at which all 21 pairs differ by more than 1e-3.
+    const float candidates[][2] = { { 45.0f, 20.0f }, { 60.0f, 10.0f }, { 100.0f, 30.0f } };
+
+    bool found = false;
+    for (const auto& pos : candidates)
+    {
+        std::vector<Sc18Render> renders;
+        for (int idx = 0; idx < kNumSpeakerAlgorithmIndices; ++idx)
+        {
+            renders.push_back (sc18Render (idx, pos[0], pos[1]));
+            REQUIRE (sc18AllFinite (renders.back()));
+        }
+
+        bool allDiffer = true;
+        for (int a = 0; a < kNumSpeakerAlgorithmIndices && allDiffer; ++a)
+            for (int b = a + 1; b < kNumSpeakerAlgorithmIndices; ++b)
+                if (sc18MaxDiff (renders[static_cast<size_t> (a)], renders[static_cast<size_t> (b)]) <= 1.0e-3f)
+                {
+                    INFO ("pair " << a << "," << b << " at azimuth " << pos[0] << " elevation " << pos[1]);
+                    allDiffer = false;
+                    break;
+                }
+
+        if (allDiffer)
+        {
+            INFO ("distinctness position: azimuth " << pos[0] << " elevation " << pos[1]);
+            found = true;
+            break;
+        }
+    }
+    CHECK (found);
+}
+
+TEST_CASE ("RenderEngine: the algorithm index clamps, and stereo indices on a speaker layout render as VBAP (SC-18)",
+           "[engine][sc18]")
+{
+    RenderEngine engine;
+    engine.setAlgorithmIndex (-5);
+    CHECK (engine.getAlgorithmIndex() == 0);
+    engine.setAlgorithmIndex (99);
+    CHECK (engine.getAlgorithmIndex() == kNumAlgorithmIndices - 1);
+    CHECK (kNumAlgorithmIndices - 1 == 11);
+
+    const auto vbap = sc18Render (kAlgorithmIndexVBAP, 45.0f, 20.0f);
+    for (int idx = kNumSpeakerAlgorithmIndices; idx < kNumAlgorithmIndices; ++idx)
+    {
+        const auto r = sc18Render (idx, 45.0f, 20.0f);
+        CHECK (sc18AllFinite (r));
+        CHECK (sc18MaxDiff (r, vbap) == 0.0f);
+    }
+
+    // Out-of-range input behaves as the clamped extremes, still finite.
+    CHECK (sc18AllFinite (sc18Render (-5, 45.0f, 20.0f)));
+    CHECK (sc18AllFinite (sc18Render (99, 45.0f, 20.0f)));
+}
+
+// ----------------------------------------------------------------------------
+// SC-18 part 2 — engine-owned stereo-mode gains for the Stereo format (D-06)
+// ----------------------------------------------------------------------------
+namespace
+{
+    struct Sc18StereoRender
+    {
+        std::vector<float> left;
+        std::vector<float> right;
+    };
+
+    float sc18Rms (const std::vector<float>& v)
+    {
+        double sum = 0.0;
+        for (float x : v)
+            sum += static_cast<double> (x) * x;
+        return static_cast<float> (std::sqrt (sum / static_cast<double> (v.size())));
+    }
+
+    // One steady DC source (0.5) on the Stereo format with engineComputesGains and
+    // engineDerivesDispatch set. `distanceGain` is the constant block distance gain
+    // the consumer hands in. Several warm-up blocks let the gain interpolation
+    // settle; the last block is returned.
+    Sc18StereoRender sc18StereoRender (int algorithmIndex, float azimuthDeg, float distanceGain = 1.0f)
+    {
+        RenderEngine engine;
+        engine.prepare (kSampleRate, kBlockSize);
+        engine.setOutputFormat (OutputFormat::Stereo);
+        engine.setAlgorithmIndex (algorithmIndex);
+
+        SourceFixture fixture;
+        std::fill (fixture.distGain.begin(), fixture.distGain.end(), distanceGain);
+        RenderSources sources = fixture.makeSources();
+        sources.objects[0].azimuthDeg = azimuthDeg;
+        sources.objects[0].elevationDeg = 0.0f;
+
+        RenderBlockContext ctx;
+        ctx.sampleRate = kSampleRate;
+        ctx.engineComputesGains = true;
+        ctx.engineDerivesDispatch = true;
+
+        Sc18StereoRender out { std::vector<float> (kBlockSize, 0.0f), std::vector<float> (kBlockSize, 0.0f) };
+        float* outPtrs[2] = { out.left.data(), out.right.data() };
+        for (int block = 0; block < 32; ++block)
+        {
+            std::fill (out.left.begin(), out.left.end(), 0.0f);
+            std::fill (out.right.begin(), out.right.end(), 0.0f);
+            engine.renderBlock (sources, ctx, outPtrs, 2);
+        }
+        return out;
+    }
+}
+
+TEST_CASE ("RenderEngine: the five stereo modes give five different L/R pairs when the engine computes the gains (SC-18 part 2)",
+           "[engine][sc18]")
+{
+    // Azimuth 20, not 45: at +45 degrees Stereo VBAP (speakers at +/-30, clamped) and
+    // Blumlein (+/-45, exactly on the boundary) both give (L, R) = (1, 0) and are
+    // indistinguishable. At 20 degrees all five modes land on different pairs.
+    constexpr float kAzimuth = 20.0f;
+    struct Pair { float l, r; };
+    std::vector<Pair> pairs;
+    for (int idx = kAlgorithmIndexEqualPower; idx <= kAlgorithmIndexBlumlein; ++idx)
+    {
+        const auto r = sc18StereoRender (idx, kAzimuth);
+        REQUIRE (allFinite (r.left.data(), kBlockSize));
+        REQUIRE (allFinite (r.right.data(), kBlockSize));
+        pairs.push_back ({ sc18Rms (r.left), sc18Rms (r.right) });
+        INFO ("mode " << idx << " L=" << pairs.back().l << " R=" << pairs.back().r);
+        CHECK (pairs.back().l > 0.0f);
+    }
+    REQUIRE (pairs.size() == 5);
+    for (size_t a = 0; a < pairs.size(); ++a)
+        for (size_t b = a + 1; b < pairs.size(); ++b)
+        {
+            INFO ("modes " << a << " and " << b);
+            CHECK (std::max (std::abs (pairs[a].l - pairs[b].l), std::abs (pairs[a].r - pairs[b].r)) > 1.0e-3f);
+        }
+}
+
+TEST_CASE ("RenderEngine: Equal Power centres at azimuth 0 and hard-pans left at +90 (SC-18 part 2)", "[engine][sc18]")
+{
+    const auto centre = sc18StereoRender (kAlgorithmIndexEqualPower, 0.0f);
+    CHECK_THAT (sc18Rms (centre.left), WithinAbs (sc18Rms (centre.right), 1.0e-6));
+    CHECK (sc18Rms (centre.left) > 0.0f);
+
+    // Positive azimuth = left.
+    const auto left = sc18StereoRender (kAlgorithmIndexEqualPower, 90.0f);
+    CHECK_THAT (sc18Rms (left.right), WithinAbs (0.0, 1.0e-6));
+    CHECK (sc18Rms (left.left) > 0.0f);
+}
+
+TEST_CASE ("RenderEngine: a block distance gain of 0.5 halves both stereo channels in every mode (SC-18 part 2)",
+           "[engine][sc18]")
+{
+    // Distance enters the stereo gains at block rate (RESEARCH Pitfall 9).
+    for (int idx = kAlgorithmIndexEqualPower; idx <= kAlgorithmIndexBlumlein; ++idx)
+    {
+        INFO ("mode " << idx);
+        const auto full = sc18StereoRender (idx, 20.0f, 1.0f);
+        const auto half = sc18StereoRender (idx, 20.0f, 0.5f);
+        REQUIRE (sc18Rms (full.left) > 0.0f);
+        REQUIRE (sc18Rms (full.right) > 0.0f);
+        CHECK_THAT (sc18Rms (half.left) / sc18Rms (full.left), WithinAbs (0.5, 1.0e-5));
+        CHECK_THAT (sc18Rms (half.right) / sc18Rms (full.right), WithinAbs (0.5, 1.0e-5));
+    }
+}
+
+TEST_CASE ("RenderEngine: a speaker index on the Stereo format renders as Equal Power; consumer stereo gains stay honoured with the flag off (SC-18 part 2)",
+           "[engine][sc18]")
+{
+    const auto equalPower = sc18StereoRender (kAlgorithmIndexEqualPower, 20.0f);
+    for (int idx = 0; idx < kNumSpeakerAlgorithmIndices; ++idx)
+    {
+        INFO ("speaker index " << idx);
+        const auto r = sc18StereoRender (idx, 20.0f);
+        CHECK (r.left == equalPower.left);
+        CHECK (r.right == equalPower.right);
+    }
+
+    // engineComputesGains false: the consumer's own objGainL / objGainR are used verbatim.
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+    engine.setOutputFormat (OutputFormat::Stereo);
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    RenderBlockContext ctx;
+    ctx.sampleRate = kSampleRate;
+    ctx.engineDerivesDispatch = true;
+    ctx.objGainL[0] = 0.7f;
+    ctx.objGainR[0] = 0.3f;
+    std::vector<float> outL (kBlockSize, 0.0f), outR (kBlockSize, 0.0f);
+    float* outPtrs[2] = { outL.data(), outR.data() };
+    for (int block = 0; block < 32; ++block)
+        engine.renderBlock (sources, ctx, outPtrs, 2);
+    CHECK_THAT (sc18Rms (outL), WithinAbs (0.5 * 0.7, 1.0e-5));
+    CHECK_THAT (sc18Rms (outR), WithinAbs (0.5 * 0.3, 1.0e-5));
+}
+
+// ----------------------------------------------------------------------------
+// SC-17 / SpatialCore#24 ("A+"): getBlockLayout() is the render-thread view of
+// the layout, and the writer-view accessors count misuse from the render thread.
+// ----------------------------------------------------------------------------
+TEST_CASE ("RenderEngine: getBlockLayout follows the layout the last block rendered, never a newer one (SC-17)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    // Fresh engine: the reader's initial slot, the default Binaural layout.
+    CHECK (engine.getBlockLayout().format == OutputFormat::Binaural);
+
+    // A switch before any render does not move the render-thread view: only
+    // renderBlock() acquires.
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Binaural);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+    Sc16Output out;
+
+    out.clear();
+    engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround7_1_4);
+
+    // Two more switches without a render leave the view where the last block put it.
+    engine.setOutputFormat (OutputFormat::Quad);
+    engine.setOutputFormat (OutputFormat::Surround5_1);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround7_1_4);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround7_1_4);   // asking twice never acquires
+
+    out.clear();
+    engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+    CHECK (engine.getBlockLayout().format == OutputFormat::Surround5_1);
+    CHECK (engine.getBlockLayout().layout.numSpeakers == engine.getActiveLayout().layout.numSpeakers);
+}
+
+TEST_CASE ("RenderEngine: a single thread that writes and renders is never counted as writer-view misuse (SC-17)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+    Sc16Output out;
+
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    out.clear();
+    engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+
+    CHECK (engine.getActiveOutputFormat() == OutputFormat::Surround7_1_4);
+    CHECK (engine.getActiveLayout().format == OutputFormat::Surround7_1_4);
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 0);
+}
+
+TEST_CASE ("RenderEngine: the writer view called from the render thread is counted (SC-17)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+
+    // This thread is the writer.
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 0);
+
+    // A different thread renders, then (wrongly) reads the writer view once.
+    // Debug builds also jassert here; JUCE logs and only breaks under a debugger.
+    std::thread renderThread ([&]
+    {
+        Sc16Output out;
+        out.clear();
+        engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+        (void) engine.getActiveLayout();
+    });
+    renderThread.join();
+
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 1);
+
+    // The writer thread reading its own view is still not counted.
+    (void) engine.getActiveOutputFormat();
+    CHECK (engine.getWriterViewOnRenderThreadCount() == 1);
+}
+
+TEST_CASE ("RenderEngine: a render thread always sees one of the formats a writer toggles between (SC-17 smoke)",
+           "[engine][sc17]")
+{
+    RenderEngine engine;
+    engine.prepare (kSampleRate, kBlockSize);
+    engine.setOutputFormat (OutputFormat::Surround7_1_4);
+
+    SourceFixture fixture;
+    RenderSources sources = fixture.makeSources();
+    const RenderBlockContext ctx = makeSc16Context (true);
+
+    std::atomic<bool> writerDone { false };
+    std::atomic<int> unexpected { 0 };
+    std::atomic<int> blocks { 0 };
+
+    std::thread renderThread ([&]
+    {
+        Sc16Output out;
+        while (! writerDone.load (std::memory_order_acquire))
+        {
+            out.clear();
+            engine.renderBlock (sources, ctx, out.ptrs, kSc16MaxCh);
+            const auto f = engine.getBlockLayout().format;
+            if (f != OutputFormat::Surround7_1_4 && f != OutputFormat::Binaural
+                && f != OutputFormat::AmbisonicsHOA)
+                unexpected.fetch_add (1);
+            blocks.fetch_add (1);
+        }
+    });
+
+    const OutputFormat formats[3] = { OutputFormat::Surround7_1_4, OutputFormat::Binaural,
+                                      OutputFormat::AmbisonicsHOA };
+    for (int i = 0; i < 2000; ++i)
+        engine.setOutputFormat (formats[i % 3]);
+    writerDone.store (true, std::memory_order_release);
+    renderThread.join();
+
+    CHECK (unexpected.load() == 0);
+    CHECK (blocks.load() > 0);
+}
+
+// ============================================================================
+// SC-19 / SpatialCore#21 — a mid-stream Ambisonics order change must filter
+// the newly active orders exactly like an engine that started at that order,
+// and no NFC filter may change order (reallocate state) on the audio thread.
+// ============================================================================
+namespace
+{
+    // The NFC update is deliberately gated on the smoothed distance moving by
+    // more than 0.01 m, so even a fresh engine's coefficients lag the settled
+    // distance by up to 0.01 m: at 5 m that is 0.01 / 5 = 2e-3 relative DC
+    // gain, which the engine under comparison shares. 5e-3 is that bound with
+    // margin; the placeholder defect this guards against was ~70% relative.
+    constexpr float kSc19RelTolerance = 5e-3f;
+
+    // One live object (azimuth 30, elevation 20, distance 0.5 = 5 m, DC 0.5)
+    // rendered through the Ambisonics path with explicit consumer flags.
+    struct Sc19Rig
+    {
+        static constexpr int kMaxCh = 49; // 6th order
+
+        RenderEngine engine;
+        SourceFixture fixture;
+        RenderSources sources;
+        RenderBlockContext ctx;
+        std::vector<std::vector<float>> outStorage;
+        float* outPtrs[kMaxCh] = {};
+
+        Sc19Rig()
+            : outStorage (kMaxCh, std::vector<float> (kBlockSize, 0.0f))
+        {
+            engine.prepare (kSampleRate, kBlockSize);
+            engine.setOutputFormat (OutputFormat::AmbisonicsHOA);
+            sources = fixture.makeSources();
+            sources.objects[0].azimuthDeg = 30.0f;
+            sources.objects[0].elevationDeg = 20.0f;
+            sources.objects[0].distance = 0.5f;
+            ctx.sampleRate = kSampleRate;
+            ctx.isAmbiOutput = true;
+            for (int c = 0; c < kMaxCh; ++c)
+                outPtrs[c] = outStorage[static_cast<size_t> (c)].data();
+        }
+
+        void render (int order, int blocks)
+        {
+            ctx.ambiOrder = order;
+            const int numCh = (order + 1) * (order + 1);
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (auto& ch : outStorage)
+                    std::fill (ch.begin(), ch.end(), 0.0f);
+                engine.renderBlock (sources, ctx, outPtrs, numCh);
+            }
+        }
+
+        float lastBlockMean (int acn) const
+        {
+            const auto& ch = outStorage[static_cast<size_t> (acn)];
+            double sum = 0.0;
+            for (float v : ch)
+                sum += v;
+            return static_cast<float> (sum / static_cast<double> (ch.size()));
+        }
+
+        bool lastBlockFinite (int numCh) const
+        {
+            for (int c = 0; c < numCh; ++c)
+                if (! allFinite (outStorage[static_cast<size_t> (c)].data(), kBlockSize))
+                    return false;
+            return true;
+        }
+    };
+
+    // Largest |mean| of B over ACN [first, last], and the largest A-B gap.
+    void sc19Compare (const Sc19Rig& a, const Sc19Rig& b, int first, int last,
+                      float& scale, float& worstGap, int& worstAcn)
+    {
+        scale = 0.0f;
+        worstGap = 0.0f;
+        worstAcn = first;
+        for (int acn = first; acn <= last; ++acn)
+        {
+            const float mb = b.lastBlockMean (acn);
+            scale = std::max (scale, std::abs (mb));
+            const float gap = std::abs (a.lastBlockMean (acn) - mb);
+            if (gap > worstGap)
+            {
+                worstGap = gap;
+                worstAcn = acn;
+            }
+        }
+    }
+}
+
+TEST_CASE ("RenderEngine: raising the Ambisonics order mid-stream filters the new orders like a fresh 3rd-order engine (SC-19, SpatialCore#21)",
+           "[engine][sc19]")
+{
+    Sc19Rig a, b;
+    a.render (1, 200);
+    a.render (3, 200);
+    b.render (3, 400);
+
+    float scale = 0.0f, worstGap = 0.0f;
+    int worstAcn = 4;
+    sc19Compare (a, b, 4, 15, scale, worstGap, worstAcn);
+
+    // RED evidence: print the ACN 4..15 means of both engines.
+    for (int acn = 4; acn <= 15; ++acn)
+        std::printf ("SC19-MEANS acn=%d A=%.6f B=%.6f\n", acn, a.lastBlockMean (acn), b.lastBlockMean (acn));
+    std::printf ("SC19-RESULT scale=%.6f worstGap=%.6f worstAcn=%d\n", scale, worstGap, worstAcn);
+    std::fflush (stdout);
+
+    REQUIRE (scale > 1e-4f); // non-vacuous
+    CHECK (a.lastBlockFinite (16));
+    CHECK (worstGap <= kSc19RelTolerance * scale);
+}
+
+TEST_CASE ("RenderEngine: lowering then raising the Ambisonics order matches a fresh 6th-order engine on ACN 4..48 (SC-19, SpatialCore#21)",
+           "[engine][sc19]")
+{
+    Sc19Rig a, b;
+    a.render (3, 150);
+    a.render (1, 150);
+    a.render (6, 200);
+    b.render (6, 500);
+
+    float scale = 0.0f, worstGap = 0.0f;
+    int worstAcn = 4;
+    sc19Compare (a, b, 4, 48, scale, worstGap, worstAcn);
+    std::printf ("SC19-RESULT-6 scale=%.6f worstGap=%.6f worstAcn=%d\n", scale, worstGap, worstAcn);
+    std::fflush (stdout);
+
+    REQUIRE (scale > 1e-4f);
+    CHECK (a.lastBlockFinite (49));
+    CHECK (worstGap <= kSc19RelTolerance * scale);
+}
+
+// ============================================================================
+// SC-20: opt-in click-free output-format switching. With
+// RenderBlockContext::engineFadesFormatSwitch set, the block that first sees a
+// newly published layout renders once more with the layout the engine already
+// holds and fades it to zero; the next block takes the new layout and fades it
+// in from zero with its gain interpolation starting from its own targets.
+// ============================================================================
+namespace
+{
+    constexpr int kSc20Channels = 16;
+
+    struct Sc20Rig
+    {
+        RenderEngine engine;
+        SourceFixture fixture;
+        RenderSources sources;
+        RenderBlockContext ctx;
+        std::vector<std::vector<float>> outStorage;
+        float* outPtrs[kSc20Channels] = {};
+        int numSamples = kBlockSize;
+
+        explicit Sc20Rig (bool fade, OutputFormat first, int blockSamples = kBlockSize)
+            : outStorage (kSc20Channels, std::vector<float> (kBlockSize, 0.0f)), numSamples (blockSamples)
+        {
+            engine.prepare (kSampleRate, kBlockSize);
+            engine.setOutputFormat (first);
+            sources = fixture.makeSources();
+            sources.numSamples = numSamples;
+            ctx.sampleRate = kSampleRate;
+            ctx.engineDerivesDispatch = true;
+            ctx.engineComputesGains = true;
+            ctx.engineFadesFormatSwitch = fade;
+            for (int c = 0; c < kSc20Channels; ++c)
+                outPtrs[c] = outStorage[static_cast<size_t> (c)].data();
+        }
+
+        // The consumer clears the buffer before every block, as OSP does.
+        void render()
+        {
+            for (auto& ch : outStorage)
+                std::fill (ch.begin(), ch.end(), 0.0f);
+            engine.renderBlock (sources, ctx, outPtrs, kSc20Channels);
+        }
+
+        float at (int ch, int s) const { return outStorage[static_cast<size_t> (ch)][static_cast<size_t> (s)]; }
+
+        double energy() const
+        {
+            double e = 0.0;
+            for (const auto& ch : outStorage)
+                for (int s = 0; s < numSamples; ++s)
+                    e += static_cast<double> (ch[static_cast<size_t> (s)]) * ch[static_cast<size_t> (s)];
+            return e;
+        }
+
+        bool everyChannelZeroAt (int s) const
+        {
+            for (int c = 0; c < kSc20Channels; ++c)
+                if (at (c, s) != 0.0f)
+                    return false;
+            return true;
+        }
+
+        OutputFormat blockFormat() const { return engine.getBlockLayout().format; }
+    };
+}
+
+TEST_CASE ("RenderEngine: a 7.1.4 to Binaural switch fades the held layout out, then the new one in (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+    Sc20Rig reference (true, OutputFormat::Surround7_1_4);
+
+    for (int b = 0; b < 3; ++b)
+    {
+        a.render();
+        reference.render();
+        CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    }
+
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+
+    // Block N+1: still the held layout, faded to exactly zero at its last sample.
+    a.render();
+    reference.render();
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    CHECK (a.energy() > 1e-10);
+    for (int c = 0; c < kSc20Channels; ++c)
+    {
+        CHECK (a.at (c, kBlockSize - 1) == 0.0f);
+        CHECK_THAT (a.at (c, 0), WithinAbs (reference.at (c, 0), 1e-6));
+    }
+
+    // Block N+2: the new layout, fading in from exactly zero.
+    a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.everyChannelZeroAt (0));
+    CHECK (a.energy() > 1e-10);
+    CHECK (anyNonzero (&a.outStorage[0][0], kBlockSize));
+
+    // Block N+3: no fade left.
+    a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.energy() > 1e-10);
+    CHECK (a.at (0, 0) != 0.0f);
+}
+
+TEST_CASE ("RenderEngine: three format changes between two blocks give one fade-out and one fade-in of the last format (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+    for (int b = 0; b < 2; ++b)
+        a.render();
+
+    a.engine.setOutputFormat (OutputFormat::Stereo);
+    a.engine.setOutputFormat (OutputFormat::Surround5_1);
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+
+    a.render(); // fade-out of the held 7.1.4
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    CHECK (a.everyChannelZeroAt (kBlockSize - 1));
+    CHECK (a.energy() > 1e-10);
+
+    a.render(); // fade-in of the last format only
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.everyChannelZeroAt (0));
+    CHECK (a.energy() > 1e-10);
+
+    a.render(); // settled
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.at (0, 0) != 0.0f);
+}
+
+TEST_CASE ("RenderEngine: the first block after prepare() does not fade, and a flag-off switch lands at once (SC-20)",
+           "[engine][sc20]")
+{
+    // Flag on: a layout published just before the first block renders immediately and
+    // bit-identically to a flag-off engine.
+    {
+        Sc20Rig on (true, OutputFormat::Surround7_1_4);
+        Sc20Rig off (false, OutputFormat::Surround7_1_4);
+        on.render();
+        off.render();
+        CHECK (on.blockFormat() == OutputFormat::Surround7_1_4);
+        for (int c = 0; c < kSc20Channels; ++c)
+            for (int s = 0; s < kBlockSize; ++s)
+                CHECK (on.at (c, s) == off.at (c, s));
+        // (Its first sample is 0 for a different reason: gain interpolation starts from 0
+        // after prepare(). The block is audible, not faded.)
+        CHECK (on.energy() > 1e-10);
+        CHECK (on.at (0, kBlockSize - 1) != 0.0f);
+
+        // prepare() again, with a new layout pending: still no fade on the first block.
+        on.engine.prepare (kSampleRate, kBlockSize);
+        on.engine.setOutputFormat (OutputFormat::Binaural);
+        on.render();
+        CHECK (on.blockFormat() == OutputFormat::Binaural);
+        CHECK (on.energy() > 1e-10);
+        CHECK (on.at (0, kBlockSize - 1) != 0.0f);
+    }
+
+    // Flag off: a switch is heard at once, one cut block, no fade.
+    {
+        Sc20Rig off (false, OutputFormat::Surround7_1_4);
+        off.render();
+        off.render();
+        off.engine.setOutputFormat (OutputFormat::Binaural);
+        off.render();
+        CHECK (off.blockFormat() == OutputFormat::Binaural);
+        CHECK (off.at (0, kBlockSize - 1) != 0.0f);
+    }
+}
+
+TEST_CASE ("RenderEngine: one-sample blocks fade out to zero and fade in at unity (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4, 1);
+    for (int b = 0; b < 3; ++b)
+        a.render();
+
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+
+    a.render(); // fade-out: the single sample is the last, so exactly zero
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+    CHECK (a.everyChannelZeroAt (0));
+
+    a.render(); // fade-in: the single sample is the first but the ramp uses 1 for a one-sample block
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    CHECK (a.at (0, 0) != 0.0f);
+}
+
+TEST_CASE ("RenderEngine: the fade-in block starts its gain interpolation from its own targets (SC-20)",
+           "[engine][sc20]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+
+    // The 7.1.4 path's interpolation state is left at azimuth 30 ...
+    a.sources.objects[0].azimuthDeg = 30.0f;
+    for (int b = 0; b < 3; ++b)
+        a.render();
+
+    // ... while Binaural plays with the source at azimuth 30.
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+    for (int b = 0; b < 4; ++b)
+        a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+
+    // The source moves, then the layout returns to 7.1.4.
+    a.sources.objects[0].azimuthDeg = -120.0f;
+    a.engine.setOutputFormat (OutputFormat::Surround7_1_4);
+    a.render(); // fade-out of Binaural
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+    a.render(); // fade-in of 7.1.4
+    CHECK (a.blockFormat() == OutputFormat::Surround7_1_4);
+
+    // A DC source with snapped targets is a pure ramp: out[s] / ramp(s) is constant across the
+    // block on every speaker channel. Interpolating from the stale azimuth-30 gains would not be.
+    const int lfe = a.engine.getBlockLayout().layout.lfeChannelIndex;
+    int loudest = -1;
+    float loudestValue = 0.0f;
+    for (int c = 0; c < kSc20Channels; ++c)
+    {
+        if (c == lfe)
+            continue;
+        const float v = std::abs (a.at (c, kBlockSize - 1));
+        if (v > loudestValue)
+        {
+            loudestValue = v;
+            loudest = c;
+        }
+    }
+    REQUIRE (loudest >= 0);
+    REQUIRE (loudestValue > 1e-3f);
+
+    const auto gainAt = [&] (int s) { return a.at (loudest, s) / (static_cast<float> (s) / static_cast<float> (kBlockSize - 1)); };
+    const float g1 = gainAt (kBlockSize / 4);
+    const float g2 = gainAt (kBlockSize / 2);
+    const float g3 = gainAt (kBlockSize - 1);
+    CHECK_THAT (g1, WithinAbs (g3, 1e-4));
+    CHECK_THAT (g2, WithinAbs (g3, 1e-4));
 }

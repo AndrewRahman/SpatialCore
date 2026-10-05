@@ -14,7 +14,7 @@ const std::array<OutputFormatInfo, NUM_OUTPUT_FORMATS> OutputFormatRegistry::tab
     //                                                              ch  LFE  height ambi ord  stereo
     // --- Binaural (HRTF head model) -- default, listed first ---
     { OutputFormat::Binaural,       "Binaural",         "Bin",    2, false, false, false, 0, false },
-    // --- Stereo (mode selected by algorithm param indices 6-10) ---
+    // --- Stereo (mode selected by algorithm indices 7-11: kAlgorithmIndexEqualPower .. kAlgorithmIndexBlumlein, RenderEngine.h) ---
     { OutputFormat::Stereo,         "Stereo",           "St",     2, false, false, false, 0, true  },
     // --- Surround (ascending channel count) ---
     { OutputFormat::Quad,           "Quadraphonic",     "Quad",   4, false, false, false, 0, false },
