@@ -106,6 +106,8 @@ void ADMOSCReceiver::oscMessageReceived (const juce::OSCMessage& message)
         // getIntValue() alone reads the leading integer and ignores the rest, so
         // "2x", " 2", "2.7" or "+2" would all have been taken as object 2, and a
         // long digit string could wrap around into range.
+        // Two digits cover objects 1..99, so the cap is tied to MAX_SOURCES (IN-02).
+        static_assert (MAX_SOURCES <= 99, "object number parsing accepts at most two digits");
         const auto objSegment = afterObj.substring (0, slashIdx);
         if (objSegment.isEmpty() || objSegment.length() > 2 || ! objSegment.containsOnly ("0123456789"))
             return;
