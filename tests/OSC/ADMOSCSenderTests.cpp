@@ -4,6 +4,7 @@
 #include <SpatialCore/OSC/ADMOSCReceiver.h>   // the xyz round-trip test feeds a reply back into the receiver
 #include <SpatialCore/OSC/ADMOSCSender.h>
 #include "../Support/FreeUdpPort.h"
+#include "../Support/RecordingCapture.h"
 #include <juce_osc/juce_osc.h>
 #include <atomic>
 #include <chrono>
@@ -27,100 +28,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace
 {
-    // Thread-safe capture of every message that reaches the loopback socket.
-    // The network thread appends, the test thread reads, so a lock guards the
-    // list. Used by the rate/schedule tests (Phase 4 Plan 04-02, D-10).
-    //
-    // WR-06: settle() replaces the old "quiet for 60 ms" wait. It sends a marker
-    // datagram to the same port from a second socket and waits until the receiver
-    // has seen it. Loopback delivers a datagram into the receiving socket's queue
-    // inside sendto(), and the receive thread reads that queue in order, so by the
-    // time the marker arrives every datagram sent before settle() was called has
-    // already been recorded. The wait ends on that event, not on a timer, so a slow
-    // machine makes it longer instead of making the count wrong. Markers are not
-    // recorded as entries.
-    struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
-    {
-        struct Entry
-        {
-            juce::String address;
-            float args[3] = {};
-            int argCount = 0;
-        };
-
-        explicit RecordingCapture (int port)
-        {
-            markerSender.connect ("127.0.0.1", port);
-        }
-
-        void oscMessageReceived (const juce::OSCMessage& message) override
-        {
-            const auto address = message.getAddressPattern().toString();
-            if (address == kMarkerAddress)
-            {
-                ++markersSeen;
-                return;
-            }
-
-            Entry e;
-            e.address  = address;
-            e.argCount = message.size();
-            for (int i = 0; i < message.size() && i < 3; ++i)
-                e.args[i] = message[i].getFloat32();
-
-            const juce::ScopedLock sl (lock);
-            entries.push_back (e);
-        }
-
-        int count() const
-        {
-            const juce::ScopedLock sl (lock);
-            return (int) entries.size();
-        }
-
-        int countFor (const juce::String& address) const
-        {
-            const juce::ScopedLock sl (lock);
-            int n = 0;
-            for (const auto& e : entries)
-                if (e.address == address)
-                    ++n;
-            return n;
-        }
-
-        Entry at (int i) const
-        {
-            const juce::ScopedLock sl (lock);
-            return i >= 0 && i < (int) entries.size() ? entries[(size_t) i] : Entry {};
-        }
-
-        Entry last() const
-        {
-            const juce::ScopedLock sl (lock);
-            return entries.empty() ? Entry {} : entries.back();
-        }
-
-        // Waits for every datagram sent so far to be recorded, then returns the count.
-        int settle (int timeoutMs = 5000)
-        {
-            const int token = ++markersSent;
-            markerSender.send (juce::OSCMessage (juce::OSCAddressPattern (kMarkerAddress)));
-
-            const auto deadline = std::chrono::steady_clock::now()
-                                + std::chrono::milliseconds (timeoutMs);
-            while (markersSeen.load() < token && std::chrono::steady_clock::now() < deadline)
-                std::this_thread::sleep_for (std::chrono::milliseconds (1));
-            return count();
-        }
-
-        static constexpr const char* kMarkerAddress = "/spatialcore-test/settle";
-
-        mutable juce::CriticalSection lock;
-        std::vector<Entry> entries;
-        juce::OSCSender markerSender;
-        std::atomic<int> markersSent { 0 };
-        std::atomic<int> markersSeen { 0 };
-    };
+    using test::RecordingCapture;   // shared with the receiver tests (IN-04)
 }
 
 TEST_CASE ("ADMOSCSender: sendPosition emits /adm/obj/N/aed with 1-based object numbering", "[osc][send]")

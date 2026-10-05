@@ -4,6 +4,7 @@
 #include <SpatialCore/OSC/ADMOSCSender.h>
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include "../Support/FreeUdpPort.h"
+#include "../Support/RecordingCapture.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -383,78 +384,7 @@ TEST_CASE ("ADMOSCReceiver: removeListener stops further dispatch", "[osc][edge]
 
 namespace
 {
-    // Thread-safe capture of every message that reaches a loopback socket
-    // (copied from ADMOSCSenderTests.cpp, which keeps it file-local).
-    struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
-    {
-        struct Entry
-        {
-            juce::String address;
-            float args[3] = {};
-            int argCount = 0;
-        };
-
-        explicit RecordingCapture (int port)
-        {
-            markerSender.connect ("127.0.0.1", port);
-        }
-
-        void oscMessageReceived (const juce::OSCMessage& message) override
-        {
-            const auto address = message.getAddressPattern().toString();
-            if (address == kMarkerAddress)
-            {
-                ++markersSeen;
-                return;
-            }
-
-            Entry e;
-            e.address  = address;
-            e.argCount = message.size();
-            for (int i = 0; i < message.size() && i < 3; ++i)
-                e.args[i] = message[i].getFloat32();
-
-            const juce::ScopedLock sl (lock);
-            entries.push_back (e);
-        }
-
-        int count() const
-        {
-            const juce::ScopedLock sl (lock);
-            return (int) entries.size();
-        }
-
-        Entry at (int i) const
-        {
-            const juce::ScopedLock sl (lock);
-            return i >= 0 && i < (int) entries.size() ? entries[(size_t) i] : Entry {};
-        }
-
-        // Waits until every datagram sent so far has been recorded, then returns the
-        // count (WR-06). A marker datagram goes to the same port from a second socket;
-        // loopback queues datagrams in send order and the receive thread reads them in
-        // order, so the marker's arrival means everything before it has been recorded.
-        // No quiet-period timer, so a slow machine cannot make the count come up short.
-        int settle (int timeoutMs = 5000)
-        {
-            const int token = ++markersSent;
-            markerSender.send (juce::OSCMessage (juce::OSCAddressPattern (kMarkerAddress)));
-
-            const auto deadline = std::chrono::steady_clock::now()
-                                + std::chrono::milliseconds (timeoutMs);
-            while (markersSeen.load() < token && std::chrono::steady_clock::now() < deadline)
-                std::this_thread::sleep_for (std::chrono::milliseconds (1));
-            return count();
-        }
-
-        static constexpr const char* kMarkerAddress = "/spatialcore-test/settle";
-
-        mutable juce::CriticalSection lock;
-        std::vector<Entry> entries;
-        juce::OSCSender markerSender;
-        std::atomic<int> markersSent { 0 };
-        std::atomic<int> markersSeen { 0 };
-    };
+    using test::RecordingCapture;   // shared with the sender tests (IN-04)
 
     // The consumer's side of the contract: it owns the current position of every
     // object and answers a query from that state. The receiver stores nothing (DR-16).

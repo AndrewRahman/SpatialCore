@@ -647,7 +647,8 @@ void DemoComponent::selfTestQuery()
         const juce::ScopedLock sl (rig_->lock);
         for (const auto& m : rig_->received)
         {
-            if (m.getAddressPattern().toString() != "/adm/obj/1/xyz" || m.size() != 3)
+            if (m.getAddressPattern().toString() != "/adm/obj/1/xyz" || m.size() != 3
+                || ! m[0].isFloat32() || ! m[1].isFloat32() || ! m[2].isFloat32())
                 continue;
 
             const float x = m[0].getFloat32(), y = m[1].getFloat32(), z = m[2].getFloat32();
