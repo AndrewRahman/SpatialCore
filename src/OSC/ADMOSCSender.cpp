@@ -1,4 +1,5 @@
 #include <SpatialCore/OSC/ADMOSCSender.h>
+#include "../Core/FloatSemanticsGuard.h"   // WR-02/D-20: queueReply and tick test isfinite; it must not fold away
 #include <cmath>
 
 namespace spatialcore

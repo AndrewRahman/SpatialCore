@@ -23,6 +23,11 @@
 // also rejects a non-finite wire value with std::isfinite so a NaN in a packet
 // cannot pose as that "axis not sent" sentinel, and that test must not fold away.
 //
+// ADMOSCSender.cpp includes it (WR-02): queueReply rejects a non-finite reply
+// value (D-20) and tick skips a non-finite position (WR-01) with std::isfinite,
+// and under finite-math-only both tests would fold to "finite" and put NaN on
+// the wire.
+//
 // CMakeLists.txt keeps fast-math off the SpatialCore target; this turns that
 // comment into a build failure in every including translation unit, whichever
 // way the flag arrives (target options, CMAKE_CXX_FLAGS, add_compile_options
