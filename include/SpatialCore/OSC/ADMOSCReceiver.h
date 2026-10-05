@@ -41,6 +41,13 @@ public:
 
         // Per-object position update (/adm/obj/N/azim|elev|dist|aed|xyz|x|y|z
         // or /osd/obj/N/ aliases). objectIndex is 0-based.
+        //
+        // Single-axis messages (/azim, /elev, /dist) forward the two axes that were
+        // NOT sent as NaN. The consumer MUST keep its stored value for any NaN axis
+        // (test with std::isnan). The receiver never forwards a NaN that came from
+        // the wire (D-21: a non-finite argument drops the whole message), so a NaN
+        // here always means "axis not sent". Axes that are present are within
+        // azimuthDeg [-180, 180], elevationDeg [-90, 90], distance [0, 1].
         virtual void admPositionReceived (int objectIndex, float azimuthDeg,
                                           float elevationDeg, float distance) = 0;
 
