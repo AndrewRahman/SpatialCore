@@ -107,11 +107,38 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-To run tests:
+### Local test gate
+
+There are two test executables: `SpatialCoreTests` (DSP, I/O, OSC, trajectories, engine) and `SpatialCoreUITests` (the map and its fonts; the only target that links `SpatialCoreUI`). The gate builds every target in Debug and runs both executables, then builds every target in Release and runs `ctest`:
+
 ```bash
-cmake --build build --target SpatialCoreTests
-./build/SpatialCoreTests
+# Debug
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j8
+./build/tests/SpatialCoreTests
+./build/tests/SpatialCoreUITests
+
+# Release
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release -j8
+ctest --test-dir build-release/tests --output-on-failure
+ctest --test-dir build-release/tests -N | grep 'ui:'
 ```
+
+The last command is a listing check: it must print tests whose names start with `ui:` (CTest drops the space after the prefix), which proves the UI executable is in the run. Build every target before `ctest`. A Catch2 target that has not been built registers a failing `_NOT_BUILT` test, so a partial build fails for the wrong reason.
+
+CI currently runs zero tests (this is fixed in Phase 6), so this local gate is the one that counts.
+
+### Demo app
+
+`SpatialCoreDemo` is a small JUCE app that shows how a plugin wires ADM-OSC, trajectories and the spatial map into `RenderEngine` (see `examples/demo/DemoComponent.cpp`). It is off by default and is only built in a top-level build, so a consumer that adds SpatialCore as a subdirectory never builds it:
+
+```bash
+cmake -S . -B build-demo -DSPATIALCORE_BUILD_EXAMPLES=ON -DSPATIALCORE_BUILD_TESTS=OFF
+cmake --build build-demo --target SpatialCoreDemo -j8
+```
+
+Run it with no arguments for the interactive app. `--screenshots <dir>` writes `before-drag.png` and `after-drag.png` with no window and no audio device. `--selftest` drives the OSC, query, trajectory and map routes through `RenderEngine` on loopback and exits 0 when all four pass.
 
 ## Versioning
 
