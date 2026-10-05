@@ -9,6 +9,13 @@ bool ADMOSCSender::connect(const juce::String& host, int port)
     sendHost = host;
     sendPort = port;
     connected = sender.connect(host, port);
+    if (connected)
+    {
+        // Late joiners get a full picture: every enabled object is sent at the
+        // next slot even if nothing moved (D-08b).
+        forceSend_.fill(true);
+        scheduleArmed_ = false;
+    }
     return connected;
 }
 
@@ -16,6 +23,7 @@ void ADMOSCSender::disconnect()
 {
     sender.disconnect();
     connected = false;
+    scheduleArmed_ = false;
 }
 
 void ADMOSCSender::sendPosition(int objectIndex, float azimuthDeg,
@@ -33,34 +41,73 @@ void ADMOSCSender::sendPosition(int objectIndex, float azimuthDeg,
     sender.send(msg);
 }
 
+bool ADMOSCSender::consumeSendSlot(double nowSeconds)
+{
+    if (! scheduleArmed_)
+    {
+        // First call after connect(): send now and arm the schedule.
+        scheduleArmed_ = true;
+        nextSendDue_   = nowSeconds + kSendIntervalSeconds;
+        return true;
+    }
+
+    // 1e-6 s tolerance so a caller at an exact multiple of 1/30 lands on the slot.
+    if (nowSeconds + 1.0e-6 < nextSendDue_)
+        return false;
+
+    nextSendDue_ += kSendIntervalSeconds;
+
+    // The caller stalled: resync instead of catching up (no burst).
+    if (nowSeconds - nextSendDue_ >= kSendIntervalSeconds)
+        nextSendDue_ = nowSeconds + kSendIntervalSeconds;
+
+    return true;
+}
+
 void ADMOSCSender::tick(const float* azimuthsDeg, const float* elevationsDeg,
                          const float* distances, const bool* enabled, int numObjects)
+{
+    tick(azimuthsDeg, elevationsDeg, distances, enabled, numObjects,
+         juce::Time::getMillisecondCounterHiRes() * 0.001);
+}
+
+void ADMOSCSender::tick(const float* azimuthsDeg, const float* elevationsDeg,
+                         const float* distances, const bool* enabled, int numObjects,
+                         double nowSeconds)
 {
     if (! connected)
         return;
 
-    // 30Hz gated broadcast: send every other tick (assuming 60Hz timer)
-    ++tickCounter;
-    if ((tickCounter & 1) != 0)
+    const int n = juce::jmin(numObjects, (int) MAX_SOURCES);
+
+    // A disabled object is re-sent once when it is enabled again, even if the
+    // disable lasted less than one slot.
+    for (int i = 0; i < n; ++i)
+        if (! enabled[i])
+            forceSend_[(size_t) i] = true;
+
+    if (! consumeSendSlot(nowSeconds))
         return;
 
-    for (int i = 0; i < numObjects && i < MAX_SOURCES; ++i)
+    for (int i = 0; i < n; ++i)
     {
         if (! enabled[i])
             continue;
 
-        // Only send if position has changed (dead-band threshold)
-        float dAz   = std::abs(azimuthsDeg[i]   - prevAz[i]);
-        float dEl   = std::abs(elevationsDeg[i]  - prevEl[i]);
-        float dDist = std::abs(distances[i]      - prevDist[i]);
+        // First position, connect and re-enable always send; afterwards only a
+        // change beyond the dead-band does.
+        const float dAz   = std::abs(azimuthsDeg[i]   - prevAz[i]);
+        const float dEl   = std::abs(elevationsDeg[i] - prevEl[i]);
+        const float dDist = std::abs(distances[i]     - prevDist[i]);
 
-        if (dAz > 0.1f || dEl > 0.1f || dDist > 0.001f)
+        if (forceSend_[(size_t) i] || dAz > 0.1f || dEl > 0.1f || dDist > 0.001f)
         {
             sendPosition(i, azimuthsDeg[i], elevationsDeg[i], distances[i]);
 
             prevAz[i]   = azimuthsDeg[i];
             prevEl[i]   = elevationsDeg[i];
-            prevDist[i]  = distances[i];
+            prevDist[i] = distances[i];
+            forceSend_[(size_t) i] = false;
         }
     }
 }

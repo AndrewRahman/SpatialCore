@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 using namespace spatialcore;
 using Catch::Matchers::WithinAbs;
@@ -56,6 +57,81 @@ namespace
         }
         return counter.load() >= expectedCount;
     }
+
+    // Thread-safe capture of every message that reaches the loopback socket.
+    // The network thread appends, the test thread reads, so a lock guards the
+    // list. Used by the rate/schedule tests (Phase 4 Plan 04-02, D-10).
+    struct RecordingCapture : public juce::OSCReceiver::Listener<juce::OSCReceiver::RealtimeCallback>
+    {
+        struct Entry
+        {
+            juce::String address;
+            float args[3] = {};
+            int argCount = 0;
+        };
+
+        void oscMessageReceived (const juce::OSCMessage& message) override
+        {
+            Entry e;
+            e.address  = message.getAddressPattern().toString();
+            e.argCount = message.size();
+            for (int i = 0; i < message.size() && i < 3; ++i)
+                e.args[i] = message[i].getFloat32();
+
+            const juce::ScopedLock sl (lock);
+            entries.push_back (e);
+        }
+
+        int count() const
+        {
+            const juce::ScopedLock sl (lock);
+            return (int) entries.size();
+        }
+
+        int countFor (const juce::String& address) const
+        {
+            const juce::ScopedLock sl (lock);
+            int n = 0;
+            for (const auto& e : entries)
+                if (e.address == address)
+                    ++n;
+            return n;
+        }
+
+        Entry last() const
+        {
+            const juce::ScopedLock sl (lock);
+            return entries.empty() ? Entry {} : entries.back();
+        }
+
+        // Polls until the count has not changed for quietMs, then returns it.
+        int waitUntilQuiet (int quietMs = 60, int timeoutMs = 3000) const
+        {
+            const auto deadline = std::chrono::steady_clock::now()
+                                + std::chrono::milliseconds (timeoutMs);
+            int seen = count();
+            auto lastChange = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                std::this_thread::sleep_for (std::chrono::milliseconds (5));
+                const int now = count();
+                if (now != seen)
+                {
+                    seen = now;
+                    lastChange = std::chrono::steady_clock::now();
+                }
+                else if (std::chrono::steady_clock::now() - lastChange
+                         >= std::chrono::milliseconds (quietMs))
+                {
+                    break;
+                }
+            }
+            return count();
+        }
+
+        mutable juce::CriticalSection lock;
+        std::vector<Entry> entries;
+    };
 }
 
 TEST_CASE ("ADMOSCSender: sendPosition emits /adm/obj/N/aed with 1-based object numbering", "[osc][send]")
@@ -122,6 +198,59 @@ TEST_CASE ("ADMOSCSender: sendPosition ignores out-of-range object index", "[osc
     CHECK (listener.messageCount.load() == 0);
 
     receiver.removeListener (&listener);
+    sender.disconnect();
+    receiver.disconnect();
+}
+
+// ============================================================================
+// Self-clocked 30 Hz schedule (Phase 4 Plan 04-02, D-07/D-08c/D-10). The
+// six-argument tick takes the caller's clock, so the tests drive simulated time.
+// ============================================================================
+
+TEST_CASE ("ADMOSCSender: a 60 Hz caller moving an object sends 30 messages per second, none while still",
+           "[osc][send][rate][static][tracer]")
+{
+    constexpr int port = 9730;
+    juce::OSCReceiver receiver;
+    RecordingCapture capture;
+    REQUIRE (receiver.connect (port));
+    receiver.addListener (&capture);
+
+    ADMOSCSender sender;
+    REQUIRE (sender.connect ("127.0.0.1", port));
+
+    float az = 0.0f, el = 0.0f, dist = 0.5f;
+    bool enabled = true;
+
+    // 3 simulated seconds at 60 Hz, azimuth rising 1 degree per call.
+    for (int second = 0; second < 3; ++second)
+    {
+        for (int k = second * 60; k < (second + 1) * 60; ++k)
+        {
+            az = (float) (k + 1);
+            sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
+        }
+        capture.waitUntilQuiet();
+    }
+
+    const int moving = capture.waitUntilQuiet();
+    CHECK (moving >= 87);
+    CHECK (moving <= 93);
+
+    // The last move landed on a non-slot call, so the next slot flushes it
+    // (a change is sent at the next slot). Let that settle, then baseline.
+    for (int k = 180; k < 186; ++k)
+        sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
+    const int settled = capture.waitUntilQuiet();
+    CHECK (settled - moving <= 1);
+
+    // 2 more simulated seconds, position unchanged: nothing is sent.
+    for (int k = 186; k < 306; ++k)
+        sender.tick (&az, &el, &dist, &enabled, 1, k / 60.0);
+
+    CHECK (capture.waitUntilQuiet() == settled);
+
+    receiver.removeListener (&capture);
     sender.disconnect();
     receiver.disconnect();
 }
