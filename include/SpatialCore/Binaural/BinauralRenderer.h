@@ -13,6 +13,15 @@ namespace spatialcore
 //==============================================================================
 // Binaural Renderer -- manages HRTF convolution for all algorithms
 // Routes spatial accumulation buffers through per-source convolvers
+//
+// Thread contract (RTSF-03, D-09): one renderer is driven by one thread at a time.
+// prepare() and setProfile() allocate and run off the audio thread (the message thread, or
+// RenderEngine's loader thread on a renderer the audio thread is not using).
+// updateSourceHRIR() and renderSourceBuffers() run on the audio thread. A setProfile() on a
+// renderer the audio thread is using still runs, as it always did, but its database counts it
+// (HRTFDatabase::getMutationWhileInUseCount()) and asserts in Debug. The safe route is
+// RenderEngine::setHRTFProfile(), which hands a renderer over only while the audio thread is
+// not using it.
 //==============================================================================
 class BinauralRenderer
 {

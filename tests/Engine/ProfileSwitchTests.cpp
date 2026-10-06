@@ -15,6 +15,7 @@
 #include <future>
 #include <memory>
 #include <random>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -1874,6 +1875,274 @@ TEST_CASE ("Profile switch: the engine's own loader never trips the in-use detec
     });
 
     CHECK (result.switchesDone == result.switchesWanted);
+    CHECK (result.nonFinite == 0);
+    CHECK (result.mutations0 == 0);
+    CHECK (result.mutations1 == 0);
+    CHECK (result.legacyWrongThread == 0);
+}
+
+// ----------------------------------------------------------------------------
+// ROADMAP criterion 3 on the safe route, and the legacy flow, with a render thread running
+// (RTSF-03, D-09)
+// ----------------------------------------------------------------------------
+namespace
+{
+    /** Four moving objects of one 440 Hz sine, so the audio thread does real HRIR updates every
+        block. The sine is shared by the four slots. */
+    struct FourObjectRender
+    {
+        RenderEngine& engine;
+        RenderBlockContext ctx;
+        std::vector<float> mono, one;
+        std::vector<std::vector<float>> out;
+        double phase = 0.0;
+        bool lastFinite = true;
+
+        FourObjectRender (RenderEngine& e, const RenderBlockContext& c)
+            : engine (e), ctx (c),
+              mono (static_cast<size_t> (kBlock), 0.0f), one (static_cast<size_t> (kBlock), 1.0f),
+              out (2, std::vector<float> (static_cast<size_t> (kBlock), 0.0f))
+        {
+        }
+
+        void renderOne (int64_t block)
+        {
+            const double w = 2.0 * 3.14159265358979323846 * 440.0 / kRate;
+            for (auto& v : mono)
+            {
+                v = 0.25f * static_cast<float> (std::sin (phase));
+                phase += w;
+            }
+
+            RenderSources sources;
+            sources.numSamples = kBlock;
+            for (int o = 0; o < 4; ++o)
+            {
+                sources.monoBuffers[o] = mono.data();
+                sources.tapFadeGainPerSample[o] = one.data();
+                sources.distGainPerSample[o] = one.data();
+                sources.objectLive[o] = true;
+                sources.objects[o].azimuthDeg = static_cast<float> ((block * (o + 1) + o * 90) % 360) - 180.0f;
+                sources.objects[o].elevationDeg = 10.0f * static_cast<float> (o);
+                sources.objects[o].distance = 0.5f;
+                sources.objects[o].enabled = true;
+            }
+
+            float* ptrs[2] = { out[0].data(), out[1].data() };
+            engine.renderBlock (sources, ctx, ptrs, 2);
+
+            lastFinite = true;
+            for (auto& channel : out)
+                for (float v : channel)
+                    lastFinite = lastFinite && std::isfinite (v);
+        }
+    };
+}
+
+TEST_CASE ("Profile switch: setHRTFProfile from a 30 Hz UI timer during audio processing is race-free (RTSF-03)",
+           "[hrtf-switch][ui-timer][tsan]")
+{
+    // ROADMAP criterion 3: a UI timer switching profiles while another thread renders. A request
+    // every 33 ms is faster than most loads, so many are superseded before they are published
+    // (latest wins); the audio keeps playing the current profile throughout. Under
+    // ThreadSanitizer this case is the proof that the route has no data race.
+    struct Result
+    {
+        long nonFinite = 0;
+        long blocks = 0;
+        long ticks = 0;
+        std::set<int> activeSeen;
+        int mutations0 = -1;
+        int mutations1 = -1;
+        int legacyWrongThread = -1;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][ui-timer]", 120, [&result]
+    {
+        const TempFolder nonExistent ("ui-timer");
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+        RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);   // engineComputesGains
+        ctx.engineSelectsHRTF = true;
+        ctx.engineDerivesDispatch = true;
+
+#if SPATIALCORE_EMBEDS_ALL_HRTF
+        const int cycle[] = { 2, 3, 5, 0 };
+#else
+        const int cycle[] = { 5, 0, 5, 0 };
+#endif
+
+        std::atomic<bool> stop { false };
+        long nonFinite = 0;
+        long blocks = 0;
+
+        std::thread renderThread ([&]
+        {
+            FourObjectRender render (*engine, ctx);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                render.renderOne (block);
+                if (! render.lastFinite)
+                    ++nonFinite;
+                ++block;
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+            blocks = static_cast<long> (block);
+        });
+
+        // The timer thread: a 33 ms tick that requests the next profile and reads the status.
+        std::set<int> activeSeen;
+        long ticks = 0;
+        std::thread timerThread ([&]
+        {
+            // Two phases of 30 Hz ticks. A storm (the first third): every tick asks for a
+            // different profile, faster than a load finishes, so almost every load is superseded
+            // and the audio keeps the current profile. Then a dwell: every tick still calls
+            // setHRTFProfile, but the wanted profile changes only every 12 ticks (about 400 ms),
+            // so a load can finish and the audio thread claims it (the interval scales with
+            // SPATIALCORE_TEST_TIMEOUT_SCALE like the run time does). Both phases run while the
+            // render thread renders; a load that is superseded is not an error.
+            const auto start = std::chrono::steady_clock::now();
+            const double runMs = 3000.0 * timeoutScale();
+            auto next = start;
+            int wanted = cycle[0];
+            const long dwellTicks = 12L * timeoutScale();   // a load takes longer under a slow build
+            while (elapsedMs (start) < runMs)
+            {
+                wanted = (elapsedMs (start) < runMs / 3.0) ? cycle[ticks % 4] : cycle[(ticks / dwellTicks) % 4];
+                engine->setHRTFProfile (wanted);
+                activeSeen.insert (engine->getHRTFProfileStatus().activeProfile);
+                ++ticks;
+                next += std::chrono::milliseconds (33);
+                std::this_thread::sleep_until (next);
+            }
+            // A timer that stops: the last request settles, and the audio thread claims it.
+            engine->setHRTFProfile (wanted);
+            engine->waitForHRTFProfileIdle (30000 * timeoutScale());
+            const auto settleStart = std::chrono::steady_clock::now();
+            while (engine->getHRTFProfileStatus().activeProfile != wanted
+                   && elapsedMs (settleStart) < 10000.0 * timeoutScale())
+                std::this_thread::sleep_for (std::chrono::milliseconds (2));
+            activeSeen.insert (engine->getHRTFProfileStatus().activeProfile);
+        });
+
+        timerThread.join();
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.blocks = blocks;
+        result.ticks = ticks;
+        result.activeSeen = activeSeen;
+        result.mutations0 = mutationCount (*engine, 0);
+        result.mutations1 = mutationCount (*engine, 1);
+        result.legacyWrongThread = engine->getLegacyRouteWrongThreadCount();
+    });
+
+    char line[200];
+    std::snprintf (line, sizeof (line), "ui-timer: %ld ticks, %ld blocks, %zu distinct active profiles, %ld non-finite",
+                   result.ticks, result.blocks, result.activeSeen.size(), result.nonFinite);
+    WARN (line);
+    for (const int profile : result.activeSeen)
+    {
+        std::snprintf (line, sizeof (line), "ui-timer: profile %d was active", profile);
+        WARN (line);
+    }
+
+    CHECK (result.nonFinite == 0);
+    CHECK (result.blocks > 0);
+    CHECK (result.activeSeen.size() >= 3);
+    CHECK (result.mutations0 == 0);
+    CHECK (result.mutations1 == 0);
+    CHECK (result.legacyWrongThread == 0);
+}
+
+TEST_CASE ("Profile switch: the documented legacy load-and-swap flow is race-free while another thread renders (D-09)",
+           "[hrtf-switch][legacy][threads][tsan]")
+{
+    struct Result
+    {
+        int cyclesDone = 0;
+        long nonFinite = 0;
+        int mutations0 = -1;
+        int mutations1 = -1;
+        int legacyWrongThread = -1;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][legacy][threads]", 120, [&result]
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        engine->setOutputFormat (OutputFormat::Binaural);
+
+        RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);   // isBinaural, useHRTF, engineComputesGains
+
+        std::atomic<bool> stop { false };
+        std::atomic<int> blocksRendered { 0 };
+        long nonFinite = 0;
+
+        // The legacy consumer's first load goes into the active renderer before audio starts.
+        loadProfileIntoActiveRenderer (*engine, 2, kRate);
+
+        std::thread renderThread ([&]
+        {
+            FourObjectRender render (*engine, ctx);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                render.renderOne (block);
+                if (! render.lastFinite)
+                    ++nonFinite;
+                ++block;
+                blocksRendered.fetch_add (1, std::memory_order_release);
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+        });
+
+        const auto waitFor = [] (const std::function<bool()>& condition)
+        {
+            const auto start = std::chrono::steady_clock::now();
+            while (! condition() && elapsedMs (start) < 20000.0 * timeoutScale())
+                std::this_thread::sleep_for (std::chrono::milliseconds (1));
+            return condition();
+        };
+
+        const int profiles[] = { 2, 3, 5, 3 };
+        for (const int profile : profiles)
+        {
+            // Wait for at least four blocks since the last swap and for no crossfade, the
+            // documented flow, then load into the prepare renderer and swap.
+            const int sinceBlocks = blocksRendered.load (std::memory_order_acquire) + 4;
+            if (! waitFor ([&] { return blocksRendered.load (std::memory_order_acquire) >= sinceBlocks
+                                         && ! engine->isRendererCrossfadeActive(); }))
+                break;
+
+            auto& renderer = engine->getBinauralRenderer (engine->getPrepareRendererIndex());
+            if (! renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (profile)), static_cast<float> (kRate)))
+                break;
+            renderer.setProfile (profile);
+            engine->swapActiveRenderer();
+            ++result.cyclesDone;
+        }
+
+        // Let the last crossfade finish while the render thread still runs.
+        waitFor ([&] { return ! engine->isRendererCrossfadeActive(); });
+
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.mutations0 = mutationCount (*engine, 0);
+        result.mutations1 = mutationCount (*engine, 1);
+        result.legacyWrongThread = engine->getLegacyRouteWrongThreadCount();
+    });
+
+    CHECK (result.cyclesDone == 4);
     CHECK (result.nonFinite == 0);
     CHECK (result.mutations0 == 0);
     CHECK (result.mutations1 == 0);
