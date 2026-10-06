@@ -510,8 +510,9 @@ namespace
     }
 }
 
+// [tsan] marks the thread-interaction subset the build-tsan gate runs (D-01).
 TEST_CASE ("RenderEngine: engineDerivesDispatch renders the active layout's path even when the consumer's flags disagree",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     SourceFixture fixture;
 
@@ -560,7 +561,7 @@ TEST_CASE ("RenderEngine: engineDerivesDispatch renders the active layout's path
 }
 
 TEST_CASE ("RenderEngine: with engineDerivesDispatch false the consumer's dispatch flags are honoured verbatim",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     SourceFixture fixture;
 
@@ -607,7 +608,7 @@ TEST_CASE ("RenderEngine: with engineDerivesDispatch false the consumer's dispat
 }
 
 TEST_CASE ("RenderEngine: several setOutputFormat calls with no block between them render the last one",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -650,7 +651,7 @@ TEST_CASE ("RenderEngine: several setOutputFormat calls with no block between th
 }
 
 TEST_CASE ("RenderEngine: a block rendered before any setOutputFormat uses the default binaural layout",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1618,7 +1619,7 @@ TEST_CASE ("RenderEngine: a speaker index on the Stereo format renders as Equal 
 // the layout, and the writer-view accessors count misuse from the render thread.
 // ----------------------------------------------------------------------------
 TEST_CASE ("RenderEngine: getBlockLayout follows the layout the last block rendered, never a newer one (SC-17)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1653,7 +1654,7 @@ TEST_CASE ("RenderEngine: getBlockLayout follows the layout the last block rende
 }
 
 TEST_CASE ("RenderEngine: a single thread that writes and renders is never counted as writer-view misuse (SC-17)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1673,7 +1674,7 @@ TEST_CASE ("RenderEngine: a single thread that writes and renders is never count
 }
 
 TEST_CASE ("RenderEngine: the writer view called from the render thread is counted (SC-17)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1705,7 +1706,7 @@ TEST_CASE ("RenderEngine: the writer view called from the render thread is count
 }
 
 TEST_CASE ("RenderEngine: a render thread always sees one of the formats a writer toggles between (SC-17 smoke)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);

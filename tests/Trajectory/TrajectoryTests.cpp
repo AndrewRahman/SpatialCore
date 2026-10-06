@@ -607,3 +607,89 @@ TEST_CASE ("TrajectoryEngine: a reader thread sees only finished, in-range posit
     CHECK (violations == 0);
     CHECK (passesDuringTicking >= 1000);
 }
+
+// ============================================================================
+// RTSF-02 mixed-tick bound. A reader on another thread may combine values from
+// two consecutive 60 Hz ticks (azimuth from one, elevation from the next). Such a
+// reading is off by at most one tick of motion, so the largest per-tick step is
+// measured here and pinned: "not audible" is a number, not a belief.
+//
+// Measured (shapes 1..13, speeds 1 and 4, forward and reverse, origin 20/5/0.5,
+// 600 ticks at 1/60 s, Random seeded 1234), largest change between two ticks:
+//
+//   shape            az (deg)   el (deg)   dist
+//    1 Bounce          24.000      8.000   0.000
+//    2 Circle         178.565      0.000   0.204   <- azimuth flips by about 180 deg once per cycle
+//    3 Cross           48.000     32.000   0.000
+//    4 Figure8        174.308      0.000   0.203   <- azimuth flips by about 180 deg once per cycle
+//    5 Heart           26.170      0.000   0.277
+//    6 Helix           24.000    179.877   0.000   <- elevation sawtooth: +90 to -90 at the phase wrap
+//    7 Infinity        22.132      0.000   0.188
+//    8 Line            23.139      0.000   0.084
+//    9 Orbit           24.000      0.000   0.000
+//   10 Random          14.633     16.387   0.100
+//   11 Spiral          86.538      0.000   0.506   <- large azimuth and distance steps of its own
+//   12 Square          50.890      0.000   0.122
+//   13 Triangle        56.314      0.000   0.173
+//
+// What this means: a reader that combines two consecutive ticks is off by at most
+// these steps. For the nine smooth shapes (1, 3, 5, 7, 8, 9, 10, 12, 13) that is at
+// most 56.4 deg, 32 deg and 0.28; Circle, Figure8, Helix and Spiral have a jump of
+// their own, and a mixed reading of them is never worse than the jump the shape
+// already makes in its own motion. The constants below are the overall maxima rounded up (next whole degree,
+// next 0.01). If a mixed reading is ever judged audible, the escape is a per-object
+// seqlock (lock-free, not wait-free), not a mutex.
+// ============================================================================
+
+TEST_CASE ("TrajectoryEngine: the largest change between two 60 Hz ticks is pinned for every shape (RTSF-02 mixed-tick bound)",
+           "[trajectory][step]")
+{
+    constexpr float kMaxAzStepDeg = 179.0f;
+    constexpr float kMaxElStepDeg = 180.0f;
+    constexpr float kMaxDistStep  = 0.51f;
+
+    for (int shape = TrajShape::Bounce; shape <= TrajShape::Triangle; ++shape)
+    {
+        float shapeAz = 0.0f, shapeEl = 0.0f, shapeDist = 0.0f;
+
+        for (float speed : { 1.0f, 4.0f })
+        {
+            for (bool reverse : { false, true })
+            {
+                TrajectoryEngine engine;
+                engine.rng_.setSeed (1234);
+
+                TrajectoryEngine::ObjectInput input;
+                input.shape = shape;
+                input.speed = speed;
+                input.reverse = reverse;
+                input.originAz = 20.0f;
+                input.originEl = 5.0f;
+                input.originDist = 0.5f;
+
+                engine.tick (0, input, 1.0f / 60.0f);
+                float prevAz = engine.getFinalAz (0);
+                float prevEl = engine.getFinalEl (0);
+                float prevDist = engine.getFinalDist (0);
+
+                for (int t = 1; t < 600; ++t)
+                {
+                    engine.tick (0, input, 1.0f / 60.0f);
+                    const float az = engine.getFinalAz (0);
+                    const float el = engine.getFinalEl (0);
+                    const float dist = engine.getFinalDist (0);
+
+                    shapeAz   = std::max (shapeAz,   std::abs (unwrapAzimuthDelta (az - prevAz)));
+                    shapeEl   = std::max (shapeEl,   std::abs (el - prevEl));
+                    shapeDist = std::max (shapeDist, std::abs (dist - prevDist));
+                    prevAz = az; prevEl = el; prevDist = dist;
+                }
+            }
+        }
+
+        CAPTURE (shape, shapeAz, shapeEl, shapeDist);
+        CHECK (shapeAz   <= kMaxAzStepDeg);
+        CHECK (shapeEl   <= kMaxElStepDeg);
+        CHECK (shapeDist <= kMaxDistStep);
+    }
+}

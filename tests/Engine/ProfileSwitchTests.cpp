@@ -29,8 +29,9 @@ using namespace spatialcore::test;
 // added by Plans 03-06, 03-07 and 03-09.
 // ============================================================================
 
+// [tsan] marks the thread-interaction subset the build-tsan gate runs (D-01).
 TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-free and dropout-free at every block size",
-           "[hrtf-switch][click][legacy]")
+           "[hrtf-switch][click][legacy][tsan]")
 {
     // The legacy swap is: load into getPrepareRendererIndex()'s renderer, then swapActiveRenderer().
     // The renderer crossfade used to be counted in BLOCKS (8 x the block size), so at 32 and 64
@@ -252,7 +253,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: one call loads KEMAR from embedded data and the audio thread plays it",
-           "[hrtf-switch][tracer]")
+           "[hrtf-switch][tracer][tsan]")
 {
     constexpr double kRate = 48000.0;
     constexpr int kBlock = 64;
@@ -388,7 +389,7 @@ TEST_CASE ("Profile switch: every embedded profile becomes active through the en
 }
 
 TEST_CASE ("Profile switch: a failed request leaves the current profile playing and reports why",
-           "[hrtf-switch][failure]")
+           "[hrtf-switch][failure][tsan]")
 {
     const TempFolder nonExistent ("failure");
 
@@ -489,7 +490,7 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
 }
 
 TEST_CASE ("Profile switch: the most recent request wins, and a settled request is a no-op",
-           "[hrtf-switch][latest-wins]")
+           "[hrtf-switch][latest-wins][tsan]")
 {
     const TempFolder nonExistent ("latest");
 
@@ -545,7 +546,7 @@ TEST_CASE ("Profile switch: the most recent request wins, and a settled request 
 }
 
 TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the new sample rate",
-           "[hrtf-switch][prepare]")
+           "[hrtf-switch][prepare][tsan]")
 {
     const TempFolder nonExistent ("prepare");
 
@@ -586,7 +587,7 @@ TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the n
 }
 
 TEST_CASE ("Profile switch: a broken same-name shared file plays the built-in copy and says so",
-           "[hrtf-switch][status]")
+           "[hrtf-switch][status][tsan]")
 {
     const TempFolder folder ("status", true);
     const juce::String stub = "version https://git-lfs.github.com/spec/v1\n"
@@ -609,7 +610,7 @@ TEST_CASE ("Profile switch: a broken same-name shared file plays the built-in co
 }
 
 TEST_CASE ("Profile switch: a file dropped into the shared folder is used on the next switch, no restart",
-           "[hrtf-switch][d11]")
+           "[hrtf-switch][d11][tsan]")
 {
     const TempFolder folder ("d11", true);   // starts empty
 
@@ -634,7 +635,7 @@ TEST_CASE ("Profile switch: a file dropped into the shared folder is used on the
 }
 
 TEST_CASE ("Profile switch: switching while a non-binaural format renders completes and strands nothing",
-           "[hrtf-switch][non-binaural]")
+           "[hrtf-switch][non-binaural][tsan]")
 {
     const TempFolder nonExistent ("surround");
 
@@ -665,7 +666,7 @@ TEST_CASE ("Profile switch: switching while a non-binaural format renders comple
 }
 
 TEST_CASE ("Profile switch: a crossfade abandoned by a path change frees its renderer",
-           "[hrtf-switch][abandon]")
+           "[hrtf-switch][abandon][tsan]")
 {
     const TempFolder nonExistent ("abandon");
 
@@ -735,7 +736,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: switching while another thread renders never deadlocks or produces non-finite audio",
-           "[hrtf-switch][threads]")
+           "[hrtf-switch][threads][tsan]")
 {
     ThreadsResult result;
 
@@ -851,7 +852,7 @@ TEST_CASE ("Profile switch: switching while another thread renders never deadloc
 }
 
 TEST_CASE ("Profile switch: every switch completes while a paced render thread runs, claims and frees included",
-           "[hrtf-switch][churn]")
+           "[hrtf-switch][churn][tsan]")
 {
     // The [threads] case above fires requests faster than a SOFA load finishes, so almost every
     // result is superseded before it is published and only the last switch reaches the audio
@@ -960,7 +961,7 @@ TEST_CASE ("Profile switch: every switch completes while a paced render thread r
 }
 
 TEST_CASE ("Profile switch: destroying the engine during a load returns promptly",
-           "[hrtf-switch][shutdown]")
+           "[hrtf-switch][shutdown][tsan]")
 {
     // Section 0 destroys the engine at once. Section 1 waits until the loader has certainly
     // started on the SOFA parse first, which is the case the shutdown contract is about.
@@ -1121,7 +1122,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: setHRTFProfile KEMAR to SADIE is click-free and dropout-free at every block size",
-           "[hrtf-switch][click]")
+           "[hrtf-switch][click][tsan]")
 {
     // SADIE (1) is copied into a temporary shared folder, so the case also runs in a build that
     // embeds only KEMAR. KEMAR (5) is embedded in every build.
@@ -1141,7 +1142,7 @@ TEST_CASE ("Profile switch: setHRTFProfile KEMAR to SADIE is click-free and drop
 }
 
 TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 samples) on both swap paths",
-           "[hrtf-switch][click][xfade-length]")
+           "[hrtf-switch][click][xfade-length][tsan]")
 {
     // The length is fixed when the fade starts and counted in elapsed samples, so at 512-sample
     // blocks and above it is the old 8-block fade (4096 samples) and below that it is 4096 samples.
@@ -1246,7 +1247,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: with engineSelectsHRTF a switch between Simple and an HRTF profile is click-free and dropout-free",
-           "[hrtf-switch][simple]")
+           "[hrtf-switch][simple][tsan]")
 {
     // The real files go into a temporary shared folder, so every profile works in every build.
     const TempFolder folder ("simple", true);
@@ -1274,7 +1275,7 @@ TEST_CASE ("Profile switch: with engineSelectsHRTF a switch between Simple and a
 }
 
 TEST_CASE ("Profile switch: with engineSelectsHRTF Simple to and from each of profiles 1, 2 and 4 is click-free at 32 samples",
-           "[hrtf-switch][simple]")
+           "[hrtf-switch][simple][tsan]")
 {
     const TempFolder folder ("simple-rest", true);
     REQUIRE (copyProfilesInto (folder.dir, { 1, 2, 4 }));
@@ -1298,7 +1299,7 @@ TEST_CASE ("Profile switch: with engineSelectsHRTF Simple to and from each of pr
 }
 
 TEST_CASE ("Profile switch: during a Simple <-> HRTF fade the Woodworth path runs once per block and the two are blended equal-power",
-           "[hrtf-switch][simple][blend]")
+           "[hrtf-switch][simple][blend][tsan]")
 {
     // The blend is rebuilt outside the engine: the Simple side from a flag-off Simple engine, the HRTF
     // side from a flag-off HRTF engine, and the ramp from the renderer crossfade's published law
@@ -1438,7 +1439,7 @@ TEST_CASE ("Profile switch: during a Simple <-> HRTF fade the Woodworth path run
 }
 
 TEST_CASE ("Profile switch: engineSelectsHRTF with no switch is bit-identical to the path the active renderer implies",
-           "[hrtf-switch][flag-identity]")
+           "[hrtf-switch][flag-identity][tsan]")
 {
     constexpr int kB = 64;
     constexpr int kBlocks = 20;
@@ -1531,7 +1532,7 @@ TEST_CASE ("Profile switch: engineSelectsHRTF with no switch is bit-identical to
 }
 
 TEST_CASE ("Profile switch: engineSelectsHRTF alone computes the Woodworth gains, so profile 0 is never silent (WR-06)",
-           "[hrtf-switch][flag-identity][wr06]")
+           "[hrtf-switch][flag-identity][wr06][tsan]")
 {
     constexpr int kB = 64;
     constexpr int kBlocks = 20;
@@ -1565,7 +1566,7 @@ TEST_CASE ("Profile switch: engineSelectsHRTF alone computes the Woodworth gains
 }
 
 TEST_CASE ("Profile switch: engineSelectsHRTF ignores the consumer's useHRTF on every block, through a switch",
-           "[hrtf-switch][flag-identity]")
+           "[hrtf-switch][flag-identity][tsan]")
 {
     constexpr int kB = 64;
     const TempFolder nonExistent ("ignore");
