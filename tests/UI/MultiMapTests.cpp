@@ -113,3 +113,45 @@ TEST_CASE ("Multi-map: sixteen live maps share one face set and paint identicall
     CHECK (SpatialMapComponent::getSharedFaceConstructionCountForTesting() - countAfterClear == 1);
     CHECK (countDifferingPixels (renderToImage (*again), reference) == 0);
 }
+
+TEST_CASE ("Multi-map: maps created, painted and destroyed beside four live maps never crash and keep one face set",
+           "[ui][multi][churn]")
+{
+    constexpr int numLongLived = 4;
+    constexpr int rounds = 200;
+
+    std::vector<std::unique_ptr<SpatialMapComponent>> longLived;
+    std::vector<juce::Image> references;
+    for (int i = 0; i < numLongLived; ++i)
+    {
+        longLived.push_back (makeMap());
+        // Give each long-lived map its own look so a mix-up between maps would show.
+        longLived.back()->setObjectState (4, 10.0f + 40.0f * (float) i, 5.0f * (float) i, 0.6f, true);
+        references.push_back (renderToImage (*longLived.back()));
+    }
+
+    const int countBefore = SpatialMapComponent::getSharedFaceConstructionCountForTesting();
+
+    int mismatchedRepaints = 0;
+    int badTransientPaints = 0;
+    for (int round = 0; round < rounds; ++round)
+    {
+        auto transient = makeMap();
+        const auto transientImage = renderToImage (*transient);
+        if (transientImage.getWidth() != 400)
+            ++badTransientPaints; // a paint that produced no image of the map size
+
+        for (int i = 0; i < numLongLived; ++i)
+            if (countDifferingPixels (renderToImage (*longLived[(size_t) i]), references[(size_t) i]) != 0)
+                ++mismatchedRepaints;
+        // `transient` is destroyed here, while the long-lived maps keep the faces alive.
+    }
+
+    INFO ("long-lived repaints that differed from their reference: " << mismatchedRepaints);
+    CHECK (badTransientPaints == 0);
+    CHECK (SpatialMapComponent::getSharedFaceConstructionCountForTesting() == countBefore);
+    CHECK (mismatchedRepaints == 0);
+
+    for (int i = 0; i < numLongLived; ++i)
+        CHECK (countDifferingPixels (renderToImage (*longLived[(size_t) i]), references[(size_t) i]) == 0);
+}
