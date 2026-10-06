@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 05
 current_phase_name: Realtime Safety Hardening
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-10-05T23:36:09.839Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-10-06T00:07:48.764Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 05 execution started
-state_head: f8f164e2aa730496b73872525a205b95e195e5a4
+state_head: 34084ce8216ea6b9030d75469860804f8795833f
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 42
-  completed_plans: 35
+  completed_plans: 36
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 05 (Realtime Safety Hardening) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 05 execution started
 
@@ -113,6 +113,7 @@ Progress: [███████░░░] 67%
 | Phase 04 P07 | 21 min | 2 tasks | 5 files |
 | Phase 04 P08 | 16 min | 2 tasks | 7 files |
 | Phase 05 P01 | 13 min | 2 tasks | 5 files |
+| Phase 05 P02 | 30 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,9 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: end-of-phase review 2026-10-05: D-03 screenshots approved (drag to az 90, d 0.8 as designed), EXTR-05 ticked; D-22 title rejected (DM Sans Bold too small), documented revert applied (PresetSaveOverlay back to BASE, [ui][fonts][spy] overlay exemption pins 1 request, item 4 removed from the OSD row), gate re-run green, DATA-02 ticked
 - [Phase 05]: 05-01: realtime trap is a libmalloc malloc_logger hook plus a __DATA,__interpose dylib, test-only, APPLE and no -fsanitize; trap cases SKIP elsewhere (never a green zero)
 - [Phase 05]: 05-01: Ambisonics NFC coefficients are assigned in place from a std::array<float, 4>; raw output of all six formats byte-identical before and after (D-10)
+- [Phase 05]: Oversized HRTF block is rendered in prepared-size pieces (D-11); chunk-level branch handles a Simple-active blend whose fade ended mid-block
+- [Phase 05]: BinauralRenderer scratch guards share scratchFits: skip, count, Debug-only assert, never resize; shrinkScratchForTesting swaps fresh vectors so capacity equals size
+- [Phase 05]: Allocation and lock checks for blocks that look HRIRs up run in Release only: a Debug tree builds libmysofa with -DVDEBUG and it printf()s per interpolation
 
 ### Pending Todos
 
@@ -213,7 +217,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-05T23:36:09.771Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-10-06T00:07:48.697Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
