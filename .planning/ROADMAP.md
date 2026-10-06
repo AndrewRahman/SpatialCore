@@ -254,7 +254,7 @@ shipping publicly at v1.0.0.
 from scope. `SharedFFTCache` is already correctly spinlock-guarded at
 `PartitionedConvolver.cpp:16`; what remains unverified is concurrent-instance behaviour.
 **Locked rule in play**: DR-1.
-**Plans**: 5/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
+**Plans**: 6/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -273,7 +273,7 @@ Plans:
 - [x] 05-05-PLAN.md — RTSF-03: setHRTFProfile from a UI timer race-free under TSan; the legacy route kept, documented and watched by two misuse counters (D-09, D-10) *(wave 5)*
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 05-06-PLAN.md — VERIFY-02 engine side: OSD#96 isolation bit-identity, SharedFFTCache unit tests, eight engines on eight threads under TSan, the cache's permanent allocation documented (D-05, D-07, D-08) *(wave 6)*
+- [x] 05-06-PLAN.md — VERIFY-02 engine side: OSD#96 isolation bit-identity, SharedFFTCache unit tests, eight engines on eight threads under TSan, the cache's permanent allocation documented (D-05, D-07, D-08) *(wave 6)*
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 05-07-PLAN.md — VERIFY-02 UI side: sixteen live maps share one face set and paint identically, churn beside live maps, UI suite clean under TSan (OSD#131, D-06, D-12) *(wave 7)*
@@ -316,7 +316,7 @@ External Dependencies.
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
-| 5. Realtime Safety Hardening | 5/8 | In Progress|  |
+| 5. Realtime Safety Hardening | 6/8 | In Progress|  |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
 ## Coverage

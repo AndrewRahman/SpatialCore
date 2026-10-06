@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 05
 current_phase_name: Realtime Safety Hardening
 status: executing
-stopped_at: Completed 05-05-PLAN.md
-last_updated: "2026-10-06T02:04:22.748Z"
+stopped_at: Completed 05-06-PLAN.md
+last_updated: "2026-10-06T02:21:22.672Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 05 execution started
-state_head: 1c2583819b48b639ca6c011592a36619d5ab6215
+state_head: 9319f4407594fdfc83812415f91f25c2c01aaa53
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 42
-  completed_plans: 39
+  completed_plans: 40
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 05 (Realtime Safety Hardening) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 05 execution started
 
@@ -117,6 +117,7 @@ Progress: [███████░░░] 67%
 | Phase 05 P03 | 22 min | 3 tasks | 2 files |
 | Phase 05 P04 | 36 min | 2 tasks | 6 files |
 | Phase 05 P05 | 51 min | 3 tasks | 7 files |
+| Phase 05 P06 | 16 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -184,6 +185,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 05]: 05-04: mixed-tick bound pinned at measured overall maxima (179 deg, 180 deg, 0.51); Circle, Figure8, Helix, Spiral jump by that much on their own, so RESEARCH A4 holds only for the nine smooth shapes
 - [Phase 05]: 05-05: RTSF-03 detect-never-block. Legacy swap or prepare-index on the render thread is counted (getLegacyRouteWrongThreadCount, SC-17 rule); a load or setProfile on an in-use renderer is counted once per call by HRTFDatabase; the mark is cleared before every rendererFree_ release store. No lock, no sample changed.
 - [Phase 05]: 05-05: the in-use mark is cleared in endRendererFade BEFORE rendererXfadeActive_ drops, so a legacy consumer waiting on isRendererCrossfadeActive() is never counted by mistake. The early-clear ordering is not mutation-provable by a deterministic test (end-of-block clear follows microseconds later).
+- [Phase 05]: SharedFFTCache documented as kept for the life of the process (a deliberate permanent allocation, not a leak; the Debug leaked-FFT line at exit is this cache); Windows/Linux fallback-FFT SpinLock contention left to Phase 6 (D-08, D-13)
 
 ### Pending Todos
 
@@ -226,7 +228,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-06T02:04:22.684Z
-Stopped at: Completed 05-05-PLAN.md
+Last session: 2026-10-06T02:21:22.608Z
+Stopped at: Completed 05-06-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
