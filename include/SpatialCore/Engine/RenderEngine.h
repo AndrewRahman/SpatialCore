@@ -420,6 +420,14 @@ public:
     // and renders.
     int getWriterViewOnRenderThreadCount() const noexcept;
 
+    // Diagnostic (RTSF-03, D-09, D-04): how many times swapActiveRenderer() or
+    // getPrepareRendererIndex() was called on the render thread while a different thread was
+    // the writer (it called setOutputFormat(), or one of those two legacy methods). Same rule
+    // as getWriterViewOnRenderThreadCount() (SC-17): 0 for a harness whose one thread both
+    // renders and swaps. Every build counts; Debug builds also assert. The call still runs
+    // exactly as before. Any thread, lock-free.
+    int getLegacyRouteWrongThreadCount() const noexcept;
+
     // Diagnostic (D-11, D-04): how many renderBlock() calls carried more samples than
     // prepare()'s maxBlockSize. Such a block is rendered completely and nothing is dropped:
     // the direct-binaural HRTF path renders it in pieces of at most maxBlockSize, every other
@@ -428,26 +436,41 @@ public:
     int getOversizedBlockCount() const noexcept;
 
     //--------------------------------------------------------------------------
-    // Escape hatches (D-02 — leaf classes stay public). Consumers that need
-    // direct access to the underlying renderer/HRTF database (e.g. for
-    // profile loading, synchronous test setup per the CLAUDE.md gotcha)
-    // reach through here rather than the engine reimplementing a proxy API.
+    // Escape hatches (D-02 -- leaf classes stay public). The LEGACY HRTF route, kept for
+    // OpenSpatialDelay's current calls until the next major version (RTSF-03, D-09). The safe
+    // route is setHRTFProfile() below; do not mix the two on one engine.
+    //
+    // Thread contract, one line per method:
+    //   getBinauralRenderer (i)        any thread may call it and read the renderer. Mutating that
+    //                                  renderer or its hrtfDatabase (a load, unload, setProfile)
+    //                                  is allowed only on the renderer getPrepareRendererIndex()
+    //                                  names, only once isRendererCrossfadeActive() is false, and
+    //                                  never from the audio thread. A mutation of a renderer the
+    //                                  audio thread is using (the active one, or the source of a
+    //                                  running crossfade, as of the last rendered block) still
+    //                                  runs, but is counted by
+    //                                  HRTFDatabase::getMutationWhileInUseCount() and asserts in
+    //                                  Debug.
+    //   getActiveRendererIndexAtomic() any thread (an atomic; only the audio thread and
+    //                                  swapActiveRenderer() store to it).
+    //   getPrepareRendererIndex()      message thread only.
+    //   swapActiveRenderer()           message thread only. A call made on the render thread while
+    //                                  another thread is the writer is counted by
+    //                                  getLegacyRouteWrongThreadCount() and asserts in Debug (the
+    //                                  SC-17 pattern); the call still runs.
+    //   isRendererCrossfadeActive()    any thread (an atomic).
+    //
+    // The documented flow: load into getBinauralRenderer (getPrepareRendererIndex()) once
+    // isRendererCrossfadeActive() is false, setProfile on it, then swapActiveRenderer(). The
+    // prepare-index bookkeeping mirrors setOutputFormat()'s layout swap; the profile-load body
+    // itself (SOFA file IO via HRTFDatabase::loadFromFile) is consumer-side glue, not engine
+    // logic. The route stays until the next major version.
     //--------------------------------------------------------------------------
     BinauralRenderer& getBinauralRenderer (int index) { return binauralRenderers[static_cast<size_t> (index)]; }
     std::atomic<int>& getActiveRendererIndexAtomic() { return activeRendererIndex; }
 
-    // HRTF profile double-buffered swap escape hatches — message-thread-only
-    // (OSD's timerCallback()/loadHRTFProfile() reach through these; the
-    // prepare-index bookkeeping mirrors setOutputFormat()'s layout swap
-    // exactly, but the profile-load body itself (SOFA file IO via
-    // HRTFDatabase::loadFromFile) is OSD-specific glue code, not engine
-    // logic, so it stays a consumer-side call using getBinauralRenderer()).
-    int getPrepareRendererIndex() const { return prepareRendererIndex_; }
-    void swapActiveRenderer()
-    {
-        activeRendererIndex.store (prepareRendererIndex_, std::memory_order_release);
-        prepareRendererIndex_ = 1 - prepareRendererIndex_;
-    }
+    int getPrepareRendererIndex() const;
+    void swapActiveRenderer();
     bool isRendererCrossfadeActive() const { return rendererXfadeActive_.load (std::memory_order_acquire); }
 
     // Renderer crossfade length (a profile swap). Counted in elapsed SAMPLES, fixed when the
@@ -769,6 +792,11 @@ private:
     std::atomic<std::size_t> renderThreadHash_ { 0 };
     std::atomic<std::size_t> writerThreadHash_ { 0 };
     mutable std::atomic<int> writerViewOnRenderThreadCount_ { 0 };
+    // RTSF-03 (D-09): the legacy-route misuse guard. legacyWriterThreadHash_ is the last
+    // non-render thread that called swapActiveRenderer() or getPrepareRendererIndex().
+    mutable std::atomic<int> legacyRouteWrongThreadCount_ { 0 };
+    mutable std::atomic<std::size_t> legacyWriterThreadHash_ { 0 };
+    void noteLegacyRouteCall() const noexcept;
     // D-11: renderBlock() calls longer than preparedMaxBlock_ (relaxed, lock-free).
     std::atomic<int> oversizedBlockCount_ { 0 };
     // A non-lock-free atomic would put a lock on the audio thread.

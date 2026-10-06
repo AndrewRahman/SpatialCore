@@ -1774,6 +1774,51 @@ int RenderEngine::getWriterViewOnRenderThreadCount() const noexcept
     return writerViewOnRenderThreadCount_.load (std::memory_order_relaxed);
 }
 
+int RenderEngine::getLegacyRouteWrongThreadCount() const noexcept
+{
+    return legacyRouteWrongThreadCount_.load (std::memory_order_relaxed);
+}
+
+void RenderEngine::noteLegacyRouteCall() const noexcept
+{
+    // RTSF-03 (D-09), the SC-17 rule applied to the two message-thread-only legacy calls. The
+    // caller is a known render thread and another thread is a known writer (it called
+    // setOutputFormat(), or one of these two legacy methods) -> count it (every build) and
+    // assert (Debug). The call itself still runs. A harness whose one thread renders and swaps
+    // is never flagged, and nothing is flagged until both threads have been seen. A call from
+    // any thread that is not the render thread makes that thread the legacy writer.
+    const std::size_t me = currentThreadHash();
+    const std::size_t renderer = renderThreadHash_.load (std::memory_order_relaxed);
+
+    if (renderer != 0 && me == renderer)
+    {
+        const std::size_t writer = writerThreadHash_.load (std::memory_order_relaxed);
+        const std::size_t legacyWriter = legacyWriterThreadHash_.load (std::memory_order_relaxed);
+        if ((writer != 0 && writer != me) || (legacyWriter != 0 && legacyWriter != me))
+        {
+            legacyRouteWrongThreadCount_.fetch_add (1, std::memory_order_relaxed);
+            jassertfalse;
+        }
+    }
+    else
+    {
+        legacyWriterThreadHash_.store (me, std::memory_order_relaxed);
+    }
+}
+
+int RenderEngine::getPrepareRendererIndex() const
+{
+    noteLegacyRouteCall();
+    return prepareRendererIndex_;
+}
+
+void RenderEngine::swapActiveRenderer()
+{
+    noteLegacyRouteCall();
+    activeRendererIndex.store (prepareRendererIndex_, std::memory_order_release);
+    prepareRendererIndex_ = 1 - prepareRendererIndex_;
+}
+
 int RenderEngine::getOversizedBlockCount() const noexcept
 {
     return oversizedBlockCount_.load (std::memory_order_relaxed);

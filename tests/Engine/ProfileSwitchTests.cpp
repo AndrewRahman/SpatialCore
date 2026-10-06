@@ -1607,3 +1607,101 @@ TEST_CASE ("Profile switch: engineSelectsHRTF ignores the consumer's useHRTF on 
     CHECK (countMismatches (lR, mR, first) == 0);
     CHECK (*std::max_element (lL.begin(), lL.end()) > 1.0e-4f);
 }
+
+// ============================================================================
+// Legacy HRTF route: misuse detection (RTSF-03, D-09). The route stays exactly as it is;
+// a call on the wrong thread is counted (and asserts in Debug), never blocked.
+// ============================================================================
+namespace
+{
+    /** Runs `first` on one thread and then `second` on another, with no two engine calls ever
+        overlapping. The first thread stays alive (idle, waiting) until the second has joined:
+        a joined thread's id can be handed to the next thread, and the detectors compare thread
+        ids, so a reused id would hide the very misuse a test is making. */
+    void runOnTwoThreads (const std::function<void()>& first, const std::function<void()>& second)
+    {
+        std::promise<void> firstDone;
+        std::promise<void> release;
+        std::shared_future<void> releaseFuture = release.get_future().share();
+
+        std::thread firstThread ([&]
+        {
+            first();
+            firstDone.set_value();
+            releaseFuture.wait();
+        });
+
+        firstDone.get_future().wait();
+
+        std::thread secondThread (second);
+        secondThread.join();
+
+        release.set_value();
+        firstThread.join();
+    }
+
+    /** Four blocks of the Simple binaural path (no profile has to be loaded). */
+    void renderFourBlocks (RenderEngine& engine)
+    {
+        LiveRender live (engine, makeBinauralContext (BinauralPath::Simple, kRate), kBlock, kRate);
+        for (int b = 0; b < 4; ++b)
+            live.renderOne();
+    }
+
+    std::unique_ptr<RenderEngine> makePreparedBinauralEngine()
+    {
+        // On the heap: a std::thread has a small stack, and the engine is large.
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        return engine;
+    }
+}
+
+TEST_CASE ("Profile switch: a legacy swap or prepare-index call on the render thread is counted (D-09)",
+           "[hrtf-switch][misuse][tsan]")
+{
+    // The deliberate misuse calls trip jassertfalse in Debug: JUCE logs one line each and
+    // continues (it only breaks under a debugger). Release builds only count.
+    SECTION ("a writer thread, then a render thread that swaps and reads the prepare index: counted twice")
+    {
+        auto engine = makePreparedBinauralEngine();
+        runOnTwoThreads ([&] { engine->setOutputFormat (OutputFormat::Binaural); },
+                         [&]
+                         {
+                             renderFourBlocks (*engine);
+                             engine->swapActiveRenderer();
+                             (void) engine->getPrepareRendererIndex();
+                         });
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 2);
+    }
+
+    SECTION ("one thread that writes, renders and swaps is never counted")
+    {
+        auto engine = makePreparedBinauralEngine();
+        engine->setOutputFormat (OutputFormat::Binaural);
+        renderFourBlocks (*engine);
+        engine->swapActiveRenderer();
+        (void) engine->getPrepareRendererIndex();
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a legacy writer thread that only reads the prepare index, then a render thread that swaps: counted once")
+    {
+        auto engine = makePreparedBinauralEngine();
+        runOnTwoThreads ([&] { (void) engine->getPrepareRendererIndex(); },
+                         [&]
+                         {
+                             renderFourBlocks (*engine);
+                             engine->swapActiveRenderer();
+                         });
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 1);
+    }
+
+    SECTION ("the render thread finishes first, then a writer thread swaps: not counted")
+    {
+        auto engine = makePreparedBinauralEngine();
+        runOnTwoThreads ([&] { renderFourBlocks (*engine); },
+                         [&] { engine->swapActiveRenderer(); });
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+}
