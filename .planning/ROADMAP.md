@@ -254,7 +254,7 @@ shipping publicly at v1.0.0.
 from scope. `SharedFFTCache` is already correctly spinlock-guarded at
 `PartitionedConvolver.cpp:16`; what remains unverified is concurrent-instance behaviour.
 **Locked rule in play**: DR-1.
-**Plans**: 7/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
+**Plans**: 8/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -279,7 +279,7 @@ Plans:
 - [x] 05-07-PLAN.md — VERIFY-02 UI side: sixteen live maps share one face set and paint identically, churn beside live maps, UI suite clean under TSan (OSD#131, D-06, D-12) *(wave 7)*
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 05-08-PLAN.md — README realtime-safety check run as written (whole suite under TSan included), docs truth with the macOS-only scope (D-01, D-13), OSD hand-off row, evidence, then the requirement ticks *(wave 8)*
+- [x] 05-08-PLAN.md — README realtime-safety check run as written (whole suite under TSan included), docs truth with the macOS-only scope (D-01, D-13), OSD hand-off row, evidence, then the requirement ticks *(wave 8)*
 
 ### Phase 6: Consumer Readiness & CI
 
@@ -316,7 +316,7 @@ External Dependencies.
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
-| 5. Realtime Safety Hardening | 7/8 | In Progress|  |
+| 5. Realtime Safety Hardening | 8/8 | In Progress|  |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
 ## Coverage

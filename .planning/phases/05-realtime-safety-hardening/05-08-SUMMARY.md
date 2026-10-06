@@ -15,9 +15,9 @@ provides:
 affects: [phase-5-verification, phase-6-ci, osd-migration, release-tagging]
 
 actuals:
-  tokens: TOKENS_PENDING
+  tokens: 7117
   tasks: 3
-  commits: COMMITS_PENDING
+  commits: 3
 
 tech-stack:
   added: []
@@ -89,12 +89,12 @@ coverage:
         status: pass
     human_judgment: false
 
-duration: 70min
+duration: 63min
 completed: 2026-10-06
 status: complete
 plan_head_before: 8927af6f11edd674ecdeaf7abba3c6705ea09af7
-plan_head_after: HEAD_AFTER_PENDING
-commits: COMMITS_PENDING
+plan_head_after: a9dfd1c63634f476ab7ee621fea4c7916519059a
+commits: 3
 ---
 
 # Phase 5 Plan 08: Realtime-safety check documented, run green, and Phase 5 requirements ticked Summary
@@ -103,7 +103,7 @@ commits: COMMITS_PENDING
 
 ## Performance
 
-- **Duration:** about 70 min (start 2026-10-06T02:43Z from the plan-head ledger file; the whole-suite ThreadSanitizer run alone took 32 min 18 s)
+- **Duration:** about 63 min (start 2026-10-06T02:43Z from the plan-head ledger file; the whole-suite ThreadSanitizer run alone took 32 min 18 s)
 - **Tasks:** 3 (Task 1 tracer; Tasks 2 and 3 auto)
 - **Files modified:** 8 (0 created, apart from this SUMMARY)
 - **BASE:** `8927af6f11edd674ecdeaf7abba3c6705ea09af7` (HEAD when this plan started)
@@ -118,9 +118,9 @@ commits: COMMITS_PENDING
 
 1. **Task 1 (tracer): README realtime-safety check, run green as written** - `947fa58` (docs)
 2. **Task 2: CLAUDE.md, guide, skill, PROJECT.md row, demo comment** - `817276a` (docs)
-3. **Task 3: requirement ticks and resolved STATE rows (after this evidence section)** - see "Plan metadata" below
+3. **Task 3: evidence section, requirement ticks and resolved STATE rows (evidence written first)** - `a9dfd1c` (docs)
 
-**Plan metadata:** the `docs(05-08)` commit that carries this file, STATE.md and ROADMAP.md follows.
+**Plan metadata:** the `docs(05-08): complete` commit that carries this file's final text, STATE.md and ROADMAP.md follows.
 
 Tracer feedback gate: auto mode off, `human_verify_mode` default `end-of-phase`, and the tracer `<verify>` is automated-only, so the gate is the end-to-end run of the check itself. It passed on the first run; expansion (Tasks 2 and 3) went ahead.
 
@@ -238,3 +238,10 @@ None - no external service configuration required.
 
 - Phase 5 is complete from the plan side: all eight plans have summaries and the five requirements are ticked. The phase-end gate (`/gsd-verify-work`) can reuse the README check as written.
 - Phase 6 inherits: Windows and Linux for the realtime proof, the fallback-FFT spinlock, CI that runs the tests (CI-01), and the OSD migration hand-off row.
+
+## Self-Check: PASSED
+
+- Modified files: README.md, CLAUDE.md, docs/integration-guide.md, the architecture skill, PROJECT.md, REQUIREMENTS.md, STATE.md, `examples/demo/DemoComponent.h` and this SUMMARY all FOUND. Commits `947fa58`, `817276a`, `a9dfd1c` FOUND; `git log --all --grep="05-08"` returns 3 commits and `git rev-list --count 8927af6..HEAD` is 3 before the metadata commit.
+- Task 1 acceptance: `grep -c build-tsan README.md` prints 5, the D-13 sentence appears once, `git ls-files --eol README.md` reports `w/crlf`, and the README diff against BASE is 34 added lines and none removed (the Debug/Release block is untouched). The three automated verifies pass: the everyday gate and `[rt]`, the `[tsan]` subset and UI run, and the whole-suite log ending `exit=0` with 0 warnings.
+- Task 2 acceptance: `tracked as RTSF` 0 in the guide; `RTSF-01, Phase 5` 0 in CLAUDE.md; `Windows and Linux` 1 in CLAUDE.md; `getScratchTooSmallCount|getMutationWhileInUseCount` 2 and `SMLLookAndFeel` 3 in the guide; the skill file is still CRLF with a 6-line diff.
+- Task 3 acceptance: the evidence section has a row for each of criteria 1 to 5 and each of the five requirements plus the D-07 table; 5 requirement ticks and 5 Traceability rows `| 5 | Complete`; `Resolved` in STATE.md went from 3 to 5.

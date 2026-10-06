@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 05
 current_phase_name: Realtime Safety Hardening
-status: executing
-stopped_at: Completed 05-07-PLAN.md
-last_updated: "2026-10-06T02:42:38.553Z"
+status: verifying
+stopped_at: Completed 05-08-PLAN.md
+last_updated: "2026-10-06T03:46:51.014Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 05 execution started
-state_head: 1c040868e3a9c79ab587fdd16ed942f697e2e96e
+state_head: a9dfd1c63634f476ab7ee621fea4c7916519059a
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 42
-  completed_plans: 41
+  completed_plans: 42
 milestone_name: milestone
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 Phase: 05 (Realtime Safety Hardening) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-06 — Phase 05 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -119,6 +119,7 @@ Progress: [███████░░░] 67%
 | Phase 05 P05 | 51 min | 3 tasks | 7 files |
 | Phase 05 P06 | 16 min | 2 tasks | 6 files |
 | Phase 05 P07 | 20 min | 2 tasks | 4 files |
+| Phase 05 P08 | 63 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -188,6 +189,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 05]: 05-05: the in-use mark is cleared in endRendererFade BEFORE rendererXfadeActive_ drops, so a legacy consumer waiting on isRendererCrossfadeActive() is never counted by mistake. The early-clear ordering is not mutation-provable by a deterministic test (end-of-block clear follows microseconds later).
 - [Phase 05]: SharedFFTCache documented as kept for the life of the process (a deliberate permanent allocation, not a leak; the Debug leaked-FFT line at exit is this cache); Windows/Linux fallback-FFT SpinLock contention left to Phase 6 (D-08, D-13)
 - [Phase 05]: 05-07: SpatialMapComponent face sharing proven by a construction counter and face identity (test-only read-only accessors); per-instance faces fail the sixteen-map test (delta 16, 15 differing identities)
+- [Phase 05]: 05-08: the realtime-safety check (rt trap, build-tsan subset, UI suite and whole suite under ThreadSanitizer) is a separate phase-end and pre-release check beside the unchanged everyday gate; proof scope is macOS (Apple Silicon), Windows and Linux in Phase 6 (D-01, D-13)
+- [Phase 05]: 05-08: Phase 5 requirements RTSF-01, RTSF-02, RTSF-03, RTSF-05 and VERIFY-02 ticked only after the VERIFICATION evidence section was written and the documented check passed (whole suite under ThreadSanitizer: 386 cases, exit 0, 0 warnings, 1938 s)
 
 ### Pending Todos
 
@@ -230,7 +233,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-06T02:42:38.489Z
-Stopped at: Completed 05-07-PLAN.md
+Last session: 2026-10-06T03:46:50.950Z
+Stopped at: Completed 05-08-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
