@@ -1705,3 +1705,177 @@ TEST_CASE ("Profile switch: a legacy swap or prepare-index call on the render th
         CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
     }
 }
+
+// ----------------------------------------------------------------------------
+// In-use detection on the legacy route (RTSF-03, D-09)
+// ----------------------------------------------------------------------------
+namespace
+{
+    int mutationCount (RenderEngine& engine, int rendererIndex)
+    {
+        return engine.getBinauralRenderer (rendererIndex).hrtfDatabase.getMutationWhileInUseCount();
+    }
+
+    /** The documented legacy flow, on one thread: wait for no crossfade, load into the prepare
+        renderer, setProfile on it, swap, then render until the crossfade has ended (4096 samples
+        at 64-sample blocks is 64 blocks; 80 gives margin). Returns the swapped-to renderer. */
+    int legacyLoadSwapRender (RenderEngine& engine, LiveRender& live, int profile)
+    {
+        REQUIRE_FALSE (engine.isRendererCrossfadeActive());
+        const int prepareIdx = engine.getPrepareRendererIndex();
+        auto& renderer = engine.getBinauralRenderer (prepareIdx);
+        REQUIRE (renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (profile)), static_cast<float> (kRate)));
+        renderer.setProfile (profile);
+        engine.swapActiveRenderer();
+        for (int b = 0; b < 80; ++b)
+            live.renderOne();
+        REQUIRE_FALSE (engine.isRendererCrossfadeActive());
+        return prepareIdx;
+    }
+}
+
+TEST_CASE ("Profile switch: a load into the renderer the audio thread is using is counted, the documented flows are not (D-09)",
+           "[hrtf-switch][misuse][in-use][tsan]")
+{
+    auto engine = std::make_unique<RenderEngine>();
+    engine->prepare (kRate, kBlock);
+    engine->setOutputFormat (OutputFormat::Binaural);
+    REQUIRE (loadProfileIntoActiveRenderer (*engine, 2, kRate));   // CIPIC, before the first block
+
+    LiveRender live (*engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+    for (int b = 0; b < 8; ++b)
+        live.renderOne();
+
+    SECTION ("loads into the prepare-index renderer, with the crossfade over, are never counted")
+    {
+        // Two full cycles: each load goes into the renderer that is neither active nor fading.
+        const int first = legacyLoadSwapRender (*engine, live, 5);    // KEMAR
+        const int second = legacyLoadSwapRender (*engine, live, 2);   // CIPIC
+        CHECK (first != second);
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a load and a setProfile on the active renderer are counted once each, the other renderer stays at 0")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);   // KEMAR is now the active renderer
+        const int other = 1 - active;
+        REQUIRE (engine->getActiveRendererIndexAtomic().load() == active);
+        REQUIRE (mutationCount (*engine, active) == 0);
+
+        auto& renderer = engine->getBinauralRenderer (active);
+        // Debug builds log one JUCE assertion line per deliberate misuse below.
+        CHECK (renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == 1);
+
+        renderer.setProfile (5);
+        CHECK (mutationCount (*engine, active) == 2);
+
+        CHECK (mutationCount (*engine, other) == 0);
+        CHECK (renderer.hrtfDatabase.isInUseByAudioThread());
+        CHECK_FALSE (engine->getBinauralRenderer (other).hrtfDatabase.isInUseByAudioThread());
+    }
+
+    SECTION ("loadFromBinaryData into an in-use database counts exactly once although it closes the handle twice")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);
+        const int before = mutationCount (*engine, active);
+
+        CHECK (engine->getBinauralRenderer (active).hrtfDatabase.loadFromBinaryData (5, static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == before + 1);
+        CHECK (mutationCount (*engine, 1 - active) == 0);
+    }
+
+    SECTION ("loadFromMemory and unload into an in-use database count once each")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);
+        int size = 0;
+        const char* data = HRTFDatabase::getEmbeddedProfileData (5, size);
+        REQUIRE (data != nullptr);
+
+        auto& database = engine->getBinauralRenderer (active).hrtfDatabase;
+        CHECK (database.loadFromMemory (data, size, static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == 1);
+
+        database.unload();
+        CHECK (mutationCount (*engine, active) == 2);
+    }
+}
+
+TEST_CASE ("Profile switch: the engine's own loader never trips the in-use detector (D-09)",
+           "[hrtf-switch][misuse][in-use][tsan]")
+{
+    struct Result
+    {
+        int switchesDone = 0;
+        int switchesWanted = 0;
+        long nonFinite = 0;
+        int mutations0 = -1;
+        int mutations1 = -1;
+        int legacyWrongThread = -1;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][in-use]", 120, [&result]
+    {
+        const TempFolder nonExistent ("in-use");
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+#if SPATIALCORE_EMBEDS_ALL_HRTF
+        const std::vector<int> sequence { 2, 3, 5, 0, 3, 5 };
+#else
+        const std::vector<int> sequence { 5, 0, 5, 0, 5, 0 };
+#endif
+        result.switchesWanted = static_cast<int> (sequence.size());
+
+        std::atomic<bool> stop { false };
+        long nonFinite = 0;
+
+        std::thread renderThread ([&]
+        {
+            LiveRender live (*engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                live.renderOne (static_cast<float> (block % 360) - 180.0f);
+                if (! live.lastFinite)
+                    ++nonFinite;
+                ++block;
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+        });
+
+        for (const int profile : sequence)
+        {
+            engine->setHRTFProfile (profile);
+
+            const auto waitStart = std::chrono::steady_clock::now();
+            while (engine->getHRTFProfileStatus().activeProfile != profile
+                   && elapsedMs (waitStart) < 20000.0 * timeoutScale())
+                juce::Thread::sleep (1);
+
+            if (engine->getHRTFProfileStatus().activeProfile != profile)
+                break;
+
+            ++result.switchesDone;
+        }
+
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.mutations0 = mutationCount (*engine, 0);
+        result.mutations1 = mutationCount (*engine, 1);
+        result.legacyWrongThread = engine->getLegacyRouteWrongThreadCount();
+    });
+
+    CHECK (result.switchesDone == result.switchesWanted);
+    CHECK (result.nonFinite == 0);
+    CHECK (result.mutations0 == 0);
+    CHECK (result.mutations1 == 0);
+    CHECK (result.legacyWrongThread == 0);
+}

@@ -352,6 +352,11 @@ void HRTFDatabase::getAlignedHRIR (float azimuthRad, float elevationRad,
 
 void HRTFDatabase::unload()
 {
+    closeHandle();
+}
+
+void HRTFDatabase::closeHandle() noexcept
+{
     if (easyHandle != nullptr)
     {
         mysofa_close (easyHandle);
@@ -360,6 +365,27 @@ void HRTFDatabase::unload()
     loaded = false;
     irLength = 0;
     numPositions = 0;
+}
+
+void HRTFDatabase::setInUseByAudioThread (bool inUse) noexcept
+{
+    inUseByAudioThread_.store (inUse, std::memory_order_relaxed);
+}
+
+bool HRTFDatabase::isInUseByAudioThread() const noexcept
+{
+    return inUseByAudioThread_.load (std::memory_order_relaxed);
+}
+
+int HRTFDatabase::getMutationWhileInUseCount() const noexcept
+{
+    return mutationWhileInUseCount_.load (std::memory_order_relaxed);
+}
+
+// RED stub (05-05 Task 2): nothing counts yet.
+bool HRTFDatabase::noteMutationIfInUse() noexcept
+{
+    return false;
 }
 
 //==============================================================================
