@@ -30,6 +30,7 @@ add_executable(SpatialCoreTests
     Binaural/BinauralRendererTests.cpp
     Binaural/ProfileLoudnessTests.cpp
     Binaural/HRTFEmbeddedTests.cpp
+    Binaural/SharedFFTCacheTests.cpp
     Engine/RenderEngineTests.cpp
     Engine/TripleBufferIndexTests.cpp
     Engine/ProfileSwitchTests.cpp

@@ -241,3 +241,100 @@ TEST_CASE ("Multi-instance: an engine renders bit-identically whether or not a s
     CHECK_FALSE (state->bNonFinite.load());
     CHECK (differing == 0);
 }
+
+// ----------------------------------------------------------------------------
+// Eight engines at once (D-05, VERIFY-02): create, prepare, render, switch and destroy on eight
+// threads, twice. Run it in a fresh process (ctest does) so the shared FFT cache is first used
+// concurrently. Only the small profiles are used (2 CIPIC, 3 HUTUBS, 5 KEMAR, 1.2 to 1.8 MB):
+// eight engines each loading SADIE or Bernschuetz under ThreadSanitizer outlast the engine's own
+// 15 s shutdown bound (RESEARCH Pitfall 4). Every engine is waited idle before it is destroyed.
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr int kStressEngines = 8;
+    constexpr int kStressRounds = 2;
+    constexpr int kStressBlocks = 400;
+
+    struct StressState
+    {
+        std::atomic<bool> start { false };
+        std::atomic<int> ready { 0 };
+        std::atomic<int> finished { 0 };
+        long nonFinite[kStressEngines] {};
+        long blocks[kStressEngines] {};
+    };
+
+    void runStressThread (StressState& state, int index)
+    {
+        static constexpr int kSmallProfiles[] = { 2, 3, 5 };
+        const int scale = timeoutScaleFromEnv();
+        const bool surround = (index % 2) != 0;
+        const double rate = surround ? 44100.0 : 48000.0;
+
+        state.ready.fetch_add (1);
+        while (! state.start.load (std::memory_order_acquire))
+            std::this_thread::yield();
+
+        for (int round = 0; round < kStressRounds; ++round)
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (rate, 256);
+            engine->setOutputFormat (surround ? OutputFormat::Surround7_1_4 : OutputFormat::Binaural);
+
+            SceneRenderer scene (*engine, 256, rate, surround ? 12 : 2);
+            engine->setHRTFProfile (kSmallProfiles[index % 3]);
+
+            for (int b = 0; b < kStressBlocks; ++b)
+            {
+                if (b == 100)
+                    engine->setHRTFProfile (kSmallProfiles[(index + 1) % 3]);
+                else if (b == 250)
+                    engine->setHRTFProfile (kSmallProfiles[(index + 2) % 3]);
+
+                if (! scene.renderOne (true))
+                    ++state.nonFinite[index];
+                ++state.blocks[index];
+            }
+
+            // The destructor stops the loader with a 15 s bound; let any pending load finish first.
+            engine->waitForHRTFProfileIdle (60000 * scale);
+        }
+
+        state.finished.fetch_add (1);
+    }
+}
+
+TEST_CASE ("Multi-instance: eight engines create, prepare, render, switch and destroy on their own threads at once",
+           "[multi][stress][tsan]")
+{
+    auto state = std::make_shared<StressState>();
+
+    const bool finished = runWithWatchdog ([state]
+    {
+        std::vector<std::thread> threads;
+        for (int i = 0; i < kStressEngines; ++i)
+            threads.emplace_back ([state, i] { runStressThread (*state, i); });
+
+        while (state->ready.load() < kStressEngines)
+            std::this_thread::sleep_for (std::chrono::milliseconds (1));
+        state->start.store (true, std::memory_order_release);
+
+        for (auto& t : threads)
+            t.join();
+    }, std::chrono::milliseconds (300000LL * timeoutScaleFromEnv()));
+
+    REQUIRE (finished);
+    CHECK (state->finished.load() == kStressEngines);
+
+    long totalNonFinite = 0;
+    long totalBlocks = 0;
+    for (int i = 0; i < kStressEngines; ++i)
+    {
+        totalNonFinite += state->nonFinite[i];
+        totalBlocks += state->blocks[i];
+    }
+
+    INFO ("blocks rendered: " << totalBlocks);
+    CHECK (totalBlocks == static_cast<long> (kStressEngines) * kStressRounds * kStressBlocks);
+    CHECK (totalNonFinite == 0);
+}
