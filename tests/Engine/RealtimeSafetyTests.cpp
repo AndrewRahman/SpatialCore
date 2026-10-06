@@ -4,13 +4,18 @@
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/IO/OutputFormatRegistry.h>
 #include <SpatialCore/IO/SpeakerLayout.h>
+#include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include "../Support/RealtimeGuard.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <regex>
+#include <sstream>
+#include <string>
 #include <vector>
 
 using namespace spatialcore;
@@ -84,11 +89,15 @@ namespace
                         phase[(size_t) t] -= twoPi;
                 }
 
-                const float b = (float) blockIndex;
-                const float ft = (float) t;
-                objects[(size_t) t].azimuthDeg = wrapDegrees (-165.0f + 30.0f * ft + 5.0f * b);
-                objects[(size_t) t].elevationDeg = 60.0f * std::sin (0.2f * b + 0.5f * ft);
-                objects[(size_t) t].distance = 0.5f + 0.4f * std::sin (0.3f * b + ft);
+                if (! externalPositions)
+                {
+                    const float b = (float) blockIndex;
+                    const float ft = (float) t;
+                    objects[(size_t) t].azimuthDeg = wrapDegrees (-165.0f + 30.0f * ft + 5.0f * b);
+                    objects[(size_t) t].elevationDeg = 60.0f * std::sin (0.2f * b + 0.5f * ft);
+                    objects[(size_t) t].distance = 0.5f + 0.4f * std::sin (0.3f * b + ft);
+                }
+
                 objects[(size_t) t].enabled = true;
             }
         }
@@ -113,6 +122,11 @@ namespace
         }
 
         double sampleRate;
+
+        // When true, fill() leaves azimuth, elevation and distance alone, so the caller writes them
+        // into `objects` between blocks (Plan 05-03: positions that come from a TrajectoryEngine).
+        bool externalPositions = false;
+
         std::array<std::vector<float>, MAX_SOURCES> mono;
         std::array<std::vector<float>, MAX_SOURCES> tapFade;
         std::array<std::vector<float>, MAX_SOURCES> distGain;
@@ -379,6 +393,16 @@ namespace
         }
 
         return realtimeCounts();
+    }
+
+    // True when sample `index` of every channel in [firstCh, lastCh] equals `value`.
+    bool channelsAllEqualAt (const OutputBank& out, int firstCh, int lastCh, int index, float value)
+    {
+        for (int c = firstCh; c <= lastCh; ++c)
+            if (out.channels[(size_t) c][(size_t) index] != value)
+                return false;
+
+        return true;
     }
 
     bool channelsAllEqual (const OutputBank& out, int firstCh, int lastCh, int n, float value)
@@ -1201,4 +1225,452 @@ TEST_CASE ("Ambisonics algorithm: capture the grid of gains to SC_CAPTURE_FILE",
     }
 
     stream.flush();
+}
+
+// ----------------------------------------------------------------------------
+// Trajectories (D-02): positions that come from a TrajectoryEngine animating at the demo slider's
+// maximum speed, copied into the scene between blocks the way examples/demo/DemoComponent.cpp does
+// (wrapAzimuth (getFinalAz), getFinalEl, getFinalDist). Pass A gives object t shape 1 + t (the
+// twelve shapes 1 to 12), pass B gives every object shape 13, so all 13 shapes run; odd objects run
+// in reverse. The tick is made on the test thread, disarmed, as the demo makes it on its timer.
+// ----------------------------------------------------------------------------
+TEST_CASE ("Realtime: trajectory-driven positions render without allocating",
+           "[rt][rt-alloc][rt-lock][trajectory]")
+{
+    requireRealtimeTrapCanary();
+
+    struct Config { const char* name; OutputFormat format; unsigned flags; bool hrtf; };
+    const Config configs[] = {
+        { "Binaural profile 5, all flags", OutputFormat::Binaural,       kComputes | kDerives | kSelects, true  },
+        { "7.1.4",                         OutputFormat::Surround7_1_4,  kComputes | kDerives,            false },
+        { "Ambisonics 6OA",                OutputFormat::Ambisonics6OA,  kComputes | kDerives,            false } };
+
+    constexpr float kSpeed = 4.0f;   // examples/demo/DemoComponent.cpp: the speed slider's maximum
+    constexpr float dt = (float) kBlockSize / (float) kSampleRate;
+    const int scale = timeoutScale();
+
+    for (const int pass : { 0, 1 })
+    {
+        for (const Config& config : configs)
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (kSampleRate, kBlockSize);
+            engine->setOutputFormat (config.format);
+
+            if (config.hrtf)
+            {
+                engine->setHRTFProfile (5);
+                REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+            }
+
+            const RenderBlockContext ctx = contextFor (config.format, config.flags, kSampleRate);
+            const int numOutCh = channelsFor (config.format);
+
+            auto trajectory = std::make_unique<TrajectoryEngine>();
+            MovingScene scene;
+            scene.externalPositions = true;
+            OutputBank out;
+            ArmedRun run (*engine, scene, out, kBlockSize);
+            bool positionsFinite = true;
+
+            for (int block = 0; block < kBlockCount; ++block)
+            {
+                for (int t = 0; t < MAX_SOURCES; ++t)
+                {
+                    TrajectoryEngine::ObjectInput in;
+                    in.shape = pass == 0 ? 1 + t : 13;
+                    in.speed = kSpeed;
+                    in.reverse = (t % 2) == 1;
+                    in.originAz = wrapDegrees (-165.0f + 30.0f * (float) t);
+                    in.originEl = 30.0f * std::sin ((float) t);
+                    in.originDist = 0.4f + 0.05f * (float) (t % 6);
+                    trajectory->tick (t, in, dt);   // disarmed
+
+                    ObjectState& object = scene.objects[(size_t) t];
+                    object.azimuthDeg = wrapAzimuth (trajectory->getFinalAz (t));
+                    object.elevationDeg = trajectory->getFinalEl (t);
+                    object.distance = trajectory->getFinalDist (t);
+
+                    positionsFinite = positionsFinite && std::isfinite (object.azimuthDeg)
+                                      && std::isfinite (object.elevationDeg) && std::isfinite (object.distance);
+                }
+
+                run.block (ctx, numOutCh);
+            }
+
+            INFO (config.name);
+            CAPTURE (pass);
+            checkNothingAllocatedOrLocked (run.counts(), config.hrtf);
+            CHECK (positionsFinite);
+            CHECK (run.allFinite);
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// The audit item "Binaural -> non-binaural switch during an HRTF renderer crossfade is untested":
+// a Binaural -> 7.1.4 switch lands while the SADIE -> KEMAR renderer crossfade is running, with the
+// SC-20 switch fade and all three flags. The fade-out block ends at exactly 0 on the binaural
+// channels, the fade-in block starts at exactly 0 on every 7.1.4 channel, nothing allocates, and no
+// renderer is left stranded: a later profile request still becomes active.
+// ----------------------------------------------------------------------------
+TEST_CASE ("Realtime: a Binaural to 7.1.4 switch during an HRTF renderer crossfade fades cleanly and strands nothing",
+           "[rt][rt-alloc][rt-lock][switch][audit]")
+{
+    requireRealtimeTrapCanary();
+
+    const int scale = timeoutScale();
+    const int numOutCh = channelsFor (OutputFormat::Surround7_1_4);
+
+    auto engine = std::make_unique<RenderEngine>();
+    engine->prepare (kSampleRate, kBlockSize);
+    engine->setOutputFormat (OutputFormat::Binaural);
+
+    RenderBlockContext ctx = makeEngineContext();
+    ctx.engineSelectsHRTF = true;
+    ctx.engineFadesFormatSwitch = true;
+
+    MovingScene scene;
+    OutputBank out;
+    ArmedRun run (*engine, scene, out, kBlockSize);
+
+    run.blocks (ctx, numOutCh, 20);
+
+    engine->setHRTFProfile (1);
+    REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+    run.blocks (ctx, numOutCh, 40);   // SADIE active and settled
+    REQUIRE (engine->getHRTFProfileStatus().activeProfile == 1);
+
+    engine->setHRTFProfile (5);
+    REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+    run.blocks (ctx, numOutCh, 2);    // the first block claims KEMAR and starts the 4096-sample crossfade
+    REQUIRE (engine->isRendererCrossfadeActive());
+
+    engine->setOutputFormat (OutputFormat::Surround7_1_4);   // the switch lands mid-crossfade
+
+    run.block (ctx, numOutCh);   // the fade-out block: still the binaural layout
+    CHECK (engine->getBlockLayout().format == OutputFormat::Binaural);
+    CHECK (out.channels[0][(size_t) kBlockSize - 1] == 0.0f);
+    CHECK (out.channels[1][(size_t) kBlockSize - 1] == 0.0f);
+
+    run.block (ctx, numOutCh);   // the fade-in block: the new layout, starting from exact zero
+    CHECK (engine->getBlockLayout().format == OutputFormat::Surround7_1_4);
+    CHECK (channelsAllEqualAt (out, 0, numOutCh - 1, 0, 0.0f));
+
+    run.blocks (ctx, numOutCh, 40);
+
+    engine->setOutputFormat (OutputFormat::Binaural);
+    run.blocks (ctx, numOutCh, 40);
+
+    engine->setHRTFProfile (3);
+    REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+
+    bool becameThree = false;
+
+    for (int i = 0; i < 200 && ! becameThree; ++i)
+    {
+        run.block (ctx, numOutCh);
+        becameThree = engine->getHRTFProfileStatus().activeProfile == 3;   // disarmed
+    }
+
+    CHECK (becameThree);
+    checkNothingAllocatedOrLocked (run.counts(), true);
+    CHECK (run.allFinite);
+}
+
+// ----------------------------------------------------------------------------
+// Ordering (RTSF-05 probe): several requests between two blocks. The last one wins and an
+// intermediate one never becomes the rendered state.
+// ----------------------------------------------------------------------------
+TEST_CASE ("Realtime: several requests between two blocks: the last one wins with no allocation",
+           "[rt][rt-alloc][rt-lock][switch][ordering]")
+{
+    requireRealtimeTrapCanary();
+
+    const int scale = timeoutScale();
+
+    SECTION ("three output-format requests give one render, of the last")
+    {
+        constexpr int kQuadChannels = 4;
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, kBlockSize);
+        engine->setOutputFormat (OutputFormat::Binaural);
+
+        const RenderBlockContext ctx = makeEngineContext();   // engineDerivesDispatch is set
+
+        MovingScene scene;
+        OutputBank out;
+        ArmedRun run (*engine, scene, out, kBlockSize);
+
+        run.blocks (ctx, kQuadChannels, 10);
+        CHECK (engine->getBlockLayout().format == OutputFormat::Binaural);
+
+        engine->setOutputFormat (OutputFormat::Surround7_1_4);
+        engine->setOutputFormat (OutputFormat::Ambisonics6OA);
+        engine->setOutputFormat (OutputFormat::Quad);
+
+        run.block (ctx, kQuadChannels);
+        CHECK (engine->getBlockLayout().format == OutputFormat::Quad);
+
+        checkNothingAllocatedOrLocked (run.counts(), false);
+        CHECK (run.allFinite);
+    }
+
+    SECTION ("two profile requests make the second active and never the first")
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, kBlockSize);
+        engine->setOutputFormat (OutputFormat::Binaural);
+
+        RenderBlockContext ctx = makeEngineContext();
+        ctx.engineSelectsHRTF = true;
+
+        MovingScene scene;
+        OutputBank out;
+        ArmedRun run (*engine, scene, out, kBlockSize);
+
+        engine->setHRTFProfile (3);
+        engine->setHRTFProfile (5);
+        REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+
+        bool becameFive = false;
+        bool sawThree = false;
+
+        for (int i = 0; i < 200 && ! becameFive; ++i)
+        {
+            run.block (ctx, 2);
+            const int active = engine->getHRTFProfileStatus().activeProfile;   // disarmed
+            sawThree = sawThree || active == 3;
+            becameFive = active == 5;
+        }
+
+        CHECK (becameFive);
+        CHECK_FALSE (sawThree);
+        checkNothingAllocatedOrLocked (run.counts(), true);
+        CHECK (run.allFinite);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// D-09: OpenSpatialDelay's route stays working. It loads into the renderer the audio thread is not
+// using, on its own thread, and swaps; the render thread then runs the renderer crossfade.
+// ----------------------------------------------------------------------------
+TEST_CASE ("Realtime: the legacy load-and-swap route renders its crossfade without allocating",
+           "[rt][rt-alloc][rt-lock][legacy]")
+{
+    requireRealtimeTrapCanary();
+
+    auto engine = std::make_unique<RenderEngine>();
+    engine->prepare (kSampleRate, kBlockSize);
+    engine->setOutputFormat (OutputFormat::Binaural);
+
+    // The consumer supplies the dispatch itself and asks for the HRTF path; the engine computes gains.
+    RenderBlockContext ctx = contextFor (OutputFormat::Binaural, kComputes, kSampleRate);
+    ctx.useHRTF = true;
+
+    MovingScene scene;
+    OutputBank out;
+    ArmedRun run (*engine, scene, out, kBlockSize);
+
+    run.blocks (ctx, 2, 20);
+
+    // Disarmed, on this (the message) thread: the consumer's own load and swap.
+    BinauralRenderer& renderer = engine->getBinauralRenderer (engine->getPrepareRendererIndex());
+    REQUIRE (renderer.hrtfDatabase.loadFromFile (juce::File (SPATIALCORE_HRTF_DIR "/mit_kemar_large_pinna.sofa"),
+                                                 (float) kSampleRate));
+    renderer.setProfile (5);
+    engine->swapActiveRenderer();
+
+    run.block (ctx, 2);        // the first block claims the swap and starts the renderer crossfade
+    CHECK (engine->isRendererCrossfadeActive());
+    run.blocks (ctx, 2, 59);   // the rest of the 4096-sample (16-block) crossfade, then KEMAR alone
+    CHECK_FALSE (engine->isRendererCrossfadeActive());
+
+    checkNothingAllocatedOrLocked (run.counts(), true);
+    CHECK (run.allFinite);
+}
+
+// ----------------------------------------------------------------------------
+// [rt][rule]: the lock and blocking-call inventory outside UI code is frozen. The pthread trap sees
+// juce::CriticalSection and std::mutex (the canary proves it) but not juce::SpinLock, so a new lock
+// that reaches the audio path through a spin lock, or one the trap's cases never run, would pass
+// unseen. This scan lists every lock primitive and blocking call in non-UI source and headers; an
+// addition, or a file listed here that no longer needs its entry, fails until reviewed.
+// ----------------------------------------------------------------------------
+namespace
+{
+    // Test-local copy of stripComments from tests/UI/FontProvenanceTests.cpp (that one lives in the UI
+    // target's anonymous namespace; this target does not link it). Keeps code and string literals,
+    // drops // and /* */ comments, keeps newlines so line numbers still match.
+    std::string stripComments (const std::string& src)
+    {
+        std::string out;
+        out.reserve (src.size());
+        enum class State { code, lineComment, blockComment, string, character } state = State::code;
+
+        for (size_t i = 0; i < src.size(); ++i)
+        {
+            const char c = src[i];
+            const char next = i + 1 < src.size() ? src[i + 1] : '\0';
+
+            switch (state)
+            {
+                case State::code:
+                    if (c == '/' && next == '/')       { state = State::lineComment; ++i; }
+                    else if (c == '/' && next == '*')  { state = State::blockComment; ++i; }
+                    else
+                    {
+                        if (c == '"')  state = State::string;
+                        if (c == '\'') state = State::character;
+                        out += c;
+                    }
+                    break;
+                case State::lineComment:
+                    if (c == '\n') { state = State::code; out += c; }
+                    break;
+                case State::blockComment:
+                    if (c == '*' && next == '/') { state = State::code; ++i; }
+                    else if (c == '\n')          { out += c; }
+                    break;
+                case State::string:
+                case State::character:
+                    out += c;
+                    if (c == '\\' && next != '\0') { out += next; ++i; }
+                    else if ((state == State::string && c == '"') || (state == State::character && c == '\''))
+                        state = State::code;
+                    break;
+            }
+        }
+
+        return out;
+    }
+
+    const std::regex& lockRule()
+    {
+        static const std::regex rule (
+            "SpinLock|CriticalSection|ScopedLock|ScopedTryLock|ScopedReadLock|ScopedWriteLock"
+            "|ReadWriteLock|std::mutex|recursive_mutex|shared_mutex|timed_mutex|lock_guard"
+            "|unique_lock|scoped_lock|condition_variable|pthread_mutex_|pthread_rwlock_"
+            "|pthread_cond_|os_unfair_lock|dispatch_semaphore|WaitableEvent"
+            "|\\bwait *\\(|\\bnotify *\\(|sleep_for|Thread::sleep|startThread|stopThread");
+        return rule;
+    }
+
+    struct LockHit
+    {
+        int line;
+        std::string text;
+    };
+
+    // Every non-UI .h and .cpp under src/ and include/, comment-stripped, scanned line by line.
+    std::map<std::string, std::vector<LockHit>> scanLockPrimitives()
+    {
+        std::map<std::string, std::vector<LockHit>> hits;
+        // SPATIALCORE_SOURCE_DIR is "<repo>/tests/..", which JUCE does not collapse at the end of a
+        // path; a child path is collapsed, so the repo root is the parent of the "src" child.
+        const juce::File root = juce::File (SPATIALCORE_SOURCE_DIR).getChildFile ("src").getParentDirectory();
+
+        for (const char* sub : { "src", "include" })
+        {
+            for (const juce::File& file : root.getChildFile (sub).findChildFiles (juce::File::findFiles, true, "*.cpp;*.h"))
+            {
+                const std::string relative = file.getRelativePathFrom (root).replaceCharacter ('\\', '/').toStdString();
+
+                if (relative.find ("/UI/") != std::string::npos || relative.rfind ("src/UI/", 0) == 0)
+                    continue;
+
+                std::istringstream lines (stripComments (file.loadFileAsString().toStdString()));
+                std::string text;
+
+                for (int line = 1; std::getline (lines, text); ++line)
+                    if (std::regex_search (text, lockRule()))
+                        hits[relative].push_back ({ line, text });
+            }
+        }
+
+        return hits;
+    }
+
+    // The reviewed inventory: repo-relative path -> exact number of matching lines. Every entry names
+    // the function and the thread it runs on. None is reachable from RenderEngine::renderBlock.
+    const std::map<std::string, int>& reviewedLockInventory()
+    {
+        static const std::map<std::string, int> inventory = {
+            // SharedFFTCache::lock, the process-global FFT cache's juce::SpinLock (the pthread trap
+            // cannot see a SpinLock, which is why this rule exists). Taken only by getOrCreate,
+            // below. PREPARE-TIME: PartitionedConvolver::prepare and HRTFDatabase::convertToMinPhase
+            // (message thread, or the loader thread during a profile load). Never from renderBlock.
+            { "include/SpatialCore/Binaural/SharedFFTCache.h", 1 },
+            // SharedFFTCache::getOrCreate: the ScopedLockType on that SpinLock. PREPARE-TIME, as above.
+            { "src/Binaural/PartitionedConvolver.cpp", 1 },
+            // RenderEngine::sharedFolderLock_ (one juce::CriticalSection): guards the test-only shared
+            // HRTF folder override. MESSAGE THREAD (setSharedHRTFFolderForTesting) and LOADER THREAD
+            // (getSharedFolderForLoader). Never the render thread.
+            { "include/SpatialCore/Engine/RenderEngine.h", 1 },
+            // The 13 lines of RenderEngine.cpp, by function and thread:
+            //   :89   HRTFProfileLoader::run, wait (200): idle wait.                     LOADER THREAD
+            //   :238  HRTFProfileLoader, wait (pollMs): backoff while both renderers
+            //         are busy (returns early on notify).                                LOADER THREAD
+            //   :347 :348  ~RenderEngine, notify () and stopThread (15000).              MESSAGE THREAD
+            //   :357  getSharedFolderForLoader, ScopedLock on sharedFolderLock_.         LOADER THREAD
+            //   :363  setSharedHRTFFolderForTesting, ScopedLock on sharedFolderLock_.    MESSAGE THREAD
+            //   :394 :396  setHRTFProfile, startThread and notify.                       MESSAGE THREAD
+            //   :441  waitForHRTFProfileIdle, Thread::sleep (2) poll.                    MESSAGE THREAD
+            //   :499 :500  prepare, notify () and stopThread (15000) before resizing.    MESSAGE THREAD
+            //   :612 :613  prepare, startThread and notify after preparing.              MESSAGE THREAD
+            { "src/Engine/RenderEngine.cpp", 13 },
+        };
+
+        return inventory;
+    }
+}
+
+TEST_CASE ("Realtime: the comment stripper keeps code and drops prose", "[rt][rule]")
+{
+    CHECK (stripComments ("a(); // CriticalSection\nb();") == "a(); \nb();");
+    CHECK (stripComments ("a(); /* juce::SpinLock */ b();") == "a();  b();");
+    CHECK (stripComments ("x = \"http://SpinLock\";") == "x = \"http://SpinLock\";");   // // inside a string stays
+    CHECK (stripComments ("c = '\"'; // tail") == "c = '\"'; ");
+    CHECK (stripComments ("s = \"a\\\"//b\";") == "s = \"a\\\"//b\";");           // an escaped quote does not end the string
+}
+
+TEST_CASE ("Realtime: lock and blocking primitives outside UI code match the reviewed allow-list",
+           "[rt][rule]")
+{
+    // Positive controls: the rule is live, so an empty scan would mean something.
+    CHECK (std::regex_search ("const juce::ScopedLock l (x);", lockRule()));
+    CHECK (std::regex_search ("std::lock_guard<std::mutex> g (m);", lockRule()));
+    CHECK (std::regex_search ("juce::SpinLock::ScopedLockType l (lock);", lockRule()));
+    CHECK (std::regex_search ("cv.wait (lock);", lockRule()));
+    CHECK (std::regex_search ("juce::Thread::sleep (2);", lockRule()));
+    // Negative control: a name that merely begins with "wait" is not a blocking call.
+    CHECK_FALSE (std::regex_search ("engine.waitForHRTFProfileIdle (100);", lockRule()));
+
+    const auto hits = scanLockPrimitives();
+    const auto& inventory = reviewedLockInventory();
+
+    for (const auto& [file, found] : hits)
+    {
+        const auto allowed = inventory.find (file);
+
+        if (allowed == inventory.end() || (int) found.size() > allowed->second)
+        {
+            for (const LockHit& hit : found)
+                FAIL_CHECK ("lock or blocking primitive not in the reviewed allow-list: " << file << ":" << hit.line
+                            << ": " << hit.text
+                            << "\n  Review which thread runs it (an audio-thread lock is a Phase 5 finding), then add the file"
+                               " to reviewedLockInventory() with the function and thread.");
+        }
+    }
+
+    for (const auto& [file, count] : inventory)
+    {
+        const auto found = hits.find (file);
+        const int actual = found == hits.end() ? 0 : (int) found->second.size();
+
+        if (actual < count)
+            FAIL_CHECK ("stale allow-list entry: " << file << " lists " << count << " lines but the scan finds " << actual
+                        << ". Lower the entry (or remove it) in reviewedLockInventory().");
+    }
 }
