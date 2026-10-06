@@ -35,6 +35,7 @@ add_executable(SpatialCoreTests
     Engine/ProfileSwitchTests.cpp
     Engine/ControlRouteTests.cpp
     Engine/RealtimeSafetyTests.cpp
+    Engine/MultiInstanceTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
