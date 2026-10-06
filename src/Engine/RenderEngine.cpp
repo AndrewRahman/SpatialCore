@@ -474,7 +474,10 @@ void RenderEngine::claimReadyRenderer (bool hrtfPathThisBlock)
 
     if (! hrtfPathThisBlock)
     {
-        // No HRTF crossfade on this path: switch at once and give the old renderer back.
+        // No HRTF crossfade on this path: switch at once and give the old renderer back. The
+        // in-use mark is cleared BEFORE the release store, so the loader never sees a free
+        // renderer that is still marked (RTSF-03, T-05-13).
+        binauralRenderers[static_cast<size_t> (oldIdx)].hrtfDatabase.setInUseByAudioThread (false);
         rendererFree_[static_cast<size_t> (oldIdx)].store (true, std::memory_order_release);
         prevActiveRendererIdx_ = idx;
     }
@@ -500,6 +503,12 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
         hrtfLoader_->stopThread (15000);
         hrtfLoader_.reset();
     }
+
+    // RTSF-03: no block has rendered since this prepare, so no renderer is in use. The worker is
+    // stopped and the audio thread is not running, so clearing the marks here is single-threaded;
+    // prepare()'s own setProfile below then never counts.
+    for (auto& renderer : binauralRenderers)
+        renderer.hrtfDatabase.setInUseByAudioThread (false);
 
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (maxBlockSize), 1 };
 
@@ -858,6 +867,21 @@ void RenderEngine::renderBlock (const RenderSources& sources,
         applySwitchFade (ctx, layout, outChannels, numOutCh, src.numSamples, fadeInBlock);
 
     snapInterpolation_ = false;
+
+    // RTSF-03 (D-09): mark the renderers this block used (the active one, and the source of a
+    // running crossfade) and clear the other, so a legacy load into a renderer the audio thread
+    // is using is counted by that database. Runs after any fade bookkeeping, so a renderer
+    // handed back free this block (endRendererFade, claimReadyRenderer) is already unmarked.
+    // Two relaxed stores: no allocation, lock or logging (DR-1).
+    const auto markRendererUse = [this]
+    {
+        const int active = activeRendererIndex.load (std::memory_order_acquire);
+        for (int i = 0; i < 2; ++i)
+            binauralRenderers[static_cast<size_t> (i)].hrtfDatabase.setInUseByAudioThread (
+                i == active || (rendererXfading_ && i == rendererXfadeFromIdx_));
+    };
+    markRendererUse();
+
     renderedSincePrepare_ = true;
 }
 
@@ -1085,7 +1109,9 @@ void RenderEngine::endRendererFade()
     rendererXfadeSamplesDone_ = 0;
     rendererXfadeLengthSamples_ = 0;
     rendererXfadeActive_.store (false, std::memory_order_release);
-    // The renderer faded out is neither active nor fading any more: the worker may use it.
+    // The renderer faded out is neither active nor fading any more: the worker may use it. Clear
+    // its in-use mark first, so the loader never sees a free renderer still marked (RTSF-03).
+    binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].hrtfDatabase.setInUseByAudioThread (false);
     rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
 }
 

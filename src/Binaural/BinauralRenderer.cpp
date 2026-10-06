@@ -59,6 +59,10 @@ void BinauralRenderer::shrinkScratchForTesting (size_t newSize)
 
 void BinauralRenderer::setProfile (int profileIndex)
 {
+    // RTSF-03 (D-09): a setProfile on a renderer the audio thread is using is counted by its
+    // database, like a load. It still runs.
+    hrtfDatabase.noteMutationIfInUse();
+
     activeProfile = profileIndex;
 
     if (profileIndex == 0 || ! hrtfDatabase.isLoaded())

@@ -27,17 +27,19 @@ HRTFDatabase::HRTFDatabase() {}
 
 HRTFDatabase::~HRTFDatabase()
 {
-    unload();
+    closeHandle();   // never counts: nothing can be using a database that is being destroyed
 }
 
 bool HRTFDatabase::loadFromMemory (const void* data, int dataSize, float targetSampleRate)
 {
+    noteMutationIfInUse();
     return loadFromBytes (data, dataSize, targetSampleRate);
 }
 
 bool HRTFDatabase::loadFromBinaryData (int profileIndex, float targetSampleRate)
 {
-    unload();
+    noteMutationIfInUse();
+    closeHandle();
 
     int size = 0;
     const char* data = getEmbeddedProfileData (profileIndex, size);
@@ -144,7 +146,8 @@ bool HRTFDatabase::loadFromFile (const juce::File& sofaFile, float targetSampleR
     //
     // Unload first, as loadFromBytes and loadFromBinaryData do: a read failure then leaves the
     // database fully empty, not holding the previous handle behind loaded = false (IN-04).
-    unload();
+    noteMutationIfInUse();
+    closeHandle();
 
     constexpr juce::int64 kMaxInt = std::numeric_limits<int>::max();
     const juce::int64 cap = (maxBytes > 0 && maxBytes < kMaxInt) ? maxBytes : kMaxInt;
@@ -192,7 +195,7 @@ bool HRTFDatabase::declaredShapeWithinBounds (double declaredRate, unsigned R, u
 
 bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSampleRate)
 {
-    unload();
+    closeHandle();   // the public caller already counted this mutation
 
     int filterLength = 0;
     int err = 0;
@@ -253,7 +256,7 @@ bool HRTFDatabase::loadFromBytes (const void* data, int dataSize, float targetSa
         || easyHandle->hrtf->M < 1 || easyHandle->hrtf->M > static_cast<unsigned> (kMaxPositions))
     {
         DBG ("HRTFDatabase: SOFA data out of bounds (IR length " + juce::String (filterLength) + ")");
-        unload();
+        closeHandle();
         return false;
     }
 
@@ -352,6 +355,7 @@ void HRTFDatabase::getAlignedHRIR (float azimuthRad, float elevationRad,
 
 void HRTFDatabase::unload()
 {
+    noteMutationIfInUse();
     closeHandle();
 }
 
@@ -382,10 +386,15 @@ int HRTFDatabase::getMutationWhileInUseCount() const noexcept
     return mutationWhileInUseCount_.load (std::memory_order_relaxed);
 }
 
-// RED stub (05-05 Task 2): nothing counts yet.
 bool HRTFDatabase::noteMutationIfInUse() noexcept
 {
-    return false;
+    // RTSF-03 (D-09): detect, never block. The mutation that called this still runs.
+    if (! inUseByAudioThread_.load (std::memory_order_relaxed))
+        return false;
+
+    mutationWhileInUseCount_.fetch_add (1, std::memory_order_relaxed);
+    jassertfalse;
+    return true;
 }
 
 //==============================================================================
