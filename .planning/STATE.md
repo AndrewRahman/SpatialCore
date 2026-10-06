@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 05
 current_phase_name: Realtime Safety Hardening
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-10-06T00:32:41.113Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-10-06T01:11:52.120Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 05 execution started
-state_head: 8b56cdc07ef3419c5d6b0b253351fed884ce99f9
+state_head: fb8f5ba3e10c0b2f94b019fad4575ae0ec5bd900
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 42
-  completed_plans: 37
+  completed_plans: 38
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 05 (Realtime Safety Hardening) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 05 execution started
 
@@ -115,6 +115,7 @@ Progress: [███████░░░] 67%
 | Phase 05 P01 | 13 min | 2 tasks | 5 files |
 | Phase 05 P02 | 30 min | 2 tasks | 7 files |
 | Phase 05 P03 | 22 min | 3 tasks | 2 files |
+| Phase 05 P04 | 36 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 05]: Allocation and lock checks for blocks that look HRIRs up run in Release only: a Debug tree builds libmysofa with -DVDEBUG and it printf()s per interpolation
 - [Phase 05]: 05-03: AmbisonicsAlgorithm max-rE weights are static constexpr floats (0x3f6c835e, 0x3f3504f3, 0x3ec3ef15), removing a first-use __cxa_guard_acquire lock on the render thread; bit-identical (memcmp grid test and cmp of capture, Debug and Release) — The Phase 5 sweep found it; D-10 requires bit-identical sound
 - [Phase 05]: 05-03: allocation and lock checks for blocks that look an HRIR up run in Release only (libmysofa -DVDEBUG printf in Debug); [rt][rule] freezes the non-UI lock inventory with a reviewed thread per entry — Debug libmysofa traces are third-party; the Release run is the RTSF-05 proof
+- [Phase 05]: 05-04: TrajectoryEngine finals are lock-free relaxed std::atomic<float> stored once, active_ release/acquire; no lock or seqlock (DR-1)
+- [Phase 05]: 05-04: mixed-tick bound pinned at measured overall maxima (179 deg, 180 deg, 0.51); Circle, Figure8, Helix, Spiral jump by that much on their own, so RESEARCH A4 holds only for the nine smooth shapes
 
 ### Pending Todos
 
@@ -220,7 +223,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-06T00:32:41.047Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-10-06T01:11:52.059Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`

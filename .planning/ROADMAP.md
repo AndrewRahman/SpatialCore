@@ -254,7 +254,7 @@ shipping publicly at v1.0.0.
 from scope. `SharedFFTCache` is already correctly spinlock-guarded at
 `PartitionedConvolver.cpp:16`; what remains unverified is concurrent-instance behaviour.
 **Locked rule in play**: DR-1.
-**Plans**: 3/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
+**Plans**: 4/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -267,7 +267,7 @@ Plans:
 - [x] 05-03-PLAN.md — RTSF-05 matrix: every format, flag set, profile, block size, rate, algorithm, switch and trajectory shape trap-proven allocation- and lock-free; the lock inventory frozen by a source-scan rule (D-02) *(wave 3)*
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 05-04-PLAN.md — The ThreadSanitizer tree (D-01) and RTSF-02: the trajectory race shown, fixed with lock-free atomics, shown clean; the [tsan] subset gate *(wave 4)*
+- [x] 05-04-PLAN.md — The ThreadSanitizer tree (D-01) and RTSF-02: the trajectory race shown, fixed with lock-free atomics, shown clean; the [tsan] subset gate *(wave 4)*
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 05-05-PLAN.md — RTSF-03: setHRTFProfile from a UI timer race-free under TSan; the legacy route kept, documented and watched by two misuse counters (D-09, D-10) *(wave 5)*
@@ -316,7 +316,7 @@ External Dependencies.
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
-| 5. Realtime Safety Hardening | 3/8 | In Progress|  |
+| 5. Realtime Safety Hardening | 4/8 | In Progress|  |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
 ## Coverage
