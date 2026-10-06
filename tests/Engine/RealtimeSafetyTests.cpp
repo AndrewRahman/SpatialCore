@@ -618,3 +618,163 @@ TEST_CASE ("Ambisonics NFC: capture the six formats' raw output to SC_CAPTURE_FI
 
     stream.flush();
 }
+
+// ============================================================================
+// Plan 05-03 (RTSF-05, D-02): the whole audio path. Mid-play switches, then the matrix.
+// ============================================================================
+namespace
+{
+    /** SPATIALCORE_TEST_TIMEOUT_SCALE: an integer of at least 1 (default 1; anything else counts as
+        1). Same rules as timeoutScale() in ProfileSwitchTests.cpp (a local copy: that one is private
+        to its translation unit). It stretches the idle waits for a profile load. */
+    int timeoutScale()
+    {
+        const char* text = std::getenv ("SPATIALCORE_TEST_TIMEOUT_SCALE");
+        if (text == nullptr)
+            return 1;
+
+        char* end = nullptr;
+        const long value = std::strtol (text, &end, 10);
+        if (end == text || *end != '\0' || value < 1 || value > 1000)
+            return 1;
+        return static_cast<int> (value);
+    }
+
+    /** One engine, one scene, one output bank, rendered block by block with the trap armed around
+        each renderBlock call only. Counts accumulate over every block until reset (blocks made on
+        the test thread while disarmed, such as setHRTFProfile, are not counted). */
+    struct ArmedRun
+    {
+        ArmedRun (RenderEngine& e, MovingScene& s, OutputBank& o, int blockSizeIn)
+            : engine (e), scene (s), out (o), blockSize (blockSizeIn)
+        {
+            resetRealtimeCounts();
+        }
+
+        // One block. The inputs are filled and the output cleared while disarmed.
+        void block (const RenderBlockContext& ctx, int numOutCh)
+        {
+            scene.fill (blockIndex++, blockSize);
+            out.clear();
+            const RenderSources sources = scene.sources (blockSize);
+
+            {
+                const ScopedRealtimeTrap trap;
+                engine.renderBlock (sources, ctx, out.ptrs, numOutCh);
+            }
+
+            if (! out.allFinite (numOutCh, blockSize))
+                allFinite = false;
+        }
+
+        void blocks (const RenderBlockContext& ctx, int numOutCh, int count)
+        {
+            for (int i = 0; i < count; ++i)
+                block (ctx, numOutCh);
+        }
+
+        // The accumulated counts, with the first offending stack printed on a non-zero allocation count.
+        RealtimeCounts counts() const
+        {
+            const RealtimeCounts c = realtimeCounts();
+
+            if (c.allocs != 0)
+                printFirstOffender();
+
+            return c;
+        }
+
+        RenderEngine& engine;
+        MovingScene& scene;
+        OutputBank& out;
+        int blockSize;
+        int blockIndex = 0;
+        bool allFinite = true;
+    };
+
+    // Debug trees build libmysofa with -DVDEBUG, which printf()s inside every HRIR lookup (the note on
+    // kHRIRLookupTraces above). A case whose blocks look HRIRs up is allocation- and lock-checked in
+    // Release only; its output, profile and ordering checks run in both builds.
+    constexpr bool kHRIRLookupChecked = ! kHRIRLookupTraces;
+
+    void checkNothingAllocatedOrLocked (const RealtimeCounts& counts, bool lookupsHappened)
+    {
+        CAPTURE (counts.allocs, counts.frees, counts.locks);
+
+        if (lookupsHappened && ! kHRIRLookupChecked)
+            return;
+
+        CHECK (counts.allocs == 0);
+        CHECK (counts.frees == 0);
+        CHECK (counts.locks == 0);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Tracer: one engine takes every kind of mid-play switch with all three engine flags set. This is
+// also the first test that sets engineComputesGains, engineDerivesDispatch and engineSelectsHRTF on
+// one binaural block (the STATE milestone-audit item "no test sets all three engine flags on one
+// binaural block").
+// ----------------------------------------------------------------------------
+TEST_CASE ("Realtime: mid-play profile and format switches allocate and lock nothing on the render thread",
+           "[rt][rt-alloc][rt-lock][switch][tracer]")
+{
+    requireRealtimeTrapCanary();
+
+    const int scale = timeoutScale();
+    constexpr int kOutCh = 49;   // Ambisonics 6OA, the largest format in the sequence
+
+    for (const bool fade : { true, false })
+    {
+        DYNAMIC_SECTION ((fade ? "with the switch fade" : "without the switch fade"))
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (kSampleRate, kBlockSize);
+            engine->setOutputFormat (OutputFormat::Binaural);
+
+            RenderBlockContext ctx = makeEngineContext();   // sampleRate, engineComputesGains, engineDerivesDispatch
+            ctx.engineSelectsHRTF = true;
+            ctx.engineFadesFormatSwitch = fade;
+
+            MovingScene scene;
+            OutputBank out;
+            ArmedRun run (*engine, scene, out, kBlockSize);
+
+            auto switchProfile = [&] (int profile)
+            {
+                engine->setHRTFProfile (profile);                                  // disarmed
+                REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));          // disarmed
+                run.blocks (ctx, kOutCh, 40);
+
+                const HRTFProfileStatus status = engine->getHRTFProfileStatus();   // disarmed
+                CAPTURE (profile, status.requestedProfile, status.activeProfile);
+                CHECK (status.activeProfile == profile);
+                CHECK (run.allFinite);
+            };
+
+            auto switchFormat = [&] (OutputFormat format)
+            {
+                engine->setOutputFormat (format);                                  // disarmed
+                run.blocks (ctx, kOutCh, 40);
+                CAPTURE (static_cast<int> (format));
+                CHECK (run.allFinite);
+            };
+
+            run.blocks (ctx, kOutCh, 20);   // Simple binaural from the first block
+            CHECK (run.allFinite);
+
+            switchProfile (1);   // the first claim starts the Simple -> SADIE blend (4096 samples, 16 blocks)
+            switchProfile (0);   // SADIE -> Simple
+            switchProfile (3);
+            switchProfile (5);
+
+            switchFormat (OutputFormat::Surround7_1_4);
+            switchFormat (OutputFormat::Ambisonics6OA);
+            switchFormat (OutputFormat::Stereo);
+            switchFormat (OutputFormat::Binaural);
+
+            checkNothingAllocatedOrLocked (run.counts(), true);
+            CHECK (run.allFinite);
+        }
+    }
+}
