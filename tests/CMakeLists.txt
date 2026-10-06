@@ -86,6 +86,7 @@ add_executable(SpatialCoreUITests
     UI/MapRouteTests.cpp
     UI/SpatialMapComponentTests.cpp
     UI/FontProvenanceTests.cpp
+    UI/MultiMapTests.cpp
 )
 
 target_link_libraries(SpatialCoreUITests
