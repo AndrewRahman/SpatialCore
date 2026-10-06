@@ -1105,13 +1105,17 @@ void RenderEngine::beginRendererFadeIfSwapped (int activeIdx, int numSamples)
 
 void RenderEngine::endRendererFade()
 {
+    // The renderer faded out is neither active nor fading any more. Clear its in-use mark FIRST,
+    // before anything another thread can observe (the crossfade flag a legacy consumer waits on,
+    // and the free flag the loader polls): a thread that sees the fade over, or the renderer
+    // free, then never sees it still marked (RTSF-03, T-05-13).
+    binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].hrtfDatabase.setInUseByAudioThread (false);
+
     rendererXfading_ = false;
     rendererXfadeSamplesDone_ = 0;
     rendererXfadeLengthSamples_ = 0;
     rendererXfadeActive_.store (false, std::memory_order_release);
-    // The renderer faded out is neither active nor fading any more: the worker may use it. Clear
-    // its in-use mark first, so the loader never sees a free renderer still marked (RTSF-03).
-    binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].hrtfDatabase.setInUseByAudioThread (false);
+    // The worker may use the faded-out renderer now.
     rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
 }
 
