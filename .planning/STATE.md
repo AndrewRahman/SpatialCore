@@ -217,13 +217,13 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Open — Phase 3 or 5 | Phase 02 (02-04) |
+| Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Resolved — Phase 5 (05-06): documented as a deliberate process-lifetime allocation, D-08 | Phase 02 (02-04) |
 | Binaural | HUTUBS PP2 golden checksum fails in Debug only | Resolved — Phase 3 (03-02) | Phase 02 (02-10) |
 | Tests | Other tight test-local tolerances may fail on another compiler/build type (none fails today) | Open | Phase 02 (02-10) |
 | CI | ctest step runs zero tests; no arm64/FMA Release leg | Open — Phase 6 | Phase 02 (02-10) |
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Resolved — Phase 4 (04-03) | Phase 02 (02-07) |
-| Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Open — Phase 5 or 6 | v1.0.0 audit |
+| Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Resolved — Phase 5 (05-03): [rt][switch][tracer], [rt][switch][audit] | v1.0.0 audit |
 | Planning | 01-VALIDATION.md and 02-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`, `2`) | Open | v1.0.0 audit |
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
