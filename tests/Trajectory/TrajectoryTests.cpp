@@ -2,8 +2,10 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
+#include <thread>
 #include <vector>
 
 using namespace spatialcore;
@@ -526,4 +528,82 @@ TEST_CASE ("Trajectory tick: Random is seeded, moves and stays in range, forward
         else
             CHECK (engine.getState (0).randomTime > 0.0f);
     }
+}
+
+// ============================================================================
+// RTSF-02 (SpatialCore#18): the final positions are written by the timer thread
+// and read from other threads. [tsan] marks the thread-interaction subset the
+// build-tsan gate runs (D-01).
+// ============================================================================
+
+TEST_CASE ("TrajectoryEngine: a reader thread sees only finished, in-range positions while the timer thread ticks (RTSF-02)",
+           "[trajectory][threads][tsan]")
+{
+    TrajectoryEngine engine;
+    engine.rng_.setSeed (1234);
+
+    constexpr int kRounds = 20000;
+
+    std::atomic<bool> readerStarted { false };
+    std::atomic<bool> tickerDone { false };
+    int violations = 0;
+    long passesDuringTicking = 0;
+
+    // Reader thread: every object, every getter, until the ticker is done.
+    std::thread reader ([&]
+    {
+        readerStarted.store (true);
+        while (! tickerDone.load())
+        {
+            for (int i = 0; i < TrajectoryEngine::kMaxObjects; ++i)
+            {
+                (void) engine.isActive (i);
+                const float az   = engine.getFinalAz (i);
+                const float el   = engine.getFinalEl (i);
+                const float dist = engine.getFinalDist (i);
+
+                if (! (az >= -180.0f && az <= 180.0f)
+                    || ! (el >= -90.0f && el <= 90.0f)
+                    || ! (dist >= 0.0f && dist <= 1.0f))
+                    ++violations;
+            }
+            ++passesDuringTicking;
+        }
+    });
+
+    // Timer thread (the only writer): all 12 objects through all 13 shapes at speed 4.
+    std::thread ticker ([&]
+    {
+        while (! readerStarted.load())
+            std::this_thread::yield();
+
+        for (int round = 0; round < kRounds; ++round)
+        {
+            for (int t = 0; t < TrajectoryEngine::kMaxObjects; ++t)
+            {
+                TrajectoryEngine::ObjectInput input;
+                input.shape = 1 + (t + round / 500) % 13;
+                input.speed = 4.0f;
+                input.reverse = (t % 2) == 1;
+                // Random's raw sum passes 180 from origin 170, so only the wrap brings it back.
+                input.originAz = (input.shape == TrajShape::Random) ? 170.0f
+                                                                    : 20.0f * (float) t - 110.0f;
+                input.originEl = 5.0f;
+                input.originDist = 0.5f;
+                engine.tick (t, input, 1.0f / 60.0f);
+            }
+
+            if (round % 1000 == 999)
+                engine.reset (round % TrajectoryEngine::kMaxObjects, 30.0f, 10.0f, 0.4f);
+        }
+
+        tickerDone.store (true);
+    });
+
+    ticker.join();
+    reader.join();
+
+    CAPTURE (violations, passesDuringTicking);
+    CHECK (violations == 0);
+    CHECK (passesDuringTicking >= 1000);
 }
