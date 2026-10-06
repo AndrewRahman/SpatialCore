@@ -778,3 +778,279 @@ TEST_CASE ("Realtime: mid-play profile and format switches allocate and lock not
         }
     }
 }
+
+// ----------------------------------------------------------------------------
+// The matrix (D-02): every format x every flag set, every profile x both routes, block sizes x
+// sample rates, every algorithm index. Each cold-start dimension is one TEST_CASE per value, so
+// ctest runs it in a process of its own and process-global first use is not hidden (RESEARCH
+// Pitfall 3).
+// ----------------------------------------------------------------------------
+namespace
+{
+    constexpr unsigned kComputes = 1;   // engineComputesGains
+    constexpr unsigned kDerives  = 2;   // engineDerivesDispatch
+    constexpr unsigned kSelects  = 4;   // engineSelectsHRTF
+
+    // The block context a consumer would hand in for `fmt` under the flag bits. A flag that is off
+    // means the consumer supplies that part itself, so the part is filled here the way a consumer
+    // would: the dispatch fields mirror RenderEngine::deriveDispatchFromLayout, the gains are
+    // plausible constants (the trap cares about allocation, not about the sound).
+    RenderBlockContext contextFor (OutputFormat fmt, unsigned flags, double sampleRate)
+    {
+        RenderBlockContext ctx;
+        ctx.sampleRate = sampleRate;
+        ctx.engineComputesGains = (flags & kComputes) != 0;
+        ctx.engineDerivesDispatch = (flags & kDerives) != 0;
+        ctx.engineSelectsHRTF = (flags & kSelects) != 0;
+
+        const OutputFormatInfo& info = OutputFormatRegistry::getInfo (fmt);
+
+        if (! ctx.engineDerivesDispatch)
+        {
+            ctx.activeFormat = fmt;
+            ctx.ambiOrder = info.ambiOrder;
+            ctx.isStereoVariant = info.isStereoVariant;
+            ctx.isBinaural = (fmt == OutputFormat::Binaural);
+            ctx.isAmbiOutput = info.isAmbisonicsOutput;
+        }
+
+        if (! ctx.engineComputesGains)
+        {
+            const int channels = std::min (info.requiredChannels, MAX_SPEAKERS);
+
+            for (int t = 0; t < MAX_SOURCES; ++t)
+            {
+                ctx.objGains[t] = BinauralGains { 0.5f, 0.5f, 0.0f, 0.0f };
+                ctx.objGainL[t] = 0.5f;
+                ctx.objGainR[t] = 0.5f;
+
+                for (int ch = 0; ch < channels; ++ch)
+                    ctx.objChannelGains[t][ch] = 0.25f;
+            }
+
+            ctx.stereoMode = 0;
+        }
+
+        return ctx;
+    }
+
+    // One format, all eight flag sets, each a fresh heap engine armed from its first block.
+    void runFormatMatrix (OutputFormat fmt)
+    {
+        requireRealtimeTrapCanary();
+
+        const int numOutCh = channelsFor (fmt);
+
+        for (unsigned flags = 0; flags < 8; ++flags)
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (kSampleRate, kBlockSize);
+            engine->setOutputFormat (fmt);
+
+            const RenderBlockContext ctx = contextFor (fmt, flags, kSampleRate);
+
+            MovingScene scene;
+            OutputBank out;
+            bool finite = false;
+            const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, numOutCh,
+                                                       kBlockCount, kBlockSize, finite);
+
+            CAPTURE (static_cast<int> (fmt), flags, numOutCh);
+            checkNothingAllocatedOrLocked (counts, false);
+            CHECK (finite);
+        }
+    }
+
+    // One profile on both routes. "engine-selected": all three flags. "consumer-selected":
+    // OpenSpatialDelay's route, engineSelectsHRTF off and useHRTF on for the SOFA profiles.
+    void runProfileMatrix (int profile)
+    {
+        requireRealtimeTrapCanary();
+
+        const int scale = timeoutScale();
+        const bool lookups = profile != 0;   // a SOFA profile looks an HRIR up for every object, every block
+
+        struct Route { const char* name; unsigned flags; bool useHRTF; };
+        const Route routes[] = {
+            { "engine-selected",   kComputes | kDerives | kSelects, false },
+            { "consumer-selected", kComputes | kDerives,            profile != 0 } };
+
+        for (const Route& route : routes)
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (kSampleRate, kBlockSize);
+            engine->setOutputFormat (OutputFormat::Binaural);
+            engine->setHRTFProfile (profile);                                  // disarmed
+            REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));          // disarmed
+
+            RenderBlockContext ctx = contextFor (OutputFormat::Binaural, route.flags, kSampleRate);
+            ctx.useHRTF = route.useHRTF;
+
+            MovingScene scene;
+            OutputBank out;
+            bool finite = false;
+            const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, 2,
+                                                       kBlockCount, kBlockSize, finite);
+
+            INFO (route.name);
+            CAPTURE (profile);
+            checkNothingAllocatedOrLocked (counts, lookups);
+            CHECK (finite);
+            CHECK (engine->getHRTFProfileStatus().activeProfile == profile);
+        }
+
+        // D-10: libmysofa's per-block HRIR lookup at the other two rates a host runs (the 48 kHz
+        // run above is the cold-start one). Engine-selected route, same 120 moving blocks.
+        for (const double rate : { 44100.0, 96000.0 })
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (rate, kBlockSize);
+            engine->setOutputFormat (OutputFormat::Binaural);
+            engine->setHRTFProfile (profile);
+            REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+
+            const RenderBlockContext ctx = contextFor (OutputFormat::Binaural, kComputes | kDerives | kSelects, rate);
+
+            MovingScene scene (rate);
+            OutputBank out;
+            bool finite = false;
+            const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, 2,
+                                                       kBlockCount, kBlockSize, finite);
+
+            CAPTURE (profile, rate);
+            checkNothingAllocatedOrLocked (counts, lookups);
+            CHECK (finite);
+            CHECK (engine->getHRTFProfileStatus().activeProfile == profile);
+        }
+    }
+}
+
+#define SC_RT_FORMAT_CASE(Name) \
+    TEST_CASE ("Realtime: " #Name " renders every flag combination without allocating or locking", \
+               "[rt][rt-alloc][rt-lock][matrix]") \
+    { \
+        runFormatMatrix (OutputFormat::Name); \
+    }
+
+// A new OutputFormat fails the build here until it gets its own case below.
+static_assert (NUM_OUTPUT_FORMATS == 23, "a new OutputFormat needs an SC_RT_FORMAT_CASE line");
+
+SC_RT_FORMAT_CASE (Binaural)
+SC_RT_FORMAT_CASE (Stereo)
+SC_RT_FORMAT_CASE (Quad)
+SC_RT_FORMAT_CASE (Surround5_0)
+SC_RT_FORMAT_CASE (Surround5_1)
+SC_RT_FORMAT_CASE (Surround7_0)
+SC_RT_FORMAT_CASE (Surround7_1)
+SC_RT_FORMAT_CASE (Surround9_1)
+SC_RT_FORMAT_CASE (Octaphonic)
+SC_RT_FORMAT_CASE (Surround5_1_2)
+SC_RT_FORMAT_CASE (Surround5_1_4)
+SC_RT_FORMAT_CASE (Surround7_1_2)
+SC_RT_FORMAT_CASE (Surround7_1_4)
+SC_RT_FORMAT_CASE (Surround7_1_6)
+SC_RT_FORMAT_CASE (Surround9_1_4)
+SC_RT_FORMAT_CASE (Surround9_1_6)
+SC_RT_FORMAT_CASE (SurroundSML13_1)
+SC_RT_FORMAT_CASE (AmbisonicsFOA)
+SC_RT_FORMAT_CASE (AmbisonicsSOA)
+SC_RT_FORMAT_CASE (AmbisonicsHOA)
+SC_RT_FORMAT_CASE (Ambisonics4OA)
+SC_RT_FORMAT_CASE (Ambisonics5OA)
+SC_RT_FORMAT_CASE (Ambisonics6OA)
+
+#define SC_RT_PROFILE_CASE(N) \
+    TEST_CASE ("Realtime: HRTF profile " #N " renders on both routes without allocating or locking", \
+               "[rt][rt-alloc][rt-lock][matrix][profiles]") \
+    { \
+        runProfileMatrix (N); \
+    }
+
+SC_RT_PROFILE_CASE (0)
+SC_RT_PROFILE_CASE (1)
+SC_RT_PROFILE_CASE (2)
+SC_RT_PROFILE_CASE (3)
+SC_RT_PROFILE_CASE (4)
+SC_RT_PROFILE_CASE (5)
+
+TEST_CASE ("Realtime: every block size and sample rate renders without allocating",
+           "[rt][rt-alloc][rt-lock][matrix][sizes]")
+{
+    requireRealtimeTrapCanary();
+
+    struct Config { const char* name; OutputFormat format; unsigned flags; bool hrtf; };
+    const Config configs[] = {
+        { "Binaural profile 5, all flags", OutputFormat::Binaural,      kComputes | kDerives | kSelects, true  },
+        { "7.1.4",                         OutputFormat::Surround7_1_4, kComputes | kDerives,            false },
+        { "Ambisonics HOA",                OutputFormat::AmbisonicsHOA, kComputes | kDerives,            false } };
+
+    const int scale = timeoutScale();
+
+    for (const int blockSize : { 32, 64, 256, 512, 1024 })
+    {
+        for (const double rate : { 44100.0, 48000.0, 96000.0 })
+        {
+            for (const Config& config : configs)
+            {
+                auto engine = std::make_unique<RenderEngine>();
+                engine->prepare (rate, blockSize);
+                engine->setOutputFormat (config.format);
+
+                if (config.hrtf)
+                {
+                    engine->setHRTFProfile (5);
+                    REQUIRE (engine->waitForHRTFProfileIdle (60000 * scale));
+                }
+
+                const RenderBlockContext ctx = contextFor (config.format, config.flags, rate);
+                const int numOutCh = channelsFor (config.format);
+
+                MovingScene scene (rate);
+                OutputBank out;
+                bool finite = false;
+                const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, numOutCh,
+                                                           60, blockSize, finite);
+
+                INFO (config.name);
+                CAPTURE (blockSize, rate);
+                checkNothingAllocatedOrLocked (counts, config.hrtf);
+                CHECK (finite);
+            }
+        }
+    }
+}
+
+TEST_CASE ("Realtime: all twelve algorithm indices render every non-binaural format without allocating",
+           "[rt][rt-alloc][rt-lock][matrix][algorithms]")
+{
+    requireRealtimeTrapCanary();
+
+    for (int formatIndex = 0; formatIndex < NUM_OUTPUT_FORMATS; ++formatIndex)
+    {
+        const auto format = static_cast<OutputFormat> (formatIndex);
+
+        if (format == OutputFormat::Binaural)
+            continue;
+
+        const int numOutCh = channelsFor (format);
+        const RenderBlockContext ctx = contextFor (format, kComputes | kDerives, kSampleRate);
+
+        for (int index = 0; index < kNumAlgorithmIndices; ++index)
+        {
+            auto engine = std::make_unique<RenderEngine>();
+            engine->prepare (kSampleRate, kBlockSize);
+            engine->setOutputFormat (format);
+            engine->setAlgorithmIndex (index);   // disarmed
+
+            MovingScene scene;
+            OutputBank out;
+            bool finite = false;
+            const RealtimeCounts counts = armedRender (*engine, scene, ctx, out, numOutCh,
+                                                       40, kBlockSize, finite);
+
+            CAPTURE (formatIndex, index);
+            checkNothingAllocatedOrLocked (counts, false);
+            CHECK (finite);
+        }
+    }
+}
