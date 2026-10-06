@@ -1,6 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
+#include <SpatialCore/Algorithms/AmbisonicsAlgorithm.h>
+#include <SpatialCore/Core/SpatialMath.h>
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/IO/OutputFormatRegistry.h>
+#include <SpatialCore/IO/SpeakerLayout.h>
 #include "../Support/RealtimeGuard.h"
 #include <algorithm>
 #include <array>
@@ -1053,4 +1056,149 @@ TEST_CASE ("Realtime: all twelve algorithm indices render every non-binaural for
             CHECK (finite);
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+// D-10: AmbisonicsAlgorithm::computeGains used a function-local `static const float maxrE[4]` built
+// with std::cos. Its first call in a process went through __cxa_guard_acquire, which takes a mutex:
+// a lock on the render thread the first time the Ambisonics algorithm (index 0) renders on a speaker
+// format. The weights are now constants. The sound must be bit-for-bit what it was.
+//
+// referenceAmbisonicsGains is a test-local copy of the old body (same expressions, same operation
+// order, the old static). The 25 x 13 direction grid below is compared against the engine's
+// algorithm with memcmp, with a non-trivial decode matrix; a hidden capture writes the same grid
+// to SC_CAPTURE_FILE so a build from before the fix and one from after can be compared with cmp.
+// ----------------------------------------------------------------------------
+namespace
+{
+    void referenceAmbisonicsGains (const SourcePosition& source, const float (*decode)[MAX_SPEAKERS],
+                                   float* outputGains, int numSpeakers)
+    {
+        constexpr int HOA_CH = 16;
+
+        static const float maxrE[4] = {
+            1.0f,
+            std::cos (juce::MathConstants<float>::pi / 8.0f),
+            std::cos (2.0f * juce::MathConstants<float>::pi / 8.0f),
+            std::cos (3.0f * juce::MathConstants<float>::pi / 8.0f),
+        };
+        auto acnToOrder = [] (int acn) -> int {
+            if (acn < 1) return 0; if (acn < 4) return 1;
+            if (acn < 9) return 2; return 3;
+        };
+
+        if (! std::isfinite (source.azimuthRad) || ! std::isfinite (source.elevationRad))
+        {
+            for (int s = 0; s < numSpeakers; ++s)
+                outputGains[s] = 0.0f;
+            return;
+        }
+
+        float coeffs[HOA_CH];
+        for (int c = 0; c < HOA_CH; ++c)
+            coeffs[c] = evalSH (c, source.azimuthRad, source.elevationRad) * maxrE[acnToOrder (c)];
+
+        float totalPower = 0.0f;
+        for (int s = 0; s < numSpeakers; ++s)
+        {
+            float gain = 0.0f;
+            for (int c = 0; c < HOA_CH; ++c)
+                gain += decode[s][c] * coeffs[c];
+
+            outputGains[s] = std::max (0.0f, gain);
+            totalPower += outputGains[s] * outputGains[s];
+        }
+
+        if (totalPower > 1e-12f)
+        {
+            float scale = 1.0f / std::sqrt (totalPower);
+            for (int s = 0; s < numSpeakers; ++s)
+                outputGains[s] *= scale;
+        }
+    }
+
+    // A fixed, non-trivial 12 x 16 decode matrix (a 7.1.4 layout has 12 speakers), no randomness.
+    void fillDecodeMatrix (float (&m)[MAX_SPEAKERS][MAX_SPEAKERS])
+    {
+        for (int s = 0; s < MAX_SPEAKERS; ++s)
+            for (int c = 0; c < MAX_SPEAKERS; ++c)
+                m[s][c] = 0.4f * std::sin (0.7f * (float) s + 1.3f * (float) c + 0.2f)
+                          + 0.1f * (float) ((s * 7 + c * 3) % 5) - 0.15f;
+    }
+
+    constexpr int kAmbiGridAz = 25;   // -180 .. 180 in steps of 15
+    constexpr int kAmbiGridEl = 13;   // -90 .. 90 in steps of 15
+    constexpr int kAmbiSpeakers = 12;
+
+    SourcePosition gridPosition (int a, int e)
+    {
+        return { juce::degreesToRadians (-180.0f + 15.0f * (float) a),
+                 juce::degreesToRadians (-90.0f + 15.0f * (float) e), 0.5f };
+    }
+}
+
+TEST_CASE ("Ambisonics algorithm: constant max-rE weights give the old gains bit for bit",
+           "[ambi][maxre][d10]")
+{
+    float decode[MAX_SPEAKERS][MAX_SPEAKERS];
+    fillDecodeMatrix (decode);
+
+    SpeakerLayout layout {};
+    const std::vector<VBAPTriplet> triplets;
+    const LayoutContext ctx { layout, triplets, decode, kAmbiSpeakers };
+    const AmbisonicsAlgorithm algorithm;
+
+    int compared = 0;
+
+    for (int a = 0; a < kAmbiGridAz; ++a)
+    {
+        for (int e = 0; e < kAmbiGridEl; ++e)
+        {
+            const SourcePosition source = gridPosition (a, e);
+            float expected[kAmbiSpeakers] = {};
+            float actual[kAmbiSpeakers] = {};
+            referenceAmbisonicsGains (source, decode, expected, kAmbiSpeakers);
+            algorithm.computeGains (source, ctx, actual, kAmbiSpeakers);
+
+            CAPTURE (a, e);
+            REQUIRE (std::memcmp (expected, actual, sizeof (expected)) == 0);
+            ++compared;
+        }
+    }
+
+    CHECK (compared == kAmbiGridAz * kAmbiGridEl);
+}
+
+// Hidden capture (not run by default, not registered by ctest):
+//   SC_CAPTURE_FILE=/tmp/x.bin ./build/tests/SpatialCoreTests "[ambi-maxre-capture]"
+TEST_CASE ("Ambisonics algorithm: capture the grid of gains to SC_CAPTURE_FILE",
+           "[.][ambi-maxre-capture]")
+{
+    const char* path = std::getenv ("SC_CAPTURE_FILE");
+    REQUIRE (path != nullptr);
+
+    const juce::File file (juce::String::fromUTF8 (path));
+    file.deleteFile();
+    juce::FileOutputStream stream (file);
+    REQUIRE (stream.openedOk());
+
+    float decode[MAX_SPEAKERS][MAX_SPEAKERS];
+    fillDecodeMatrix (decode);
+
+    SpeakerLayout layout {};
+    const std::vector<VBAPTriplet> triplets;
+    const LayoutContext ctx { layout, triplets, decode, kAmbiSpeakers };
+    const AmbisonicsAlgorithm algorithm;
+
+    for (int a = 0; a < kAmbiGridAz; ++a)
+    {
+        for (int e = 0; e < kAmbiGridEl; ++e)
+        {
+            float gains[kAmbiSpeakers] = {};
+            algorithm.computeGains (gridPosition (a, e), ctx, gains, kAmbiSpeakers);
+            REQUIRE (stream.write (gains, sizeof (gains)));
+        }
+    }
+
+    stream.flush();
 }

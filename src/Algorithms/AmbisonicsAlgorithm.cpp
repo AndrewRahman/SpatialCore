@@ -15,12 +15,17 @@ void AmbisonicsAlgorithm::computeGains (const SourcePosition& source, const Layo
 {
     constexpr int HOA_CH = 16;  // (3+1)^2 = 16
 
-    // Max-rE weights per order (Zotter & Frank 2012)
-    static const float maxrE[4] = {
+    // Max-rE weights per order (Zotter & Frank 2012): 1, cos (pi/8), cos (2 pi/8), cos (3 pi/8), as
+    // floats. They are constants, not a function-local static built with std::cos: that static's
+    // first-use guard (__cxa_guard_acquire) takes a mutex, and the first call in a process is on the
+    // render thread (RTSF-05, Phase 5 Plan 05-03). The values are the exact floats the static held
+    // (0x3f6c835e, 0x3f3504f3, 0x3ec3ef15); the [ambi][maxre][d10] test compares the gains against
+    // the old std::cos form bit for bit, in Debug and Release.
+    static constexpr float maxrE[4] = {
         1.0f,
-        std::cos (juce::MathConstants<float>::pi / 8.0f),
-        std::cos (2.0f * juce::MathConstants<float>::pi / 8.0f),
-        std::cos (3.0f * juce::MathConstants<float>::pi / 8.0f),
+        0x1.d906bcp-1f,
+        0x1.6a09e6p-1f,
+        0x1.87de2ap-2f,
     };
     auto acnToOrder = [](int acn) -> int {
         if (acn < 1) return 0; if (acn < 4) return 1;
