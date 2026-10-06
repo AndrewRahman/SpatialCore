@@ -11,10 +11,10 @@ namespace spatialcore
 //==============================================================================
 // Process-global FFT cache (D-08).
 //
-// Contract: one juce::dsp::FFT per order, created on the first request and kept for the life of
-// the process. The permanent allocation is deliberate, not a leak. The function-local static that
-// owns the cache is destroyed at process exit, after JUCE's leak detector has run, which is why a
-// Debug build prints "Leaked objects detected: 1 FFT" (one line per order used) at exit; that
+// Contract: one juce::dsp::FFT per order, created on the first request and kept for the
+// life of the process. The permanent allocation is deliberate, not a leak. The function-local
+// static that owns the cache is destroyed at process exit, after JUCE's leak detector has run,
+// which is why a Debug build prints "Leaked objects detected: 1 FFT" (one line per order used) at exit; that
 // line is this cache, not a defect.
 //
 // Threads: getOrCreate() takes `lock` (a SpinLock), so it is only ever called at prepare time
