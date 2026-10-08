@@ -1889,12 +1889,14 @@ TEST_CASE ("Profile switch: a load into the renderer the audio thread is using i
         prepared.setProfile (2);
         engine->swapActiveRenderer();
 
-        // The pinned reason for the documented rule: right after the swap the crossfade has not
-        // started, so waiting only for "flag false" would let the next load through.
+        // Right after the swap the crossfade has not started, so waiting only for "flag false"
+        // would let the next load through; isPrepareRendererFree() is the condition to wait on.
         CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK_FALSE (engine->isPrepareRendererFree());
 
         live.renderOne();   // this block starts the crossfade from `wasActive`
         REQUIRE (engine->isRendererCrossfadeActive());
+        CHECK_FALSE (engine->isPrepareRendererFree());
         REQUIRE (engine->getPrepareRendererIndex() == wasActive);
 
         // A load now is a load into the fade source: counted once. The documented rule (wait for
@@ -1908,10 +1910,64 @@ TEST_CASE ("Profile switch: a load into the renderer the audio thread is using i
         for (int b = 0; b < 80; ++b)
             live.renderOne();
         REQUIRE_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
         CHECK_FALSE (source.hrtfDatabase.isInUseByAudioThread());
         CHECK (source.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
         CHECK (mutationCount (*engine, wasActive) == 1);
         CHECK (mutationCount (*engine, other) == 0);
+    }
+
+    SECTION ("isPrepareRendererFree() turns true after one block on a path with no crossfade, where the flag never does (WR-02)")
+    {
+        // Free from the start, and free again once the documented flow has run its course.
+        CHECK (engine->isPrepareRendererFree());
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        CHECK (engine->isPrepareRendererFree());
+
+        // Swap while the engine renders a format that does not use the HRTF renderers.
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+        CHECK_FALSE (engine->isPrepareRendererFree());
+
+        RenderBlockContext stereoCtx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        stereoCtx.isStereoVariant = true;
+        LiveRender stereoLive (*engine, stereoCtx, kBlock, kRate);
+        stereoLive.renderOne();
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->isRendererCrossfadeActive());   // the flag never turned true
+
+        // The Simple path (useHRTF false) is such a path too.
+        const int simpleWasActive = other;
+        auto& prepared2 = engine->getBinauralRenderer (wasActive);
+        REQUIRE (prepared2.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        prepared2.setProfile (5);
+        engine->swapActiveRenderer();
+        REQUIRE (engine->getPrepareRendererIndex() == simpleWasActive);
+        CHECK_FALSE (engine->isPrepareRendererFree());
+        LiveRender simpleLive (*engine, makeBinauralContext (BinauralPath::Simple, kRate), kBlock, kRate);
+        simpleLive.renderOne();
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+    }
+
+    SECTION ("isPrepareRendererFree() stays false while no block renders, and a swap back to the same renderer frees it after one block (WR-02)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+        CHECK_FALSE (engine->isPrepareRendererFree());     // no block can complete: the documented exception
+
+        engine->swapActiveRenderer();                      // back to the renderer the last block used
+        CHECK_FALSE (engine->isPrepareRendererFree());
+        live.renderOne();
+        CHECK (engine->isPrepareRendererFree());           // no crossfade was needed
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
     }
 
     SECTION ("a load into the active renderer while a stereo-variant block renders is not counted (WR-01)")

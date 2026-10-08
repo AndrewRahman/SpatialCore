@@ -359,13 +359,22 @@ Do not mix `setHRTFProfile` with the older `swapActiveRenderer` / `getPrepareRen
 **The older route's thread contract.** The older route stays until the next major version, for plugins that have not moved yet,
 and it is watched, not changed. `getPrepareRendererIndex()` and `swapActiveRenderer()` are message-thread only. Load into
 `getBinauralRenderer (getPrepareRendererIndex())`, never from the audio thread, then call `swapActiveRenderer()`. Do not start the
-next load straight after the swap: `swapActiveRenderer()` changes the active renderer at once, but `isRendererCrossfadeActive()` turns
-true only when the next block starts the crossfade, so until then the flag reads false while the old renderer is still the fade source.
-Wait until the flag has been seen true and then false again. If the host is not calling `processBlock` (transport stopped, plugin
-suspended) the flag never turns true, but then nothing is reading either renderer and a load is safe. A call that breaks the contract still runs exactly as before, and is counted so you can show it in your own
+next load straight after the swap: `swapActiveRenderer()` changes the active renderer at once, but the old renderer is still the
+crossfade source until a block has run. Poll `engine.isPrepareRendererFree()` and load once it is true. It is false from the swap
+until a block has completed that saw the swap and, if that block started a crossfade, until the crossfade has ended. It turns true
+after one block on a format or path that does not use the HRTF renderers (stereo variants, Ambisonics, surround, the Simple path),
+where `isRendererCrossfadeActive()` never turns true, and after the crossfade has ended on the binaural HRTF path. Do not wait on
+`isRendererCrossfadeActive()` alone: it reads false between the swap and the first block as well as after the crossfade. If the host is not calling
+`processBlock` (transport stopped, plugin suspended) no block can complete, so `isPrepareRendererFree()` stays false; nothing is reading
+either renderer then and a load is safe, but the first binaural block after the host resumes crossfades from the renderer you reloaded,
+and that is counted. The answer is a snapshot: it cannot stop a format switch to binaural from landing while a load is in flight.
+A call that breaks the contract still runs exactly as before, and is counted so you can show it in your own
 diagnostics: `engine.getLegacyRouteWrongThreadCount()` counts a `swapActiveRenderer()` or `getPrepareRendererIndex()` call made on the render
 thread while another thread is the writer, and `renderer.hrtfDatabase.getMutationWhileInUseCount()` counts a load, unload or
-`setProfile` on a renderer the audio thread is using (`isInUseByAudioThread()` reports the mark). Debug builds also assert.
+`setProfile` on a renderer the audio thread is using (`isInUseByAudioThread()` reports the mark). A load into the renderer a swap just
+replaced, made before the next block, is counted too, but when the block that starts the crossfade from it runs, not when the load
+runs (the swap clears that renderer's mark so a stopped host leaves no stale mark); it is not counted if no block ever
+crossfades from that renderer. Debug builds also assert on a mutation of a marked renderer.
 One `HRTFDatabase` is used by one thread at a time: lookups are `const` but write inside the libmysofa handle.
 
 **Where the data lives.** The five profiles are compiled into SpatialCore (a `SpatialCoreHRTFData`

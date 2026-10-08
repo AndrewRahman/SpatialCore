@@ -102,9 +102,9 @@ unless the engine computes them. Do not mix `setHRTFProfile`
 with `swapActiveRenderer` / `getPrepareRendererIndex` / `getBinauralRenderer` loads on one engine; those
 remain only as the legacy escape hatch until the next major version (D-09). Its thread contract: `getPrepareRendererIndex()`
 and `swapActiveRenderer()` are message-thread only, and a mutation (load, unload, `setProfile`) is allowed only on the prepare renderer, only
-once the crossfade that follows the last `swapActiveRenderer()` has started and ended (the flag reads false between the swap and the next block, so wait until `isRendererCrossfadeActive()` has been seen true and then false; with no blocks running a load is safe), and never on the audio thread. A call that breaks it still runs, and is counted:
+once `RenderEngine::isPrepareRendererFree()` is true (false from `swapActiveRenderer()` until a block has completed that saw the swap and any crossfade it started has ended, so it turns true after one block on a path that does not use the HRTF renderers; do not wait on `isRendererCrossfadeActive()` alone, it reads false before the first block as well as after the fade; with no blocks running it stays false and a load is safe, but the first binaural block after the host resumes fades from the renderer you reloaded and is counted), and never on the audio thread. A call that breaks it still runs, and is counted:
 `getLegacyRouteWrongThreadCount()` for a swap or prepare-index call made on the render thread while another thread is the writer, and
-`HRTFDatabase::getMutationWhileInUseCount()` (with `isInUseByAudioThread()`) for a mutation of a renderer the audio thread is using. Debug builds also assert. The Simple path (profile 0) is no longer spectrally flat: it
+`HRTFDatabase::getMutationWhileInUseCount()` (with `isInUseByAudioThread()`) for a mutation of a renderer the audio thread is using, or of the renderer a swap just replaced before the next block (counted when that block starts the crossfade from it, not when the load runs). Debug builds also assert on a mutation of a marked renderer. The Simple path (profile 0) is no longer spectrally flat: it
 applies a position-blended rear head-shadow and up/down pinna cue bank (`Core/SimpleBinauralCues.h`)
 before the Woodworth gains, and the ear-level front half is bit-identical to before (BUG-01, D-02).
 

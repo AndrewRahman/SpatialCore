@@ -467,19 +467,28 @@ public:
     //                                  another thread is the writer is counted by
     //                                  getLegacyRouteWrongThreadCount() and asserts in Debug (the
     //                                  SC-17 pattern); the call still runs.
-    //   isRendererCrossfadeActive()    any thread (an atomic).
+    //   isRendererCrossfadeActive()    any thread (an atomic). True only while a crossfade runs.
+    //   isPrepareRendererFree()        any thread (atomics). The question to ask before a load.
     //
     // The documented flow: load into getBinauralRenderer (getPrepareRendererIndex()), setProfile
     // on it, then swapActiveRenderer(). Do not start the next load straight after the swap:
-    // swapActiveRenderer() flips the active index at once, but isRendererCrossfadeActive() turns
-    // true only when the next block starts the crossfade, so between the swap and that block the
-    // flag reads false while the old renderer is still the fade source (or is being rendered).
-    // Wait until the flag has been seen true and then false again before the next load. If the
-    // host is not calling renderBlock() (transport stopped, plugin suspended) the flag never
-    // turns true, but then no block is reading either renderer and a load is safe. The
-    // prepare-index bookkeeping mirrors setOutputFormat()'s layout swap; the profile-load body
-    // itself (SOFA file IO via HRTFDatabase::loadFromFile) is consumer-side glue, not engine
-    // logic. The route stays until the next major version.
+    // swapActiveRenderer() flips the active index at once, but the old renderer is still the
+    // crossfade source (or is still being rendered) until a block has run. Poll
+    // isPrepareRendererFree() and load once it is true. It is false from the swap until a block
+    // has completed that saw the swap and, if that block started a crossfade, until the
+    // crossfade has ended. It turns true after ONE block on a path that does not use the HRTF
+    // renderers (stereo variant, Ambisonics, discrete surround, the Simple path), where
+    // isRendererCrossfadeActive() never turns true, and after the crossfade has ended on the
+    // binaural HRTF path. Do not wait on isRendererCrossfadeActive() alone: it reads false
+    // between the swap and the first block as well as after the crossfade. If the host is not
+    // calling renderBlock() (transport stopped, plugin suspended) no block can complete, so
+    // isPrepareRendererFree() stays false; nothing is reading either renderer then and a load
+    // is safe, but the first binaural block after the host resumes crossfades from the renderer
+    // you reloaded, and that is counted (see the mutation counter above). The answer is a
+    // snapshot: it cannot stop a format switch to binaural from landing while a load is in
+    // flight. The prepare-index bookkeeping mirrors setOutputFormat()'s layout swap; the
+    // profile-load body itself (SOFA file IO via HRTFDatabase::loadFromFile) is consumer-side
+    // glue, not engine logic. The route stays until the next major version.
     //--------------------------------------------------------------------------
     BinauralRenderer& getBinauralRenderer (int index) { return binauralRenderers[static_cast<size_t> (index)]; }
     std::atomic<int>& getActiveRendererIndexAtomic() { return activeRendererIndex; }
@@ -487,6 +496,17 @@ public:
     int getPrepareRendererIndex() const;
     void swapActiveRenderer();
     bool isRendererCrossfadeActive() const { return rendererXfadeActive_.load (std::memory_order_acquire); }
+
+    /** True when no block still has to read the renderer the last swapActiveRenderer() replaced:
+        no crossfade is running and a block has completed since the swap (RTSF-03, WR-02). That
+        is the condition for the next load into getBinauralRenderer (getPrepareRendererIndex()).
+        True from the start and after prepare(). False after a swap until one block has completed
+        (so it stays false while the host is not rendering). Any thread; two acquire loads, no lock. */
+    bool isPrepareRendererFree() const noexcept
+    {
+        return ! rendererXfadeActive_.load (std::memory_order_acquire)
+               && swapGenerationHandled_.load (std::memory_order_acquire) == swapGeneration_.load (std::memory_order_acquire);
+    }
 
     // Renderer crossfade length (a profile swap). Counted in elapsed SAMPLES, fixed when the
     // fade starts: max (kRendererXfadeBlocks x the block size at that moment,
