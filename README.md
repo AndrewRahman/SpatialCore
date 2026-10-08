@@ -134,7 +134,9 @@ CI currently runs zero tests (this is fixed in Phase 6), so this local gate is t
 The everyday gate above is unchanged. This second check proves that nothing `RenderEngine::renderBlock` reaches allocates, takes a lock or races with another thread. Run it at every phase end gate and before any release tag, not on every edit. Proved on macOS (Apple Silicon); Windows and Linux are checked in Phase 6.
 
 ```bash
-# 1. Allocation and lock trap, Release (macOS only, skipped elsewhere; also part of the Release ctest)
+# 1. Allocation and lock trap, Release (macOS only, skipped elsewhere; also part of the Release ctest).
+#    The trap is armed in any macOS tree built without a sanitizer, Debug included; the HRIR-lookup
+#    cases assert allocations in Release only.
 ./build-release/tests/SpatialCoreTests "[rt]"
 
 # 2. ThreadSanitizer tree (third tree, git-ignored)
