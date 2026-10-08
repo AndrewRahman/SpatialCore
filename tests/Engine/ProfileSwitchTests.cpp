@@ -1784,6 +1784,40 @@ TEST_CASE ("Profile switch: a load into the renderer the audio thread is using i
         CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
     }
 
+    SECTION ("the flag reads false between a swap and the next block; the fade source is protected once the fade runs (WR-02)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        // The pinned reason for the documented rule: right after the swap the crossfade has not
+        // started, so waiting only for "flag false" would let the next load through.
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+
+        live.renderOne();   // this block starts the crossfade from `wasActive`
+        REQUIRE (engine->isRendererCrossfadeActive());
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+
+        // A load now is a load into the fade source: counted once. The documented rule (wait for
+        // the flag to be seen true, then false) keeps a consumer out of this window.
+        auto& source = engine->getBinauralRenderer (wasActive);
+        CHECK (source.hrtfDatabase.isInUseByAudioThread());
+        CHECK (source.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 1);
+
+        // Once the fade is over, the same renderer is free again.
+        for (int b = 0; b < 80; ++b)
+            live.renderOne();
+        REQUIRE_FALSE (engine->isRendererCrossfadeActive());
+        CHECK_FALSE (source.hrtfDatabase.isInUseByAudioThread());
+        CHECK (source.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 1);
+        CHECK (mutationCount (*engine, other) == 0);
+    }
+
     SECTION ("a load into the active renderer while a stereo-variant block renders is not counted (WR-01)")
     {
         const int active = legacyLoadSwapRender (*engine, live, 5);

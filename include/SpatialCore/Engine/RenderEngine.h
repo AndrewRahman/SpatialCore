@@ -444,10 +444,12 @@ public:
     //   getBinauralRenderer (i)        any thread may call it and read the renderer. Mutating that
     //                                  renderer or its hrtfDatabase (a load, unload, setProfile)
     //                                  is allowed only on the renderer getPrepareRendererIndex()
-    //                                  names, only once isRendererCrossfadeActive() is false, and
-    //                                  never from the audio thread. A mutation of a renderer the
-    //                                  audio thread is using (the active one, or the source of a
-    //                                  running crossfade, as of the last rendered block) still
+    //                                  names, only once the crossfade that follows the last
+    //                                  swapActiveRenderer() has started and ended (see "The
+    //                                  documented flow" below), and never from the audio thread.
+    //                                  A mutation of a renderer the audio thread is using (the
+    //                                  active one, or the source of a running crossfade, as of
+    //                                  the last rendered binaural block or the last swap) still
     //                                  runs, but is counted by
     //                                  HRTFDatabase::getMutationWhileInUseCount() and asserts in
     //                                  Debug.
@@ -460,8 +462,14 @@ public:
     //                                  SC-17 pattern); the call still runs.
     //   isRendererCrossfadeActive()    any thread (an atomic).
     //
-    // The documented flow: load into getBinauralRenderer (getPrepareRendererIndex()) once
-    // isRendererCrossfadeActive() is false, setProfile on it, then swapActiveRenderer(). The
+    // The documented flow: load into getBinauralRenderer (getPrepareRendererIndex()), setProfile
+    // on it, then swapActiveRenderer(). Do not start the next load straight after the swap:
+    // swapActiveRenderer() flips the active index at once, but isRendererCrossfadeActive() turns
+    // true only when the next block starts the crossfade, so between the swap and that block the
+    // flag reads false while the old renderer is still the fade source (or is being rendered).
+    // Wait until the flag has been seen true and then false again before the next load. If the
+    // host is not calling renderBlock() (transport stopped, plugin suspended) the flag never
+    // turns true, but then no block is reading either renderer and a load is safe. The
     // prepare-index bookkeeping mirrors setOutputFormat()'s layout swap; the profile-load body
     // itself (SOFA file IO via HRTFDatabase::loadFromFile) is consumer-side glue, not engine
     // logic. The route stays until the next major version.

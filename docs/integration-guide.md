@@ -358,8 +358,11 @@ Do not mix `setHRTFProfile` with the older `swapActiveRenderer` / `getPrepareRen
 
 **The older route's thread contract.** The older route stays until the next major version, for plugins that have not moved yet,
 and it is watched, not changed. `getPrepareRendererIndex()` and `swapActiveRenderer()` are message-thread only. Load into
-`getBinauralRenderer (getPrepareRendererIndex())` only once `isRendererCrossfadeActive()` is false, never from the audio thread, then call
-`swapActiveRenderer()`. A call that breaks the contract still runs exactly as before, and is counted so you can show it in your own
+`getBinauralRenderer (getPrepareRendererIndex())`, never from the audio thread, then call `swapActiveRenderer()`. Do not start the
+next load straight after the swap: `swapActiveRenderer()` changes the active renderer at once, but `isRendererCrossfadeActive()` turns
+true only when the next block starts the crossfade, so until then the flag reads false while the old renderer is still the fade source.
+Wait until the flag has been seen true and then false again. If the host is not calling `processBlock` (transport stopped, plugin
+suspended) the flag never turns true, but then nothing is reading either renderer and a load is safe. A call that breaks the contract still runs exactly as before, and is counted so you can show it in your own
 diagnostics: `engine.getLegacyRouteWrongThreadCount()` counts a `swapActiveRenderer()` or `getPrepareRendererIndex()` call made on the render
 thread while another thread is the writer, and `renderer.hrtfDatabase.getMutationWhileInUseCount()` counts a load, unload or
 `setProfile` on a renderer the audio thread is using (`isInUseByAudioThread()` reports the mark). Debug builds also assert.

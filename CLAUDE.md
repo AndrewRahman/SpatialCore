@@ -102,7 +102,7 @@ unless the engine computes them. Do not mix `setHRTFProfile`
 with `swapActiveRenderer` / `getPrepareRendererIndex` / `getBinauralRenderer` loads on one engine; those
 remain only as the legacy escape hatch until the next major version (D-09). Its thread contract: `getPrepareRendererIndex()`
 and `swapActiveRenderer()` are message-thread only, and a mutation (load, unload, `setProfile`) is allowed only on the prepare renderer, only
-once `isRendererCrossfadeActive()` is false, and never on the audio thread. A call that breaks it still runs, and is counted:
+once the crossfade that follows the last `swapActiveRenderer()` has started and ended (the flag reads false between the swap and the next block, so wait until `isRendererCrossfadeActive()` has been seen true and then false; with no blocks running a load is safe), and never on the audio thread. A call that breaks it still runs, and is counted:
 `getLegacyRouteWrongThreadCount()` for a swap or prepare-index call made on the render thread while another thread is the writer, and
 `HRTFDatabase::getMutationWhileInUseCount()` (with `isInUseByAudioThread()`) for a mutation of a renderer the audio thread is using. Debug builds also assert. The Simple path (profile 0) is no longer spectrally flat: it
 applies a position-blended rear head-shadow and up/down pinna cue bank (`Core/SimpleBinauralCues.h`)
