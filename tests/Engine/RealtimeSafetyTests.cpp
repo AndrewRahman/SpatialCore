@@ -1608,17 +1608,19 @@ namespace
             // HRTF folder override. MESSAGE THREAD (setSharedHRTFFolderForTesting) and LOADER THREAD
             // (getSharedFolderForLoader). Never the render thread.
             { "include/SpatialCore/Engine/RenderEngine.h", 1 },
-            // The 13 lines of RenderEngine.cpp, by function and thread:
-            //   :89   HRTFProfileLoader::run, wait (200): idle wait.                     LOADER THREAD
-            //   :238  HRTFProfileLoader, wait (pollMs): backoff while both renderers
+            // The 13 lines of RenderEngine.cpp, by function and thread (named by function, not
+            // line number: a line number in an allow-list rots on the next edit, and the count
+            // below is what the test enforces):
+            //   HRTFProfileLoader::run, wait (200): idle wait.                           LOADER THREAD
+            //   HRTFProfileLoader, wait (pollMs): backoff while both renderers
             //         are busy (returns early on notify).                                LOADER THREAD
-            //   :347 :348  ~RenderEngine, notify () and stopThread (15000).              MESSAGE THREAD
-            //   :357  getSharedFolderForLoader, ScopedLock on sharedFolderLock_.         LOADER THREAD
-            //   :363  setSharedHRTFFolderForTesting, ScopedLock on sharedFolderLock_.    MESSAGE THREAD
-            //   :394 :396  setHRTFProfile, startThread and notify.                       MESSAGE THREAD
-            //   :441  waitForHRTFProfileIdle, Thread::sleep (2) poll.                    MESSAGE THREAD
-            //   :499 :500  prepare, notify () and stopThread (15000) before resizing.    MESSAGE THREAD
-            //   :612 :613  prepare, startThread and notify after preparing.              MESSAGE THREAD
+            //   ~RenderEngine, notify () and stopThread (15000): two lines.              MESSAGE THREAD
+            //   getSharedFolderForLoader, ScopedLock on sharedFolderLock_.               LOADER THREAD
+            //   setSharedHRTFFolderForTesting, ScopedLock on sharedFolderLock_.          MESSAGE THREAD
+            //   setHRTFProfile, startThread and notify: two lines.                       MESSAGE THREAD
+            //   waitForHRTFProfileIdle, Thread::sleep (2) poll.                          MESSAGE THREAD
+            //   prepare, notify () and stopThread (15000) before resizing: two lines.    MESSAGE THREAD
+            //   prepare, startThread and notify after preparing: two lines.              MESSAGE THREAD
             { "src/Engine/RenderEngine.cpp", 13 },
         };
 
