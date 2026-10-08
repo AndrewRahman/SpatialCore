@@ -140,7 +140,8 @@ namespace
         engine->prepare (48000.0, 256);
         engine->setOutputFormat (OutputFormat::Binaural);
         engine->setHRTFProfile (2);
-        engine->waitForHRTFProfileIdle (60000 * timeoutScaleFromEnv());
+        // A timeout here is caught by the caller: it asserts activeProfile == 2 after rendering.
+        (void) engine->waitForHRTFProfileIdle (60000 * timeoutScaleFromEnv());
         return engine;
     }
 
@@ -148,6 +149,11 @@ namespace
     {
         std::vector<float> alone;
         std::vector<float> beside;
+        // WR-05: the profile engine A reports as active after each run. Written inside the
+        // watchdog lambda (no Catch assertions there) and asserted on the test thread, so a load
+        // that timed out cannot let two Simple-path renders compare equal.
+        int aActiveAlone = -1;
+        int aActiveBeside = -1;
         std::atomic<bool> bRunning { false };
         std::atomic<bool> bStop { false };
         std::atomic<long> bBlocks { 0 };
@@ -211,6 +217,7 @@ TEST_CASE ("Multi-instance: an engine renders bit-identically whether or not a s
         {
             auto a1 = makeProfile2Engine();
             state->alone = renderFixed (*a1, 100);
+            state->aActiveAlone = a1->getHRTFProfileStatus().activeProfile;
         }
 
         // Run 2: engine A again, while engine B on its own thread keeps switching profiles.
@@ -222,6 +229,7 @@ TEST_CASE ("Multi-instance: an engine renders bit-identically whether or not a s
                 std::this_thread::sleep_for (std::chrono::milliseconds (1));
 
             state->beside = renderFixed (*a2, 100);
+            state->aActiveBeside = a2->getHRTFProfileStatus().activeProfile;
 
             state->bStop.store (true, std::memory_order_release);
             b.join();
@@ -229,6 +237,11 @@ TEST_CASE ("Multi-instance: an engine renders bit-identically whether or not a s
     }, std::chrono::milliseconds (180000LL * timeoutScaleFromEnv()));
 
     REQUIRE (finished);
+    // Both runs must have rendered profile 2 (CIPIC), not the Simple path: the idle wait in
+    // makeProfile2Engine() returns false on a timeout, and the output would then still be finite
+    // and equal run to run.
+    REQUIRE (state->aActiveAlone == 2);
+    REQUIRE (state->aActiveBeside == 2);
     REQUIRE (state->alone.size() == 51200);
     REQUIRE (state->beside.size() == state->alone.size());
 
