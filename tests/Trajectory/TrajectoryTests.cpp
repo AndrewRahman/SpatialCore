@@ -636,20 +636,44 @@ TEST_CASE ("TrajectoryEngine: a reader thread sees only finished, in-range posit
 // these steps. For the nine smooth shapes (1, 3, 5, 7, 8, 9, 10, 12, 13) that is at
 // most 56.4 deg, 32 deg and 0.28; Circle, Figure8, Helix and Spiral have a jump of
 // their own, and a mixed reading of them is never worse than the jump the shape
-// already makes in its own motion. The constants below are the overall maxima rounded up (next whole degree,
-// next 0.01). If a mixed reading is ever judged audible, the escape is a per-object
+// already makes in its own motion. The bounds below are per shape: each is the measured maximum above plus a
+// small margin (rounded up to 0.5 deg / 0.01). If a mixed reading is ever judged audible, the escape is a per-object
 // seqlock (lock-free, not wait-free), not a mutex.
 // ============================================================================
 
 TEST_CASE ("TrajectoryEngine: the largest change between two 60 Hz ticks is pinned for every shape (RTSF-02 mixed-tick bound)",
            "[trajectory][step]")
 {
-    constexpr float kMaxAzStepDeg = 179.0f;
-    constexpr float kMaxElStepDeg = 180.0f;
-    constexpr float kMaxDistStep  = 0.51f;
-
-    for (int shape = TrajShape::Bounce; shape <= TrajShape::Triangle; ++shape)
+    // WR-04: one bound per shape, each the measured maximum in the table above plus a small
+    // margin (about 2 %, rounded up to 0.5 deg / 0.01). A shape whose per-tick step grows past
+    // its own bound fails here, even when the overall maximum stays unchanged. The engine is
+    // deterministic (Random is seeded), so the margin only absorbs float differences between
+    // compilers. A bound of 0.01 on an axis a shape does not move is "does not move".
+    struct StepBound
     {
+        int shape;
+        float azDeg, elDeg, dist;
+    };
+    constexpr StepBound kBounds[] = {
+        { TrajShape::Bounce,   24.5f,   8.5f, 0.01f },
+        { TrajShape::Circle,  179.0f,   0.01f, 0.21f },
+        { TrajShape::Cross,    48.5f,  32.5f, 0.01f },
+        { TrajShape::Figure8, 175.0f,   0.01f, 0.21f },
+        { TrajShape::Heart,    26.5f,   0.01f, 0.28f },
+        { TrajShape::Helix,    24.5f, 180.0f, 0.01f },
+        { TrajShape::Infinity, 22.5f,   0.01f, 0.19f },
+        { TrajShape::Line,     23.5f,   0.01f, 0.09f },
+        { TrajShape::Orbit,    24.5f,   0.01f, 0.01f },
+        { TrajShape::Random,   15.0f,  16.5f, 0.11f },
+        { TrajShape::Spiral,   87.0f,   0.01f, 0.51f },
+        { TrajShape::Square,   51.0f,   0.01f, 0.13f },
+        { TrajShape::Triangle, 56.5f,   0.01f, 0.18f },
+    };
+    static_assert (sizeof (kBounds) / sizeof (kBounds[0]) == 13, "one bound per shape");
+
+    for (const StepBound& bound : kBounds)
+    {
+        const int shape = bound.shape;
         float shapeAz = 0.0f, shapeEl = 0.0f, shapeDist = 0.0f;
 
         for (float speed : { 1.0f, 4.0f })
@@ -688,8 +712,8 @@ TEST_CASE ("TrajectoryEngine: the largest change between two 60 Hz ticks is pinn
         }
 
         CAPTURE (shape, shapeAz, shapeEl, shapeDist);
-        CHECK (shapeAz   <= kMaxAzStepDeg);
-        CHECK (shapeEl   <= kMaxElStepDeg);
-        CHECK (shapeDist <= kMaxDistStep);
+        CHECK (shapeAz   <= bound.azDeg);
+        CHECK (shapeEl   <= bound.elDeg);
+        CHECK (shapeDist <= bound.dist);
     }
 }
