@@ -149,7 +149,7 @@ cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 # pointing at an existing tree's _deps/*-src avoids a second download.
 cmake --build build-tsan -j8
 
-# 3. Thread-interaction subset ([tsan]: every [hrtf-switch], [sc16] and [sc17] case and [trajectory][threads])
+# 3. Thread-interaction subset ([tsan]: every [hrtf-switch] case (including the misuse and in-use ones), the [sc16] and [sc17] cases, [fftcache], [multi] and [trajectory][threads])
 SPATIALCORE_TEST_TIMEOUT_SCALE=10 TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1" ./build-tsan/tests/SpatialCoreTests "[tsan]" > /tmp/sc-tsan.log 2>&1; echo "exit=$?"
 grep -c "WARNING: ThreadSanitizer" /tmp/sc-tsan.log
 
