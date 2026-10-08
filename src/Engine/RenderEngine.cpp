@@ -872,13 +872,18 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     // running crossfade) and clear the other, so a legacy load into a renderer the audio thread
     // is using is counted by that database. Runs after any fade bookkeeping, so a renderer
     // handed back free this block (endRendererFade, claimReadyRenderer) is already unmarked.
-    // Two relaxed stores: no allocation, lock or logging (DR-1).
-    const auto markRendererUse = [this]
+    // Two relaxed stores: no allocation, lock or logging (DR-1). WR-01: only a block that took
+    // the binaural path uses a renderer. Any other block (stereo variant, Ambisonics, discrete
+    // surround) leaves both unmarked, so a legacy load into the active renderer while the engine
+    // renders another format is not flagged.
+    const bool rendererPathRan = ! ctx.isStereoVariant && ctx.isBinaural
+                                 && (ctx.engineSelectsHRTF || ctx.useHRTF);
+    const auto markRendererUse = [this, rendererPathRan]
     {
         const int active = activeRendererIndex.load (std::memory_order_acquire);
         for (int i = 0; i < 2; ++i)
             binauralRenderers[static_cast<size_t> (i)].hrtfDatabase.setInUseByAudioThread (
-                i == active || (rendererXfading_ && i == rendererXfadeFromIdx_));
+                rendererPathRan && (i == active || (rendererXfading_ && i == rendererXfadeFromIdx_)));
     };
     markRendererUse();
 
@@ -1845,7 +1850,20 @@ int RenderEngine::getPrepareRendererIndex() const
 void RenderEngine::swapActiveRenderer()
 {
     noteLegacyRouteCall();
-    activeRendererIndex.store (prepareRendererIndex_, std::memory_order_release);
+    const int newActive = prepareRendererIndex_;
+    activeRendererIndex.store (newActive, std::memory_order_release);
+
+    // WR-01: re-derive the in-use marks now instead of leaving the ones the last rendered block
+    // wrote. If no block renders after this swap (transport stopped, plugin bypassed), the old
+    // active renderer would otherwise stay marked and the next legitimate load into it would be
+    // counted as a mutation while in use. Nothing reads the old renderer until a block starts
+    // the crossfade, and that block marks it again at its end. A crossfade that is still
+    // running keeps its source marked (swapping during one breaks the contract anyway).
+    // Relaxed atomic stores: no allocation, lock or logging.
+    binauralRenderers[static_cast<size_t> (newActive)].hrtfDatabase.setInUseByAudioThread (true);
+    if (! rendererXfadeActive_.load (std::memory_order_acquire))
+        binauralRenderers[static_cast<size_t> (1 - newActive)].hrtfDatabase.setInUseByAudioThread (false);
+
     prepareRendererIndex_ = 1 - prepareRendererIndex_;
 }
 

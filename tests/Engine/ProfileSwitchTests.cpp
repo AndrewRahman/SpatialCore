@@ -1758,6 +1758,50 @@ TEST_CASE ("Profile switch: a load into the renderer the audio thread is using i
         CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
     }
 
+    SECTION ("a load after a swap with no block rendered in between is not counted (WR-01)")
+    {
+        // The audio stops after the swap (transport stopped, plugin bypassed). The old active
+        // renderer must not keep the in-use mark the last block gave it.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        REQUIRE (mutationCount (*engine, 0) == 0);
+        REQUIRE (mutationCount (*engine, 1) == 0);
+
+        REQUIRE (engine->getPrepareRendererIndex() == other);
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();                       // no block renders from here on
+
+        // `wasActive` is the prepare renderer again, and nothing is reading it.
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+        auto& renderer = engine->getBinauralRenderer (wasActive);
+        CHECK_FALSE (renderer.hrtfDatabase.isInUseByAudioThread());
+        CHECK (renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        renderer.setProfile (5);
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a load into the active renderer while a stereo-variant block renders is not counted (WR-01)")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);
+        REQUIRE (engine->getBinauralRenderer (active).hrtfDatabase.isInUseByAudioThread());
+
+        // A format that does not use the HRTF renderers: the marks clear after one block.
+        RenderBlockContext stereoCtx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        stereoCtx.isStereoVariant = true;
+        LiveRender stereoLive (*engine, stereoCtx, kBlock, kRate);
+        stereoLive.renderOne();
+
+        CHECK_FALSE (engine->getBinauralRenderer (active).hrtfDatabase.isInUseByAudioThread());
+        CHECK_FALSE (engine->getBinauralRenderer (1 - active).hrtfDatabase.isInUseByAudioThread());
+        CHECK (engine->getBinauralRenderer (active).hrtfDatabase.loadFromFile (
+            getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == 0);
+    }
+
     SECTION ("a load and a setProfile on the active renderer are counted once each, the other renderer stays at 0")
     {
         const int active = legacyLoadSwapRender (*engine, live, 5);   // KEMAR is now the active renderer
