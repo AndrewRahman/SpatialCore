@@ -54,7 +54,8 @@ public:
         sourceBufs: [numSources][numSamples], outL/outR: [numSamples]
         Only enabled sources are convolved. outL/outR are zeroed first. If numSamples is larger
         than the scratch buffers (a block longer than prepare() was given, see
-        getScratchTooSmallCount()) the call leaves that zeroed output and advances no convolver,
+        getScratchTooSmallCount()) the call outputs silence for that block (it leaves the zeroed
+        output, so there is no "last good sound" to hold) and advances no convolver,
         ITD line or shelf state, so the renderer's next normal block is unaffected; it never
         grows a buffer. A caller with a longer block should render it in pieces. A zero or
         negative numSamples returns at once. */

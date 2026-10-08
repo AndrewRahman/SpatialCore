@@ -409,8 +409,8 @@ The whole render path, `renderBlock` and everything it reaches, neither allocate
 are checked in Phase 6). A host block longer than the size you passed to `prepare()` is rendered in
 full, in pieces of at most the prepared size, with no Debug assertion; `engine.getOversizedBlockCount()`
 counts such blocks, so you can show the mismatch in your own diagnostics. If a renderer's scratch buffers
-are ever too small for a call (a `prepare()` contract violation), the call is skipped, the last good sound
-is kept and `BinauralRenderer::getScratchTooSmallCount()` goes up; nothing is grown on the audio thread.
+are ever too small for a call (a `prepare()` contract violation), the call is skipped (`renderSourceBuffers` outputs silence for that call and advances no state, `updateSourceHRIR` keeps the
+previous HRIR) and `BinauralRenderer::getScratchTooSmallCount()` goes up; nothing is grown on the audio thread.
 All of these counters are lock-free and safe to read from any thread. `prepare()` itself may block
 while a profile load in flight finishes, and must not overlap `setHRTFProfile` or `renderBlock`.
 
