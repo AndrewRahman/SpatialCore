@@ -602,6 +602,90 @@ TEST_CASE ("Ambisonics NFC: the in-place array assignment stores the old coeffic
 }
 
 // ----------------------------------------------------------------------------
+// IN-07: the test above proves JUCE's two construction paths agree. This one proves the engine
+// stores the formula's values: after a real run, every live object's NFC filter holds the
+// coefficients the test-local formula gives for the distance the engine last updated with.
+// ----------------------------------------------------------------------------
+namespace spatialcore
+{
+    /** Declared a friend of RenderEngine (TEST-ONLY seam). */
+    struct RenderEngineTestAccess
+    {
+        static const juce::dsp::IIR::Coefficients<float>& nfcCoefficients (const RenderEngine& e, int object, int orderIndex)
+        {
+            return *e.nfcFilters[object][orderIndex].coefficients;
+        }
+
+        static float lastUpdateDistance (const RenderEngine& e, int object) { return e.prevNfcDistance[object]; }
+    };
+}
+
+TEST_CASE ("Ambisonics NFC: the engine stores the formula's coefficients for the distance it last updated with",
+           "[ambi][nfc][d10][stored]")
+{
+    constexpr float c = 343.0f;
+    constexpr float referenceRadius = 1.5f;
+    constexpr float pi = juce::MathConstants<float>::pi;
+
+    int compared = 0;
+
+    for (const OutputFormat format : kAmbisonicsFormats)
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kSampleRate, kBlockSize);
+        engine->setOutputFormat (format);
+
+        const RenderBlockContext ctx = makeEngineContext();
+        const int numOutCh = channelsFor (format);
+        const int order = OutputFormatRegistry::getInfo (format).ambiOrder;
+
+        MovingScene scene;
+        OutputBank out;
+
+        for (int block = 0; block < 40; ++block)
+        {
+            scene.fill (block, kBlockSize);
+            out.clear();
+            const RenderSources sources = scene.sources (kBlockSize);
+            engine->renderBlock (sources, ctx, out.ptrs, numOutCh);
+        }
+
+        for (int t = 0; t < MAX_SOURCES; ++t)
+        {
+            const float distance = RenderEngineTestAccess::lastUpdateDistance (*engine, t);
+            REQUIRE (distance >= 0.0f);   // the object was live, so its filters were updated
+
+            for (int ord = 0; ord < order; ++ord)
+            {
+                const int n = ord + 1;
+                const float r = std::max (0.05f, distance);
+                float fPole = static_cast<float> (n) * c / (2.0f * pi * r);
+                float fZero = static_cast<float> (n) * c / (2.0f * pi * referenceRadius);
+                const float maxFreq = static_cast<float> (kSampleRate) * 0.25f;
+                fPole = std::min (fPole, maxFreq);
+                fZero = std::min (fZero, maxFreq);
+                const float wPole = std::tan (pi * fPole / static_cast<float> (kSampleRate));
+                const float wZero = std::tan (pi * fZero / static_cast<float> (kSampleRate));
+                const juce::dsp::IIR::Coefficients<float> expected ((1.0f + wZero) / (1.0f + wPole),
+                                                                    (wZero - 1.0f) / (1.0f + wPole),
+                                                                    1.0f,
+                                                                    (wPole - 1.0f) / (1.0f + wPole));
+
+                const auto& stored = RenderEngineTestAccess::nfcCoefficients (*engine, t, ord);
+                CAPTURE (static_cast<int> (format), t, ord, distance);
+                REQUIRE (stored.coefficients.size() == expected.coefficients.size());
+                CHECK (std::memcmp (stored.getRawCoefficients(), expected.getRawCoefficients(),
+                                    sizeof (float) * (size_t) expected.coefficients.size()) == 0);
+                ++compared;
+            }
+        }
+    }
+
+    // Orders 1..6 across twelve objects.
+    CHECK (compared == MAX_SOURCES * (1 + 2 + 3 + 4 + 5 + 6));
+}
+
+// ----------------------------------------------------------------------------
 // Hidden capture (not run by default, not registered by ctest): writes the six Ambisonics
 // formats' raw output to the file named by SC_CAPTURE_FILE, so the before and after of the NFC
 // fix can be compared with cmp (D-10). Same deterministic run as the [ambi] case, no trap.

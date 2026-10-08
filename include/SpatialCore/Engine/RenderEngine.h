@@ -548,6 +548,11 @@ public:
 private:
     class HRTFProfileLoader;   // defined in RenderEngine.cpp; a nested class sees the private state below
 
+    // TEST-ONLY seam (IN-07): SpatialCore's own tests define this struct to read the engine's
+    // stored NFC filter coefficients. A friend declaration adds no public method and changes no
+    // layout, and no consumer defines the struct.
+    friend struct RenderEngineTestAccess;
+
     //--------------------------------------------------------------------------
     // The 5 render paths (verbatim-transplanted bodies, Task 2). Internal —
     // renderBlock() is the only public entry point, matching the pre-move
