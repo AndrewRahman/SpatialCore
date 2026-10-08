@@ -1784,6 +1784,102 @@ TEST_CASE ("Profile switch: a load into the renderer the audio thread is using i
         CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
     }
 
+    SECTION ("a load into the replaced renderer between a swap and the next block is counted when that block starts the crossfade (WR-01)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        // The swap cleared the replaced renderer's mark, so this load is not seen as it runs...
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        REQUIRE_FALSE (replaced.hrtfDatabase.isInUseByAudioThread());
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 0);
+
+        // ...but the block that starts the crossfade from it reads it, and counts the load.
+        live.renderOne();
+        REQUIRE (engine->isRendererCrossfadeActive());
+        CHECK (mutationCount (*engine, wasActive) == 1);
+        CHECK (mutationCount (*engine, other) == 0);
+
+        // Counted once: the rest of the fade and its end add nothing.
+        for (int b = 0; b < 80; ++b)
+            live.renderOne();
+        REQUIRE_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (mutationCount (*engine, wasActive) == 1);
+        CHECK (mutationCount (*engine, other) == 0);
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a swap followed by a load into the replaced renderer is not counted when no block crossfades from it (WR-01)")
+    {
+        // 1. A block on a format that does not use the HRTF renderers sits between the swap and
+        //    the load: nothing reads either renderer, so the load is safe at once, and the later
+        //    binaural block that starts the crossfade finds nothing to count.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        RenderBlockContext stereoCtx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        stereoCtx.isStereoVariant = true;
+        LiveRender stereoLive (*engine, stereoCtx, kBlock, kRate);
+        stereoLive.renderOne();
+
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        live.renderOne();   // binaural again: the crossfade from `wasActive` starts here
+        CHECK (engine->isRendererCrossfadeActive());
+        CHECK (mutationCount (*engine, wasActive) == 0);
+        CHECK (mutationCount (*engine, other) == 0);
+    }
+
+    SECTION ("a swap, a load, and a swap back with no block between never crossfade, so nothing is counted (WR-01)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();                        // `wasActive` replaced, prepare renderer again
+
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        REQUIRE (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        replaced.setProfile (5);
+        engine->swapActiveRenderer();                        // and active again
+
+        for (int b = 0; b < 4; ++b)
+            live.renderOne();
+        CHECK_FALSE (engine->isRendererCrossfadeActive());   // active == the renderer the last block used
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+    }
+
+    SECTION ("audio stopped after a swap, a load into the replaced renderer, then audio resumes: counted at the first crossfade block (WR-01)")
+    {
+        // Pins the documented behaviour: with no block between the swap and the load the load is
+        // not counted as it runs (nothing is reading), but the first block after the host resumes
+        // crossfades from the renderer that was just reloaded, and that is counted.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 0);
+        live.renderOne();
+        CHECK (mutationCount (*engine, wasActive) == 1);
+    }
+
     SECTION ("the flag reads false between a swap and the next block; the fade source is protected once the fade runs (WR-02)")
     {
         const int wasActive = legacyLoadSwapRender (*engine, live, 5);

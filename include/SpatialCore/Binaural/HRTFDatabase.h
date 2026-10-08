@@ -28,6 +28,9 @@ namespace spatialcore
 //     from (setInUseByAudioThread). A mutation of a marked database still runs,
 //     exactly as before, but is counted by getMutationWhileInUseCount() and
 //     asserts in Debug, so a misuse is visible without breaking a consumer.
+//   - Every mutator also bumps a mutation serial (getMutationSerial()), marked or not. The
+//     engine compares it across a legacy swap to catch a load into the crossfade source in the
+//     window before the next block (countMutationBeforeFade()).
 //   - Not copyable: it owns a raw libmysofa handle and the atomics below.
 //==============================================================================
 class HRTFDatabase
@@ -132,9 +135,20 @@ public:
     int getMutationWhileInUseCount() const noexcept;
 
     /** Called once at the start of every public mutator and by BinauralRenderer::setProfile.
-        When the in-use mark is set it increments the counter, asserts in Debug and returns
-        true; the mutation then proceeds exactly as before (D-09: detect, never block). */
+        It always bumps the mutation serial. When the in-use mark is set it also increments the
+        counter, asserts in Debug and returns true; the mutation then proceeds exactly as before
+        (D-09: detect, never block). */
     bool noteMutationIfInUse() noexcept;
+
+    /** How many mutating calls have started on this database, marked or not (wraps; compare for
+        inequality only). Relaxed load; any thread. RenderEngine snapshots it at a legacy swap. */
+    unsigned getMutationSerial() const noexcept;
+
+    /** RenderEngine only (RTSF-03): adds one to getMutationWhileInUseCount() for a mutation that
+        the in-use mark could not see because it ran between swapActiveRenderer() and the first
+        block that crossfades from this database. One relaxed add; no assert, no logging, so the
+        audio thread may call it. */
+    void countMutationBeforeFade() noexcept;
 
     /** Convert a raw HRIR to minimum-phase in-place using cepstral decomposition.
         Preserves magnitude spectrum but removes excess phase, so time-domain
@@ -171,8 +185,10 @@ private:
     // RTSF-03 (D-09): relaxed bookkeeping. A non-lock-free atomic would put a lock on the path.
     std::atomic<bool> inUseByAudioThread_ { false };
     std::atomic<int> mutationWhileInUseCount_ { 0 };
-    static_assert (std::atomic<bool>::is_always_lock_free && std::atomic<int>::is_always_lock_free,
-                   "HRTFDatabase bookkeeping requires lock-free std::atomic<bool> and <int>");
+    std::atomic<unsigned> mutationSerial_ { 0 };
+    static_assert (std::atomic<bool>::is_always_lock_free && std::atomic<int>::is_always_lock_free
+                       && std::atomic<unsigned>::is_always_lock_free,
+                   "HRTFDatabase bookkeeping requires lock-free std::atomic<bool>, <int> and <unsigned>");
 
     MYSOFA_EASY* easyHandle = nullptr;
     int irLength     = 0;

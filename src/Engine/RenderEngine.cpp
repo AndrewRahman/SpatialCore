@@ -509,6 +509,9 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     // prepare()'s own setProfile below then never counts.
     for (auto& renderer : binauralRenderers)
         renderer.hrtfDatabase.setInUseByAudioThread (false);
+    // WR-01: a swap made before this prepare is settled too (prepare() resets the crossfade state
+    // below), so the first block after it does not look back at that swap.
+    swapGenerationHandled_.store (swapGeneration_.load (std::memory_order_acquire), std::memory_order_release);
 
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (maxBlockSize), 1 };
 
@@ -746,6 +749,12 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     if (sources.numSamples > preparedMaxBlock_)
         oversizedBlockCount_.fetch_add (1, std::memory_order_relaxed);
 
+    // RTSF-03 (WR-01): the legacy swaps this block can act on. Loaded before the active index is
+    // read below; swapActiveRenderer() stores the index first and bumps the generation second, so
+    // a block that sees the new index but the old generation can only have started before the
+    // swap returned, when no load into the replaced renderer can have happened yet.
+    const unsigned blockSwapGeneration = swapGeneration_.load (std::memory_order_acquire);
+
     // D-06(a) / D-19(ii): every render path and the engine's own gain
     // computation read this sanitised copy, never the raw parameter. The
     // algorithm-layer guards remain the protection for consumers that call
@@ -886,6 +895,9 @@ void RenderEngine::renderBlock (const RenderSources& sources,
                 rendererPathRan && (i == active || (rendererXfading_ && i == rendererXfadeFromIdx_)));
     };
     markRendererUse();
+
+    // RTSF-03 (WR-01): this block is done with every swap it saw, whatever path it took.
+    swapGenerationHandled_.store (blockSwapGeneration, std::memory_order_release);
 
     renderedSincePrepare_ = true;
 }
@@ -1100,6 +1112,19 @@ void RenderEngine::beginRendererFadeIfSwapped (int activeIdx, int numSamples)
         rendererXfadeSamplesDone_ = 0;
         rendererXfadeLengthSamples_ = std::max (kRendererXfadeBlocks * numSamples, kMinRendererXfadeSamples);
         rendererXfadeFromIdx_ = prevActiveRendererIdx_;
+
+        // RTSF-03 (WR-01): a legacy swap since the last completed block cleared the replaced
+        // renderer's in-use mark, so a load into it before this block went unseen. The crossfade
+        // reads it now: if its database was mutated since the swap, count that mutation here.
+        // Relaxed/acquire loads and one relaxed add: no allocation, lock or logging (DR-1).
+        if (swapGeneration_.load (std::memory_order_acquire) != swapGenerationHandled_.load (std::memory_order_relaxed))
+        {
+            auto& fromDatabase = binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].hrtfDatabase;
+            if (fromDatabase.getMutationSerial()
+                != swapMutationSerial_[static_cast<size_t> (rendererXfadeFromIdx_)].load (std::memory_order_relaxed))
+                fromDatabase.countMutationBeforeFade();
+        }
+
         prevRxFadeOut_ = 1.0f;
         prevRxFadeIn_ = 0.0f;
         prevActiveRendererIdx_ = activeIdx;
@@ -1851,18 +1876,29 @@ void RenderEngine::swapActiveRenderer()
 {
     noteLegacyRouteCall();
     const int newActive = prepareRendererIndex_;
-    activeRendererIndex.store (newActive, std::memory_order_release);
+    const int replaced = 1 - newActive;
 
-    // WR-01: re-derive the in-use marks now instead of leaving the ones the last rendered block
-    // wrote. If no block renders after this swap (transport stopped, plugin bypassed), the old
-    // active renderer would otherwise stay marked and the next legitimate load into it would be
-    // counted as a mutation while in use. Nothing reads the old renderer until a block starts
-    // the crossfade, and that block marks it again at its end. A crossfade that is still
-    // running keeps its source marked (swapping during one breaks the contract anyway).
+    // WR-01: snapshot the replaced database's mutation serial BEFORE the new index is published,
+    // so a block that acts on the new index also sees this snapshot. A mutation of the replaced
+    // renderer from here on is what the crossfade-start check in beginRendererFadeIfSwapped counts.
+    swapMutationSerial_[static_cast<size_t> (replaced)].store (
+        binauralRenderers[static_cast<size_t> (replaced)].hrtfDatabase.getMutationSerial(),
+        std::memory_order_relaxed);
+
+    activeRendererIndex.store (newActive, std::memory_order_release);
+    swapGeneration_.fetch_add (1u, std::memory_order_release);
+
+    // WR-01 (iteration 1): re-derive the in-use marks now instead of leaving the ones the last
+    // rendered block wrote. If no block renders after this swap (transport stopped, plugin
+    // bypassed), the old active renderer would otherwise stay marked and the next legitimate load
+    // into it would be counted as a mutation while in use. Clearing it also hides a load made
+    // before the next block from the mark, which is why the swap snapshot above exists: that load
+    // is counted when the next block starts the crossfade from this renderer. A crossfade that is
+    // still running keeps its source marked (swapping during one breaks the contract anyway).
     // Relaxed atomic stores: no allocation, lock or logging.
     binauralRenderers[static_cast<size_t> (newActive)].hrtfDatabase.setInUseByAudioThread (true);
     if (! rendererXfadeActive_.load (std::memory_order_acquire))
-        binauralRenderers[static_cast<size_t> (1 - newActive)].hrtfDatabase.setInUseByAudioThread (false);
+        binauralRenderers[static_cast<size_t> (replaced)].hrtfDatabase.setInUseByAudioThread (false);
 
     prepareRendererIndex_ = 1 - prepareRendererIndex_;
 }

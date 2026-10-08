@@ -449,10 +449,17 @@ public:
     //                                  documented flow" below), and never from the audio thread.
     //                                  A mutation of a renderer the audio thread is using (the
     //                                  active one, or the source of a running crossfade, as of
-    //                                  the last rendered binaural block or the last swap) still
-    //                                  runs, but is counted by
-    //                                  HRTFDatabase::getMutationWhileInUseCount() and asserts in
-    //                                  Debug.
+    //                                  the last rendered binaural block) still runs, but is
+    //                                  counted by HRTFDatabase::getMutationWhileInUseCount() and
+    //                                  asserts in Debug. A mutation of the renderer a swap just
+    //                                  replaced, made before the next block, is counted too, but
+    //                                  later: when that block starts the crossfade from it, not
+    //                                  when the mutation runs (swapActiveRenderer() clears the
+    //                                  mark, so the mark alone cannot see that window). No count
+    //                                  is made if no block ever crossfades from that renderer
+    //                                  (audio stopped, a format that does not use the HRTF
+    //                                  renderers, or a swap back to the same renderer): nothing
+    //                                  read it, and there is no assert in that case.
     //   getActiveRendererIndexAtomic() any thread (an atomic; only the audio thread and
     //                                  swapActiveRenderer() store to it).
     //   getPrepareRendererIndex()      message thread only.
@@ -678,6 +685,22 @@ private:
     // the buffers above, so the fade allocates nothing on the audio thread (DR-1).
     std::vector<float> simpleWetL_, simpleWetR_;
     std::atomic<bool> rendererXfadeActive_ { false };
+
+    // --- Legacy route: swap bookkeeping (RTSF-03, D-09). swapActiveRenderer() clears the replaced
+    //     renderer's in-use mark (a stopped host would otherwise leave it stale), so the mark
+    //     cannot see a load into that renderer before the next block starts the crossfade from it.
+    //     Instead the swap snapshots the replaced database's mutation serial and bumps
+    //     swapGeneration_; the block that starts the crossfade compares the serial and counts a
+    //     difference (HRTFDatabase::countMutationBeforeFade). swapGenerationHandled_ is the
+    //     generation the last completed block had already seen at its top: every block, on any
+    //     path, releases the swaps it saw, because a block that does not crossfade from the old
+    //     renderer is also a block that does not read it. Wait-free, relaxed/acquire/release
+    //     atomics on the audio thread; nothing allocates or locks (DR-1). ---
+    std::atomic<unsigned> swapMutationSerial_[2] { { 0u }, { 0u } };   // message thread only
+    std::atomic<unsigned> swapGeneration_ { 0u };                      // message thread only
+    std::atomic<unsigned> swapGenerationHandled_ { 0u };               // audio thread (prepare() resets)
+    static_assert (std::atomic<unsigned>::is_always_lock_free,
+                   "the legacy swap bookkeeping requires lock-free std::atomic<unsigned>");
 
     // --- Engine-owned profile switching (see setHRTFProfile above). The worker
     //     only ever writes a renderer that is neither the active one nor the

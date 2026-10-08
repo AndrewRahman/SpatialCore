@@ -386,9 +386,21 @@ int HRTFDatabase::getMutationWhileInUseCount() const noexcept
     return mutationWhileInUseCount_.load (std::memory_order_relaxed);
 }
 
+unsigned HRTFDatabase::getMutationSerial() const noexcept
+{
+    return mutationSerial_.load (std::memory_order_relaxed);
+}
+
+void HRTFDatabase::countMutationBeforeFade() noexcept
+{
+    mutationWhileInUseCount_.fetch_add (1, std::memory_order_relaxed);
+}
+
 bool HRTFDatabase::noteMutationIfInUse() noexcept
 {
     // RTSF-03 (D-09): detect, never block. The mutation that called this still runs.
+    mutationSerial_.fetch_add (1, std::memory_order_relaxed);
+
     if (! inUseByAudioThread_.load (std::memory_order_relaxed))
         return false;
 
