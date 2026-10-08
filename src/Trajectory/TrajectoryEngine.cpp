@@ -144,10 +144,12 @@ TrajectoryEngine::evaluateRandomNoise (int objectIndex, float time) const
 //==============================================================================
 void TrajectoryEngine::reset (int i, float azDeg, float elDeg, float dist)
 {
-    active_[i].store (false, std::memory_order_release);
+    // Values first, then active_ with release, the same order tick() uses and the header
+    // documents: a reader that acquires active_ == false sees the reset position.
     finalAz_[i].store (azDeg, std::memory_order_relaxed);
     finalEl_[i].store (elDeg, std::memory_order_relaxed);
     finalDist_[i].store (dist, std::memory_order_relaxed);
+    active_[i].store (false, std::memory_order_release);
     phase_[i]     = 0.0f;
     prevShape_[i] = 0;
     randomTime_[i] = 0.0f;
