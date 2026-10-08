@@ -252,7 +252,7 @@ void BinauralRenderer::renderSourceBuffers (const float* const* sourceBufs,
     std::memset (outL, 0, sizeof (float) * static_cast<size_t> (numSamples));
     std::memset (outR, 0, sizeof (float) * static_cast<size_t> (numSamples));
 
-    // A block longer than the scratch (prepare() was given less) is skipped, not grown for: the
+    // A block longer than the scratch (max (prepared block size, 512, IR length)) is skipped, not grown for: the
     // output stays zero and no convolver, ITD line or shelf state advances (D-03).
     if (! scratchFits (static_cast<size_t> (numSamples)))
         return;

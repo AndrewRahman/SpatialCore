@@ -53,8 +53,8 @@ public:
     /** Render per-source accumulation buffers through HRTF convolvers.
         sourceBufs: [numSources][numSamples], outL/outR: [numSamples]
         Only enabled sources are convolved. outL/outR are zeroed first. If numSamples is larger
-        than the scratch buffers (a block longer than prepare() was given, see
-        getScratchTooSmallCount()) the call outputs silence for that block (it leaves the zeroed
+        than the scratch buffers (max (the block size prepare() was given, 512, the loaded IR
+        length); see getScratchTooSmallCount()) the call outputs silence for that block (it leaves the zeroed
         output, so there is no "last good sound" to hold) and advances no convolver,
         ITD line or shelf state, so the renderer's next normal block is unaffected; it never
         grows a buffer. A caller with a longer block should render it in pieces. A zero or
@@ -65,8 +65,10 @@ public:
                               float* outL, float* outR);
 
     /** How many updateSourceHRIR or renderSourceBuffers calls found the scratch buffers smaller
-        than they needed. That only happens when the caller renders more samples than prepare()
-        was given, or after shrinkScratchForTesting(). Each such call skipped its work instead of
+        than they needed. That only happens when the caller renders more samples than the scratch
+        holds (max (the block size prepare() was given, 512, the loaded IR length); a block
+        between the prepared size and that threshold is accepted and the convolver chunks it
+        itself), or after shrinkScratchForTesting(). Each such call skipped its work instead of
         growing a buffer on the audio thread: updateSourceHRIR keeps the source's previous HRIR,
         and renderSourceBuffers leaves its zeroed output and advances no convolver, ITD line or
         shelf state. Debug builds also assert. Any thread, lock-free (D-03, D-04, RTSF-01). */
