@@ -440,6 +440,21 @@ Steady-state output is unchanged by these two; a recording that captures a profi
 during the transition. Treat the Simple-path change above and these two as one release-note item, and
 bump the minor version when you ship them.
 
+**Source-compatibility notes (SpatialCore 1.2.0).** The project version is now 1.2.0: the realtime-safety
+work adds public API (`RenderEngine::getLegacyRouteWrongThreadCount()` and `getOversizedBlockCount()`,
+`BinauralRenderer::getScratchTooSmallCount()`, `HRTFDatabase::getMutationWhileInUseCount()` and
+`isInUseByAudioThread()`), which is a minor-version change. Two things can need a consumer edit, and are
+worth a line in your own release notes:
+
+- `TrajectoryEngine`'s final-position members (`finalAz_`, `finalEl_`, `finalDist_`) are now arrays of
+  `std::atomic<float>` instead of `float`. Reads through `getFinalAz/El/Dist()` and `isActive()` are
+  unchanged and may now be made from any thread. Code that took the address of a member as a `float*`,
+  bound a `float&` to one, or `memcpy`'d the arrays does not compile or no longer means the same; use the
+  getters.
+- `RenderEngine::getPrepareRendererIndex()` and `swapActiveRenderer()` are now out of line (defined in
+  `RenderEngine.cpp`), which changes the class layout: rebuild everything that includes `RenderEngine.h`
+  together with SpatialCore, as a submodule build does anyway.
+
 ## What to Keep vs Replace
 
 | Keep from SpatialCore | Replace with Your DSP |
