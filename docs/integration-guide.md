@@ -401,6 +401,13 @@ profile it should replace.
 CMake stops at configure time with "is not a real SOFA/HDF5 file (a Git LFS pointer?). Run: git lfs
 pull". SpatialCore's own tests still read the source-tree files through `SPATIALCORE_HRTF_DIR`.
 
+**Test-only methods.** Public methods whose names end in `ForTesting` (`setSharedHRTFFolderForTesting`,
+`setLoaderFailureForTesting`, `BinauralRenderer::shrinkScratchForTesting`,
+`SpatialMapComponent::getSharedFaceIdentityForTesting` and `getSharedFaceConstructionCountForTesting`)
+exist for SpatialCore's own tests. They are public so the class layout does not depend on build
+settings, not because a plugin should call them: `shrinkScratchForTesting` in particular makes the
+audio path skip calls.
+
 **Threading.** `setHRTFProfile`, `waitForHRTFProfileIdle` and `setSharedHRTFFolderForTesting` are
 message-thread only. `getHRTFProfileStatus` is safe from any thread. The audio thread only does atomic
 operations (loads, stores, exchanges) for the profile handoff: no lock, no allocation, no file access.

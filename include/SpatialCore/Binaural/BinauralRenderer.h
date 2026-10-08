@@ -74,7 +74,10 @@ public:
         shelf state. Debug builds also assert. Any thread, lock-free (D-03, D-04, RTSF-01). */
     int getScratchTooSmallCount() const noexcept;
 
-    /** TEST-ONLY: replaces both convolution scratch buffers with ones of exactly newSize floats
+    /** TEST-ONLY. Not part of the consumer API: a plugin must never call it. Shrinking the
+        scratch below the loaded IR or the block size makes the audio path skip every call
+        (silence, see getScratchTooSmallCount()) until the next prepare() or setProfile().
+        Replaces both convolution scratch buffers with ones of exactly newSize floats
         (capacity too), so a test can reach the
         scratch-too-small guards, which prepare() and setProfile() otherwise make unreachable
         through the public API. Message or test thread only (it allocates). Declared

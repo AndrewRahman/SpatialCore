@@ -93,12 +93,14 @@ public:
         if (index < 0 || index >= numObjects_) return false;
         return objects[(size_t)index].enabled;
     }
-    /** TEST-ONLY, read-only. Identity of the shared regular typeface this map draws with, for
+    /** TEST-ONLY, read-only. Not part of the consumer API: a plugin must never call it.
+        Identity of the shared regular typeface this map draws with, for
         SpatialCore's multi-instance regression test (Spatial-Media-Lab/OpenSpatialDelay#131, D-06).
         Every live map returns the same pointer. Changes nothing. */
     const juce::Typeface* getSharedFaceIdentityForTesting() const noexcept { return monoFaces_->regular.get(); }
 
-    /** TEST-ONLY, read-only. How many times the shared face set has been constructed in this
+    /** TEST-ONLY, read-only. Not part of the consumer API: a plugin must never call it.
+        How many times the shared face set has been constructed in this
         process (once per "no map alive" to "a map alive" transition). For the same regression test. */
     static int getSharedFaceConstructionCountForTesting() noexcept;
 
