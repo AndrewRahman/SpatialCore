@@ -1970,6 +1970,60 @@ TEST_CASE ("Profile switch: a load into the renderer the audio thread is using i
         CHECK_FALSE (engine->isRendererCrossfadeActive());
     }
 
+    SECTION ("a swap settled by prepare() starts no crossfade from the replaced renderer, so a load made after it is safe (WR-01)")
+    {
+        // Legacy route only: setHRTFProfile() is never called, so engine-owned bookkeeping is off.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();                      // `wasActive` is the replaced renderer now
+        CHECK_FALSE (engine->isPrepareRendererFree());
+
+        engine->prepare (kRate, kBlock);                   // the host prepares again (rate or size change, offline render)
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+
+        // isPrepareRendererFree() says a load into the replaced renderer is safe: do it.
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 0);
+
+        // The first binaural block must not fade from the renderer it was just promised free.
+        live.renderOne();
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (replaced.hrtfDatabase.isInUseByAudioThread());
+        CHECK (engine->getBinauralRenderer (other).hrtfDatabase.isInUseByAudioThread());
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+    }
+
+    SECTION ("a legacy crossfade that is running when prepare() is called ends there, and the replaced renderer is free (WR-01)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+        live.renderOne();                                  // starts the crossfade from `wasActive`
+        REQUIRE (engine->isRendererCrossfadeActive());
+
+        engine->prepare (kRate, kBlock);
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+
+        live.renderOne();                                  // does not pick the fade up again
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->getBinauralRenderer (wasActive).hrtfDatabase.isInUseByAudioThread());
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+    }
+
     SECTION ("a load into the active renderer while a stereo-variant block renders is not counted (WR-01)")
     {
         const int active = legacyLoadSwapRender (*engine, live, 5);

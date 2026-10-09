@@ -600,14 +600,20 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     rendererFree_[static_cast<size_t> (activeIdx)].store (false, std::memory_order_release);
     rendererFree_[static_cast<size_t> (1 - activeIdx)].store (true, std::memory_order_release);
 
+    // WR-01 (iteration 3): prepare() settles every swap and ends every crossfade on EVERY route,
+    // not only once setHRTFProfile() has been used. A legacy consumer's swapActiveRenderer() leaves
+    // prevActiveRendererIdx_ on the replaced renderer; without this reset the first block after a
+    // prepare() would start a crossfade from it although swapGenerationHandled_ says the swap is
+    // settled, and a load made in between would go unseen. No block runs during prepare(), so these
+    // plain members are single-threaded here; the flag is the only one another thread reads.
+    rendererXfading_ = false;
+    rendererXfadeSamplesDone_ = 0;
+    rendererXfadeLengthSamples_ = 0;
+    rendererXfadeActive_.store (false, std::memory_order_release);
+    prevActiveRendererIdx_ = activeIdx;
+
     if (hrtfEverRequested_)
     {
-        rendererXfading_ = false;
-        rendererXfadeSamplesDone_ = 0;
-        rendererXfadeLengthSamples_ = 0;
-        rendererXfadeActive_.store (false, std::memory_order_release);
-        prevActiveRendererIdx_ = activeIdx;
-
         if (settingsChanged && ! firstPrepare)
         {
             // The loaded profile is at the old rate: reload it at the new settings. Until the new
