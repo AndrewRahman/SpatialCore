@@ -2241,7 +2241,7 @@ TEST_CASE ("Profile switch: setHRTFProfile from a 30 Hz UI timer during audio pr
         int legacyWrongThread = -1;
     } result;
 
-    runWithWatchdog ("[hrtf-switch][ui-timer]", 120, [&result]
+    runWithWatchdog ("[hrtf-switch][ui-timer]", 300, [&result]
     {
         const TempFolder nonExistent ("ui-timer");
 
@@ -2284,26 +2284,51 @@ TEST_CASE ("Profile switch: setHRTFProfile from a 30 Hz UI timer during audio pr
         long ticks = 0;
         std::thread timerThread ([&]
         {
-            // Two phases of 30 Hz ticks. A storm (the first third): every tick asks for a
+            // Two phases of 30 Hz ticks. A storm (the first second, scaled): every tick asks for a
             // different profile, faster than a load finishes, so almost every load is superseded
-            // and the audio keeps the current profile. Then a dwell: every tick still calls
-            // setHRTFProfile, but the wanted profile changes only every 12 ticks (about 400 ms),
-            // so a load can finish and the audio thread claims it (the interval scales with
-            // SPATIALCORE_TEST_TIMEOUT_SCALE like the run time does). Both phases run while the
-            // render thread renders; a load that is superseded is not an error.
+            // and the audio keeps the current profile. Then a dwell, driven by progress and not by
+            // a tick count (IN-01): each profile of the cycle is asked for on every tick (so
+            // setHRTFProfile is still called at 30 Hz) until the audio thread has made it the
+            // active one, and only then does the wanted profile move on. How long a load takes
+            // (a loaded machine, ThreadSanitizer) then changes how long the test runs, never how
+            // many distinct profiles it sees. A step that never completes within its scaled
+            // timeout moves on, and the distinct-profile check below reports it. Both phases run
+            // while the render thread renders; a load that is superseded is not an error.
             const auto start = std::chrono::steady_clock::now();
-            const double runMs = 3000.0 * timeoutScale();
+            const double stormMs = 1000.0 * timeoutScale();
+            // A bound, not a duration: a step ends the moment its profile is active (about 0.3 s on an
+            // idle machine). The loader runs at low priority, so a heavily oversubscribed machine
+            // can starve it for tens of seconds; 4 steps plus the final settle stay inside the
+            // watchdog below.
+            const double stepTimeoutMs = 40000.0 * timeoutScale();
             auto next = start;
             int wanted = cycle[0];
-            const long dwellTicks = 12L * timeoutScale();   // a load takes longer under a slow build
-            while (elapsedMs (start) < runMs)
+
+            // One 30 Hz tick: request `profile`, read the status, wait for the next 33 ms slot.
+            const auto tick = [&] (int profile)
             {
-                wanted = (elapsedMs (start) < runMs / 3.0) ? cycle[ticks % 4] : cycle[(ticks / dwellTicks) % 4];
-                engine->setHRTFProfile (wanted);
-                activeSeen.insert (engine->getHRTFProfileStatus().activeProfile);
+                engine->setHRTFProfile (profile);
+                const int active = engine->getHRTFProfileStatus().activeProfile;
+                activeSeen.insert (active);
                 ++ticks;
                 next += std::chrono::milliseconds (33);
                 std::this_thread::sleep_until (next);
+                return active;
+            };
+
+            while (elapsedMs (start) < stormMs)
+            {
+                wanted = cycle[ticks % 4];
+                tick (wanted);
+            }
+
+            for (const int profile : cycle)
+            {
+                wanted = profile;
+                const auto stepStart = std::chrono::steady_clock::now();
+                while (tick (wanted) != wanted && elapsedMs (stepStart) < stepTimeoutMs)
+                {
+                }
             }
             // A timer that stops: the last request settles, and the audio thread claims it.
             engine->setHRTFProfile (wanted);
@@ -2340,7 +2365,14 @@ TEST_CASE ("Profile switch: setHRTFProfile from a 30 Hz UI timer during audio pr
 
     CHECK (result.nonFinite == 0);
     CHECK (result.blocks > 0);
+    // The dwell waits for each profile of the cycle to become active, so this count does not depend
+    // on how fast the machine is: three distinct profiles with the full embedded set (2, 3, 5 and
+    // Simple), two on the one-profile build (5 and Simple).
+#if SPATIALCORE_EMBEDS_ALL_HRTF
     CHECK (result.activeSeen.size() >= 3);
+#else
+    CHECK (result.activeSeen.size() >= 2);
+#endif
     CHECK (result.mutations0 == 0);
     CHECK (result.mutations1 == 0);
     CHECK (result.legacyWrongThread == 0);
