@@ -501,11 +501,19 @@ public:
         no crossfade is running and a block has completed since the swap (RTSF-03, WR-02). That
         is the condition for the next load into getBinauralRenderer (getPrepareRendererIndex()).
         True from the start and after prepare(). False after a swap until one block has completed
-        (so it stays false while the host is not rendering). Any thread; two acquire loads, no lock. */
+        (so it stays false while the host is not rendering). Any thread; acquire loads only, no lock. */
     bool isPrepareRendererFree() const noexcept
     {
-        return ! rendererXfadeActive_.load (std::memory_order_acquire)
-               && swapGenerationHandled_.load (std::memory_order_acquire) == swapGeneration_.load (std::memory_order_acquire);
+        // The order of the two reads is load-bearing (WR-02). A block that starts a crossfade
+        // stores the fade flag (release) during the block and stores swapGenerationHandled_
+        // (release) at its end. Reading the generation pair FIRST: once this acquire load sees
+        // handled == generation, the fade-start store of that block happens-before it, so the
+        // fade-flag read after it sees true (or a later value). Reading the flag first would let a
+        // poller see false, be preempted across a whole block, then see handled == generation
+        // and answer true while that block's crossfade is reading the replaced renderer.
+        if (swapGenerationHandled_.load (std::memory_order_acquire) != swapGeneration_.load (std::memory_order_acquire))
+            return false;
+        return ! rendererXfadeActive_.load (std::memory_order_acquire);
     }
 
     // Renderer crossfade length (a profile swap). Counted in elapsed SAMPLES, fixed when the
