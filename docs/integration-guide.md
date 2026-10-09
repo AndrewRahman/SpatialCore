@@ -456,8 +456,9 @@ Steady-state output is unchanged by these two; a recording that captures a profi
 during the transition. Treat the Simple-path change above and these two as one release-note item, and
 bump the minor version when you ship them.
 
-**Source-compatibility notes (SpatialCore 1.2.0).** The project version is now 1.2.0: the realtime-safety
-work adds public API (`RenderEngine::getLegacyRouteWrongThreadCount()` and `getOversizedBlockCount()`,
+**Source-compatibility notes (SpatialCore 0.5.0).** SpatialCore is pre-1.0 (no public release uses it yet; it
+becomes 1.0.0 with OpenSpatialDelay 2.0.0), and the project version is now 0.5.0. The realtime-safety
+work adds public API (`RenderEngine::getLegacyRouteWrongThreadCount()`, `getOversizedBlockCount()` and `isPrepareRendererFree()`,
 `BinauralRenderer::getScratchTooSmallCount()`, `HRTFDatabase::getMutationWhileInUseCount()` and
 `isInUseByAudioThread()`), which is a minor-version change. Two things can need a consumer edit, and are
 worth a line in your own release notes:

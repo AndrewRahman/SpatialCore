@@ -142,7 +142,7 @@ class SpatializationAlgorithm {
 - **Demo:** `SpatialCoreDemo` (in `examples/`) sits behind `SPATIALCORE_BUILD_EXAMPLES` (default OFF, top-level builds only). It is the worked example of wiring ADM-OSC, trajectories and the map into `RenderEngine`, with `--screenshots <dir>` and `--selftest` modes
 
 ## Versioning
-Semantic versioning: `vMAJOR.MINOR.PATCH`
+Semantic versioning: `vMAJOR.MINOR.PATCH`. **Pre-1.0 today (`0.5.0`):** SpatialCore is in no public release yet, so it stays `0.x` (the minor tracks the milestone phase; breaking changes are allowed between minors) and becomes `1.0.0` when OpenSpatialDelay ships a release built on it, which is OpenSpatialDelay 2.0.0. From 1.0.0 on:
 - Major: Breaking API changes (new virtual methods, removed functions)
 - Minor: New features (new algorithm, output format, UI widget)
 - Patch: Bug fixes

@@ -178,7 +178,9 @@ Run it with no arguments for the interactive app. `--screenshots <dir>` writes `
 
 ## Versioning
 
-SpatialCore follows semantic versioning (`v1.0.0`). Each plugin pins to a specific version via its git submodule pointer.
+SpatialCore follows semantic versioning. It is pre-1.0 (currently `0.5.0`) because no public release uses it yet; it becomes `1.0.0` when OpenSpatialDelay ships a release built on it (that release is OpenSpatialDelay 2.0.0). Until then the minor number tracks the milestone phase and the API may change between minors. Each plugin pins to a specific commit via its git submodule pointer.
+
+From 1.0.0 on:
 
 - **Major:** Breaking API changes (new virtual methods, removed functions)
 - **Minor:** New features (new algorithm, new output format, new UI widget)
