@@ -2,6 +2,7 @@
 
 #include <juce_dsp/juce_dsp.h>
 #include <SpatialCore/Binaural/SharedFFTCache.h>
+#include <SpatialCore/Binaural/TransitionTiming.h>
 #include <vector>
 #include <memory>
 
@@ -17,22 +18,23 @@ class PartitionedConvolver
 public:
     PartitionedConvolver() = default;
 
-    /** Prepare the convolver for a given max block size and IR length. */
-    void prepare (int maxBlockSize, int irLength);
+    /** Prepare the convolver for a given max block size and IR length.
+        sampleRate only converts the ms-defined transition durations
+        (TransitionTiming.h) to sample counts; invalid values (<= 0, > 1e6)
+        fall back to 48 kHz timing.  Defaulted so existing 2-argument callers
+        compile unchanged. */
+    void prepare (int maxBlockSize, int irLength, double sampleRate = 48000.0);
 
     /** Set or update the impulse response.
-        v1.0.5: Dual-convolver crossfade -- new IR is loaded into the inactive
-        slot and crossfaded using equal-power (cos/sin) gains.  This eliminates
-        overlap-save boundary discontinuities that caused audible pops during
-        HRTF transitions (issue Spatial-Media-Lab/OpenSpatialDelay#50).
-
-        BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): the transition is timed in samples,
-        not calls.  The inactive slot warms up for at least kWarmupBlocks calls and
-        at least irLen samples, then the fade lasts
-        max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples, with
-        callSize taken once when the fade starts.  At 512-sample calls and an IR of
-        512 samples or fewer this is the original one-call warm-up and four-call
-        fade. */
+        v1.0.5: Dual-convolver crossfade (issue #50) -- the new IR is loaded
+        into the inactive slot, which warms for max(IR length,
+        kHRIRWarmupMinMs) samples and then equal-power crossfades over
+        kHRIRCrossfadeMs.  This eliminates overlap-save boundary
+        discontinuities that caused audible pops during HRTF transitions.
+        v2.0.0 (issue #234): both durations are counted in SAMPLES (converted
+        from ms at the prepared sample rate), so the transition has the same
+        wall-clock duration -- and is pop-free -- at every host buffer size and
+        sample rate. */
     void setIR (const float* ir, int length);
 
     /** Process one block: convolve input with IR, write to output.
@@ -94,28 +96,14 @@ private:
     enum class State { Idle, Warmup, Crossfading };
     State state = State::Idle;
 
-    // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): both timings are in samples with a floor.
-    //   Warmup:      lasts at least kWarmupBlocks calls AND at least irLen samples, so the
-    //                inactive slot's overlap accumulator holds the whole IR tail before it
-    //                is faded in.
-    //   Crossfading: lasts max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples.
-    //                callSize is the size of the call that ended Warmup; the length is fixed
-    //                then (crossfadeLengthSamples) and advanced by elapsed samples, so progress
-    //                never runs backwards when call sizes vary.
-    static constexpr int kCrossfadeBlocks = 4;          // Fade length in calls at the call size the fade starts at
-    static constexpr int kWarmupBlocks = 1;             // Minimum calls the inactive slot warms up for
-    static constexpr int kMinCrossfadeSamples = 2048;   // Floor on the fade length (~43 ms at 48 kHz)
-
+    // Issue #234: transition timing is counted in samples, derived from the
+    // ms-defined constants in TransitionTiming.h at prepare() time.
     int activeSlot = 0;                          // Index of the currently active slot (0 or 1)
-    int stateBlockCount = 0;                     // Calls elapsed in current state
-    int stateSampleCount = 0;                    // Samples elapsed in current state
-    int crossfadeLengthSamples = 0;              // Fixed when Warmup ends; the fade's length in samples
-
-    // Per-sample gain interpolation for glitch-free crossfade
-    float fadeOutGain = 1.0f;                    // Current fade-out gain (active -> old)
-    float fadeInGain  = 0.0f;                    // Current fade-in gain  (inactive -> new)
-    float prevFadeOutGain = 1.0f;                // Previous block's ending fade-out gain
-    float prevFadeInGain  = 0.0f;               // Previous block's ending fade-in gain
+    int crossfadeSamples = 1024;                 // Equal-power crossfade length (21.333 ms)
+    int warmupFloorSamples = 256;                // Warmup floor (5.333 ms), independent of host block size
+    int warmupSamples = 256;                     // Warmup length of the current transition: max(irLen, floor)
+    int stateSampleCount = 0;                    // Samples elapsed in the current Warmup / Crossfading state
+    std::vector<float> fadeCurve;                // crossfadeSamples + 1 entries: sin (pi/2 * k / C); [0] = 0, [C] = 1
 
     // Deferred IR: if setIR() is called mid-transition, store it for later
     std::vector<float> pendingIR;
