@@ -84,8 +84,8 @@ void BinauralRenderer::setProfile (int profileIndex)
     // =========================================================================
     for (int i = 0; i < MAX_SOURCES; ++i)
     {
-        sourceConvL[i].prepare (currentBlockSize, irLen);
-        sourceConvR[i].prepare (currentBlockSize, irLen);
+        sourceConvL[i].prepare (currentBlockSize, irLen, currentSampleRate);
+        sourceConvR[i].prepare (currentBlockSize, irLen, currentSampleRate);
         sourceConvReady[i] = false;   // Force HRIR reload on next processBlock
         cachedSourceAz[i] = -999.0f;  // Invalidate cached positions
         cachedSourceEl[i] = -999.0f;

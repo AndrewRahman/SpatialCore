@@ -2,6 +2,7 @@
 
 #include <juce_dsp/juce_dsp.h>
 #include <SpatialCore/Binaural/SharedFFTCache.h>
+#include <SpatialCore/Binaural/TransitionTiming.h>
 #include <vector>
 #include <memory>
 
@@ -17,14 +18,23 @@ class PartitionedConvolver
 public:
     PartitionedConvolver() = default;
 
-    /** Prepare the convolver for a given max block size and IR length. */
-    void prepare (int maxBlockSize, int irLength);
+    /** Prepare the convolver for a given max block size and IR length.
+        sampleRate only converts the ms-defined transition durations
+        (TransitionTiming.h) to sample counts; invalid values (<= 0, > 1e6)
+        fall back to 48 kHz timing.  Defaulted so existing 2-argument callers
+        compile unchanged. */
+    void prepare (int maxBlockSize, int irLength, double sampleRate = 48000.0);
 
     /** Set or update the impulse response.
-        v1.0.5: Dual-convolver crossfade -- new IR is loaded into the inactive
-        slot and crossfaded over kCrossfadeBlocks blocks using equal-power
-        (cos/sin) gains.  This eliminates overlap-save boundary discontinuities
-        that caused audible pops during HRTF transitions (issue #50). */
+        v1.0.5: Dual-convolver crossfade (issue #50) -- the new IR is loaded
+        into the inactive slot, which warms for max(IR length,
+        kHRIRWarmupMinMs) samples and then equal-power crossfades over
+        kHRIRCrossfadeMs.  This eliminates overlap-save boundary
+        discontinuities that caused audible pops during HRTF transitions.
+        v2.0.0 (issue #234): both durations are counted in SAMPLES (converted
+        from ms at the prepared sample rate), so the transition has the same
+        wall-clock duration -- and is pop-free -- at every host buffer size and
+        sample rate. */
     void setIR (const float* ir, int length);
 
     /** Process one block: convolve input with IR, write to output.
@@ -80,17 +90,14 @@ private:
     enum class State { Idle, Warmup, Crossfading };
     State state = State::Idle;
 
-    static constexpr int kCrossfadeBlocks = 4;   // Equal-power crossfade duration (~21ms)
-    static constexpr int kWarmupBlocks = 1;      // Let inactive slot build overlap before crossfade
-
+    // Issue #234: transition timing is counted in samples, derived from the
+    // ms-defined constants in TransitionTiming.h at prepare() time.
     int activeSlot = 0;                          // Index of the currently active slot (0 or 1)
-    int stateBlockCount = 0;                     // Blocks elapsed in current state
-
-    // Per-sample gain interpolation for glitch-free crossfade
-    float fadeOutGain = 1.0f;                    // Current fade-out gain (active -> old)
-    float fadeInGain  = 0.0f;                    // Current fade-in gain  (inactive -> new)
-    float prevFadeOutGain = 1.0f;                // Previous block's ending fade-out gain
-    float prevFadeInGain  = 0.0f;               // Previous block's ending fade-in gain
+    int crossfadeSamples = 1024;                 // Equal-power crossfade length (21.333 ms)
+    int warmupFloorSamples = 256;                // Warmup floor (5.333 ms), independent of host block size
+    int warmupSamples = 256;                     // Warmup length of the current transition: max(irLen, floor)
+    int stateSampleCount = 0;                    // Samples elapsed in the current Warmup / Crossfading state
+    std::vector<float> fadeCurve;                // crossfadeSamples + 1 entries: sin (pi/2 * k / C); [0] = 0, [C] = 1
 
     // Deferred IR: if setIR() is called mid-transition, store it for later
     std::vector<float> pendingIR;
