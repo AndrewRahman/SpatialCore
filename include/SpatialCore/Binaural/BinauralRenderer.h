@@ -2,6 +2,7 @@
 
 #include <SpatialCore/Core/Types.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
+#include <SpatialCore/Binaural/TransitionTiming.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
@@ -86,12 +87,33 @@ private:
 
     // ITD (Inter-aural Time Difference) tracking for smooth HRIR transitions.
     // When using getAlignedHRIR(), HRIRs are time-aligned (ITD removed).
-    // ITD is applied as a separate fractional-sample delay, smoothly interpolated
-    // between blocks to prevent timing discontinuities.
+    // ITD is applied as a separate fractional-sample delay.
+    //
+    // The applied ITD is a MIRROR of the per-source PartitionedConvolver
+    // transition (#234, D-06): same warmup max(irLen, kHRIRWarmupMinMs), same
+    // kHRIRCrossfadeMs window, same latest-wins coalescing, counted on the same
+    // samples, so the time offset and the HRIR tone change move together as ONE
+    // transition.  A first load snaps (nothing audible to slew from).  If the
+    // convolver's state machine ever changes, this mirror must change with it
+    // ([itd][slew][align] fails otherwise).
     float currentITDL[MAX_SOURCES] = {};    // Current applied ITD (samples, fractional)
     float currentITDR[MAX_SOURCES] = {};
     float targetITDL[MAX_SOURCES]  = {};    // Target ITD from latest HRIR lookup
     float targetITDR[MAX_SOURCES]  = {};
+
+    enum class ITDPhase { Idle = 0, Warmup, Ramp };
+    ITDPhase itdPhase[MAX_SOURCES] = {};             // mirrors the convolver Idle / Warmup / Crossfading
+    int   itdPhaseRemaining[MAX_SOURCES] = {};       // samples left in the current Warmup or Ramp
+    float itdStepL[MAX_SOURCES] = {};                // per-sample ramp increment
+    float itdStepR[MAX_SOURCES] = {};
+    float itdRampTargetL[MAX_SOURCES] = {};          // ITD the in-flight transition moves to (targetITD = latest lookup)
+    float itdRampTargetR[MAX_SOURCES] = {};
+    float itdPendingL[MAX_SOURCES] = {};             // latest retarget that arrived mid-transition
+    float itdPendingR[MAX_SOURCES] = {};
+    bool  itdHasPending[MAX_SOURCES] = {};
+    bool  sourceConvHasIR[MAX_SOURCES] = {};         // convolvers hold an IR: next setIR is a crossfade, not a direct load
+    int   itdXfadeSamples = 1024;                    // kHRIRCrossfadeMs at currentSampleRate (set in setProfile)
+    int   itdWarmupFloorSamples = 256;               // kHRIRWarmupMinMs at currentSampleRate (set in setProfile)
 
     // Short delay lines for ITD application (max ITD ~ 0.7ms ~ 34 samples @ 48kHz)
     static constexpr int kITDBufferSize = 64;
