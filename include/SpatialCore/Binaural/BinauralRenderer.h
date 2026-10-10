@@ -115,8 +115,15 @@ private:
     int   itdXfadeSamples = 1024;                    // kHRIRCrossfadeMs at currentSampleRate (set in setProfile)
     int   itdWarmupFloorSamples = 256;               // kHRIRWarmupMinMs at currentSampleRate (set in setProfile)
 
-    // Short delay lines for ITD application (max ITD ~ 0.7ms ~ 34 samples @ 48kHz)
-    static constexpr int kITDBufferSize = 64;
+    // Short delay lines for ITD application.  The delay line carries the ABSOLUTE
+    // HRIR onset, because all five bundled SOFA files have Data.Delay = 0 and
+    // getAlignedHRIR's onset fallback reports the onset (KEMAR about 31..64 samples
+    // at 48 kHz, SADIE about 53..124 at 48 kHz, about 247 at 96 kHz, about 496 at
+    // 192 kHz).  512 covers every bundled profile up to 192 kHz; larger delays
+    // (custom SOFA, untrusted) are clamped to kMaxITDSamples (#234, D-13).
+    // Must stay a power of two (mask indexing).
+    static constexpr int kITDBufferSize = 512;
+    static constexpr int kMaxITDSamples = kITDBufferSize - 2;   // 2-tap read needs index + 1 inside the ring
     float itdBufferL[MAX_SOURCES][kITDBufferSize] = {};
     float itdBufferR[MAX_SOURCES][kITDBufferSize] = {};
     int   itdWritePos[MAX_SOURCES] = {};

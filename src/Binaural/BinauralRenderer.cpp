@@ -190,6 +190,11 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
     else
         hrtfDatabase.getInterpolatedHRIR (azRad, elRad, tmpL.data(), tmpR.data(), delayL, delayR);
 
+    // Custom SOFA input is untrusted (#218): a negative or huge delay must never
+    // alias in the ITD ring (#234, D-13).
+    delayL = juce::jlimit (0.0f, static_cast<float> (kMaxITDSamples), delayL);
+    delayR = juce::jlimit (0.0f, static_cast<float> (kMaxITDSamples), delayR);
+
     // Apply cross-profile normalization
     for (int n = 0; n < storedIRLength; ++n)
     {
