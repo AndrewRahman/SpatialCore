@@ -358,7 +358,17 @@ if(PROJECT_IS_TOP_LEVEL AND SPATIALCORE_BUILD_EXAMPLES)
 endif()
 
 # --- Tests ---
-option(SPATIALCORE_BUILD_TESTS "Build SpatialCore tests" ON)
+# SPATIALCORE_BUILD_TESTS defaults to PROJECT_IS_TOP_LEVEL: a consumer that add_subdirectory()s
+# SpatialCore no longer compiles Catch2, SpatialCoreTests, SpatialCoreUITests and the test-only
+# SpatialCoreRTGuard library, and does not inherit SpatialCore's tests in its own ctest
+# (INTG-01, Phase 6). A consumer that wants them sets the option ON.
+# The top-level enable_testing call writes a CTestTestfile.cmake at the build root, so
+# `ctest --test-dir <tree>` finds the tests that tests/CMakeLists.txt registers (CI-01, D-12);
+# before this, CI's ctest at the build root found none.
+option(SPATIALCORE_BUILD_TESTS "Build SpatialCore's own tests (default: ON in a top-level build, OFF when consumed)" ${PROJECT_IS_TOP_LEVEL})
 if(SPATIALCORE_BUILD_TESTS)
+    if(PROJECT_IS_TOP_LEVEL)
+        enable_testing()
+    endif()
     add_subdirectory(tests)
 endif()
