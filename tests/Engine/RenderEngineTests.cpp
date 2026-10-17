@@ -6,6 +6,7 @@
 #include "../TestNumerics.h"
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -116,52 +117,111 @@ TEST_CASE ("RenderEngine: direct-binaural HRTF branch produces finite non-silent
 }
 
 // ----------------------------------------------------------------------------
-// Direct-binaural HRTF branch — oversized block (CR-03 regression)
+// Direct-binaural HRTF branch — oversized block (CR-03 regression, D-11)
 // ----------------------------------------------------------------------------
-TEST_CASE ("RenderEngine: direct-binaural HRTF branch survives an oversized block without heap corruption",
+TEST_CASE ("RenderEngine: an oversized HRTF block renders in prepared-size pieces, identical to prepared-size blocks (D-11, CR-03)",
            "[engine][renderblock][oversized]")
 {
-    // Prepare the engine at the SMALL fixture block size, then render a
-    // block whose numSamples is 4x larger than what was prepared — the
-    // exact prepare-contract violation CR-03 identified. Pre-fix, this
-    // overflowed sourceAccumStorage_ (fixed at MAX_SOURCES * kBlockSize)
-    // for source MAX_SOURCES-1 and corrupted adjacent per-source slices for
-    // every other live source. This test is designed to trip ASan/heap
-    // guards on the pre-fix engine and pass cleanly post-fix.
-    RenderEngine engine;
-    engine.prepare (kSampleRate, kBlockSize);
-    engine.setOutputFormat (OutputFormat::Binaural);
+    // CR-03 was a heap overflow: the engine prepared at kBlockSize (64) was handed a longer block.
+    // It was first fixed by growing three buffers on the audio thread; D-11 replaced that. The
+    // block is now rendered completely, in consecutive pieces of at most the prepared size, so
+    // one 256-sample block must give exactly the samples of the same signal rendered as four
+    // 64-sample blocks, bit for bit, in every state of the renderer crossfade.
+    //
+    // 64 is used on purpose: the renderer-crossfade length is fixed from the block at fade start,
+    // max (8 x block, 4096), which is 4096 for both a 256 and a 64 sample block, so the two
+    // engines fade over the same number of samples.
+    constexpr int kOversized = kBlockSize * 4;
+    constexpr int kWarmupBlocks = 80;     // 80 x 64 = 5120 samples, past the 4096 sample fade
+    constexpr int kTotal = kWarmupBlocks * kBlockSize + kOversized;
 
-    constexpr int kOversizedNumSamples = kBlockSize * 4;
+    auto engineA = std::make_unique<RenderEngine>();
+    auto engineB = std::make_unique<RenderEngine>();
 
-    std::vector<float> mono (kOversizedNumSamples, 0.5f);
-    std::vector<float> tapFade (kOversizedNumSamples, 1.0f);
-    std::vector<float> distGain (kOversizedNumSamples, 1.0f);
+    for (auto* engine : { engineA.get(), engineB.get() })
+    {
+        engine->prepare (kSampleRate, kBlockSize);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setHRTFProfile (5);
+        REQUIRE (engine->waitForHRTFProfileIdle (30000));
+    }
 
-    RenderSources sources;
-    sources.numSamples = kOversizedNumSamples;
-    sources.monoBuffers[0] = mono.data();
-    sources.tapFadeGainPerSample[0] = tapFade.data();
-    sources.distGainPerSample[0] = distGain.data();
-    sources.objectLive[0] = true;
-    sources.objects[0].azimuthDeg = 30.0f;
-    sources.objects[0].elevationDeg = 0.0f;
-    sources.objects[0].distance = 0.5f;
-    sources.objects[0].enabled = true;
+    std::vector<float> mono (kTotal);
+    for (int n = 0; n < kTotal; ++n)
+        mono[(size_t) n] = 0.5f * std::sin (0.05f * (float) n);
+    const std::vector<float> ones (kTotal, 1.0f);
+
+    // Sources for samples [first, first + length) of the signal above.
+    auto sourcesFor = [&] (int first, int length)
+    {
+        RenderSources s;
+        s.numSamples = length;
+        s.monoBuffers[0] = mono.data() + first;
+        s.tapFadeGainPerSample[0] = ones.data() + first;
+        s.distGainPerSample[0] = ones.data() + first;
+        s.objectLive[0] = true;
+        s.objects[0].azimuthDeg = 30.0f;
+        s.objects[0].elevationDeg = 0.0f;
+        s.objects[0].distance = 0.5f;
+        s.objects[0].enabled = true;
+        return s;
+    };
 
     RenderBlockContext ctx;
     ctx.sampleRate = kSampleRate;
     ctx.isBinaural = true;
     ctx.useHRTF = true;
+    ctx.engineComputesGains = true;
 
-    std::vector<float> outL (kOversizedNumSamples, 0.0f), outR (kOversizedNumSamples, 0.0f);
-    float* outPtrs[2] = { outL.data(), outR.data() };
+    int first = 0;
 
-    engine.renderBlock (sources, ctx, outPtrs, 2);
-    engine.renderBlock (sources, ctx, outPtrs, 2);
+    SECTION ("steady")
+    {
+        // Both engines claim KEMAR and finish the crossfade before the block under test.
+        for (int b = 0; b < kWarmupBlocks; ++b)
+        {
+            std::vector<float> l (kBlockSize), r (kBlockSize);
+            float* outPtrs[2] = { l.data(), r.data() };
+            const auto sources = sourcesFor (b * kBlockSize, kBlockSize);
+            engineA->renderBlock (sources, ctx, outPtrs, 2);
+            engineB->renderBlock (sources, ctx, outPtrs, 2);
+        }
+        first = kWarmupBlocks * kBlockSize;
+    }
 
-    CHECK (allFinite (outL.data(), kOversizedNumSamples));
-    CHECK (allFinite (outR.data(), kOversizedNumSamples));
+    SECTION ("during the renderer crossfade")
+    {
+        // No warm-up: the block under test is the one that claims the profile and starts the fade.
+    }
+
+    SECTION ("Simple-to-HRTF blend")
+    {
+        // The engine owns the path choice: profile 0 (Simple) fades into KEMAR through the blend.
+        ctx.engineSelectsHRTF = true;
+    }
+
+    std::vector<float> aL (kOversized, 0.0f), aR (kOversized, 0.0f);
+    std::vector<float> bL (kOversized, 0.0f), bR (kOversized, 0.0f);
+
+    {
+        float* outPtrs[2] = { aL.data(), aR.data() };
+        engineA->renderBlock (sourcesFor (first, kOversized), ctx, outPtrs, 2);
+    }
+
+    for (int piece = 0; piece < 4; ++piece)
+    {
+        float* outPtrs[2] = { bL.data() + piece * kBlockSize, bR.data() + piece * kBlockSize };
+        engineB->renderBlock (sourcesFor (first + piece * kBlockSize, kBlockSize), ctx, outPtrs, 2);
+    }
+
+    REQUIRE (allFinite (aL.data(), kOversized));
+    REQUIRE (allFinite (aR.data(), kOversized));
+    REQUIRE (anyNonzero (aL.data(), kOversized));
+    REQUIRE (anyNonzero (aR.data(), kOversized));
+    REQUIRE (std::memcmp (aL.data(), bL.data(), sizeof (float) * (size_t) kOversized) == 0);
+    REQUIRE (std::memcmp (aR.data(), bR.data(), sizeof (float) * (size_t) kOversized) == 0);
+    CHECK (engineA->getOversizedBlockCount() == 1);
+    CHECK (engineB->getOversizedBlockCount() == 0);
 }
 
 // ----------------------------------------------------------------------------
@@ -450,8 +510,9 @@ namespace
     }
 }
 
+// [tsan] marks the thread-interaction subset the build-tsan gate runs (D-01).
 TEST_CASE ("RenderEngine: engineDerivesDispatch renders the active layout's path even when the consumer's flags disagree",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     SourceFixture fixture;
 
@@ -500,7 +561,7 @@ TEST_CASE ("RenderEngine: engineDerivesDispatch renders the active layout's path
 }
 
 TEST_CASE ("RenderEngine: with engineDerivesDispatch false the consumer's dispatch flags are honoured verbatim",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     SourceFixture fixture;
 
@@ -547,7 +608,7 @@ TEST_CASE ("RenderEngine: with engineDerivesDispatch false the consumer's dispat
 }
 
 TEST_CASE ("RenderEngine: several setOutputFormat calls with no block between them render the last one",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -590,7 +651,7 @@ TEST_CASE ("RenderEngine: several setOutputFormat calls with no block between th
 }
 
 TEST_CASE ("RenderEngine: a block rendered before any setOutputFormat uses the default binaural layout",
-           "[engine][format-switch][sc16]")
+           "[engine][format-switch][sc16][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1558,7 +1619,7 @@ TEST_CASE ("RenderEngine: a speaker index on the Stereo format renders as Equal 
 // the layout, and the writer-view accessors count misuse from the render thread.
 // ----------------------------------------------------------------------------
 TEST_CASE ("RenderEngine: getBlockLayout follows the layout the last block rendered, never a newer one (SC-17)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1593,7 +1654,7 @@ TEST_CASE ("RenderEngine: getBlockLayout follows the layout the last block rende
 }
 
 TEST_CASE ("RenderEngine: a single thread that writes and renders is never counted as writer-view misuse (SC-17)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1613,7 +1674,7 @@ TEST_CASE ("RenderEngine: a single thread that writes and renders is never count
 }
 
 TEST_CASE ("RenderEngine: the writer view called from the render thread is counted (SC-17)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);
@@ -1645,7 +1706,7 @@ TEST_CASE ("RenderEngine: the writer view called from the render thread is count
 }
 
 TEST_CASE ("RenderEngine: a render thread always sees one of the formats a writer toggles between (SC-17 smoke)",
-           "[engine][sc17]")
+           "[engine][sc17][tsan]")
 {
     RenderEngine engine;
     engine.prepare (kSampleRate, kBlockSize);

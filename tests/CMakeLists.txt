@@ -30,10 +30,13 @@ add_executable(SpatialCoreTests
     Binaural/BinauralRendererTests.cpp
     Binaural/ProfileLoudnessTests.cpp
     Binaural/HRTFEmbeddedTests.cpp
+    Binaural/SharedFFTCacheTests.cpp
     Engine/RenderEngineTests.cpp
     Engine/TripleBufferIndexTests.cpp
     Engine/ProfileSwitchTests.cpp
     Engine/ControlRouteTests.cpp
+    Engine/RealtimeSafetyTests.cpp
+    Engine/MultiInstanceTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
@@ -58,7 +61,20 @@ target_compile_definitions(SpatialCoreTests PRIVATE
     SPATIALCORE_HRTF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../HRTF"
     JUCE_UNIT_TESTS=1
     JUCE_MODAL_LOOPS_PERMITTED=1
+    # The repo root, read by the Phase 5 source-scan rule (Plan 05-03) the way the UI font rules read it.
+    SPATIALCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
+
+# Test-only allocation and lock trap (Phase 5, RTSF-05). It counts every malloc, free and pthread
+# lock made on the one thread a test arms, so a test can prove RenderEngine::renderBlock allocates
+# and locks nothing. It is built from tests/ and linked into SpatialCoreTests only, never into
+# SpatialCore or SpatialCoreUI. It is left out under a sanitizer, whose allocator blinds the
+# libmalloc logger the trap reads (RESEARCH Pitfall 2); without it every trap case SKIPs.
+if (APPLE AND NOT CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+    add_library(SpatialCoreRTGuard SHARED Support/rtguard/RTGuard.cpp)
+    target_link_libraries(SpatialCoreTests PRIVATE SpatialCoreRTGuard)
+    target_compile_definitions(SpatialCoreTests PRIVATE SPATIALCORE_RT_GUARD=1)
+endif()
 
 # SpatialCoreUITests: the only target that links SpatialCoreUI (SpatialCoreTests deliberately
 # does not). UI code is message-thread code, so the tests construct components without a window
@@ -70,6 +86,7 @@ add_executable(SpatialCoreUITests
     UI/MapRouteTests.cpp
     UI/SpatialMapComponentTests.cpp
     UI/FontProvenanceTests.cpp
+    UI/MultiMapTests.cpp
 )
 
 target_link_libraries(SpatialCoreUITests

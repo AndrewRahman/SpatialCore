@@ -4,13 +4,13 @@
 namespace spatialcore
 {
 
-// Process-global FFT cache (issue Spatial-Media-Lab/OpenSpatialDelay#131).  Apple's vDSP shares internal
-// twiddle factor memory across FFT setups of the same order.  Destroying the
-// last setup of a given order frees the shared table even while another
-// thread's vDSP_fft_zrip is reading from it.  The cache creates each order
-// once and holds a permanent shared_ptr so the vDSP twiddle tables are never
-// freed while the process is alive.  Individual convolvers also hold
-// shared_ptrs, providing redundant safety.
+// Process-global FFT cache (D-08; the full contract, provenance and platform limit are written in
+// SharedFFTCache.h). One FFT per order, created on the first request under the SpinLock at prepare
+// time (PartitionedConvolver::prepare, HRTFDatabase::convertToMinPhase), never from the audio
+// thread, and kept for the life of the process: a deliberate permanent allocation, not a leak,
+// which is why a Debug build prints "Leaked objects detected: 1 FFT" at exit. It came from
+// OpenSpatialDelay PR #142 for Spatial-Media-Lab/OpenSpatialDelay#131. Individual convolvers also
+// hold shared_ptrs, so an FFT outlives any one convolver.
 std::shared_ptr<juce::dsp::FFT> SharedFFTCache::getOrCreate (int fftOrder)
 {
     juce::SpinLock::ScopedLockType sl (lock);

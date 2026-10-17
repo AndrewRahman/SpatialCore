@@ -5,3 +5,4 @@ JUCE
 *.xcodeproj
 .context/
 build-release/
+build-tsan/

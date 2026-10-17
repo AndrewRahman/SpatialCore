@@ -154,7 +154,7 @@ public:
 
 `examples/demo/DemoComponent.cpp` is the worked example: ADM-OSC in and out, trajectories and the spatial map all driving `RenderEngine`. Build it with `-DSPATIALCORE_BUILD_EXAMPLES=ON` (see the README), and run `SpatialCoreDemo --selftest` to see all three routes reach the renderer. The rules it follows:
 
-- **Control stays on the message thread.** OSC input, the trajectory timer and map drags all run there. The consumer merges OSC updates that carry NaN for an axis they did not send (it keeps the stored value for that axis), then copies each object's position into per-object `std::atomic` values. The audio thread only loads those atomics and calls `renderBlock`. It never reads `ADMOSCReceiver`, `TrajectoryEngine` or the map.
+- **Control stays on the message thread.** OSC input, the trajectory timer and map drags all run there. The consumer merges OSC updates that carry NaN for an axis they did not send (it keeps the stored value for that axis), then copies each object's position into per-object `std::atomic` values. The audio thread only loads those atomics and calls `renderBlock`. It never reads `ADMOSCReceiver`, `TrajectoryEngine` or the map. The `TrajectoryEngine` getters (`getFinalAz`, `getFinalEl`, `getFinalDist`, `isActive`) are lock-free atomics and safe to call from any thread, but the flow above stays the recommended one: read them on the message thread and copy the values into your own per-object atomics.
 - **Let the engine compute gains and dispatch.** Set `engineComputesGains` and `engineDerivesDispatch` on the `RenderBlockContext`.
 - **Answer position queries.** Override `ADMOSCReceiver::Listener::admPositionQueried` and call `ADMOSCSender::queueReply` from your own state. The reply goes to the sender's configured destination, not to the device that asked, and a reply still queued when you call `connect` or `disconnect` is dropped, so it never reaches a new destination. Tick the sender from a timer of 30 Hz or more; it keeps its own 30 Hz clock.
 - **Range-limit parameter values.** `admObjectParamReceived` and `admGlobalParamReceived` deliver finite values, but only x, y and z are clamped. `/doppler`, `/pitch`, `/speed` and every `/osd/global/*` value are unbounded, so clamp them to your parameter's range before use.
@@ -184,6 +184,8 @@ public:
     }
 };
 ```
+
+**Share one `SMLLookAndFeel` across editors.** An `SMLLookAndFeel` loads its seven typefaces when it is constructed, so a look-and-feel created per editor repeats that work for every open editor window (the per-instance duplication behind `Spatial-Media-Lab/OpenSpatialDelay#131`). Create one, for example as a member of the processor or in a shared pointer, and have each editor call `setLookAndFeel` with it; clear it in the editor's destructor with `setLookAndFeel (nullptr)` before the editor goes away. The spatial map already shares its own JetBrains Mono face set between all maps, so it needs nothing from you (proved by `[ui][multi]`).
 
 ## Step 6: Build and Test
 
@@ -352,7 +354,28 @@ Simple and an HRTF profile, blends the two, so profile 0 is as click-free as the
 `engineComputesGains` fills `objChannelGains` for the non-binaural formats, so set both. Both flags
 default to `false`, so an existing plugin renders exactly as before.
 Do not mix `setHRTFProfile` with the older `swapActiveRenderer` / `getPrepareRendererIndex` /
-`getBinauralRenderer` loading on the same engine; pick one way.
+`getBinauralRenderer` loading on the same engine; pick one way, and prefer `setHRTFProfile`.
+
+**The older route's thread contract.** The older route stays until the next major version, for plugins that have not moved yet,
+and it is watched, not changed. `getPrepareRendererIndex()` and `swapActiveRenderer()` are message-thread only. Load into
+`getBinauralRenderer (getPrepareRendererIndex())`, never from the audio thread, then call `swapActiveRenderer()`. Do not start the
+next load straight after the swap: `swapActiveRenderer()` changes the active renderer at once, but the old renderer is still the
+crossfade source until a block has run. Poll `engine.isPrepareRendererFree()` and load once it is true. It is false from the swap
+until a block has completed that saw the swap and, if that block started a crossfade, until the crossfade has ended. It turns true
+after one block on a format or path that does not use the HRTF renderers (stereo variants, Ambisonics, surround, the Simple path),
+where `isRendererCrossfadeActive()` never turns true, and after the crossfade has ended on the binaural HRTF path. Do not wait on
+`isRendererCrossfadeActive()` alone: it reads false between the swap and the first block as well as after the crossfade. If the host is not calling
+`processBlock` (transport stopped, plugin suspended) no block can complete, so `isPrepareRendererFree()` stays false; nothing is reading
+either renderer then and a load is safe, but the first binaural block after the host resumes crossfades from the renderer you reloaded,
+and that is counted. The answer is a snapshot: it cannot stop a format switch to binaural from landing while a load is in flight.
+A call that breaks the contract still runs exactly as before, and is counted so you can show it in your own
+diagnostics: `engine.getLegacyRouteWrongThreadCount()` counts a `swapActiveRenderer()` or `getPrepareRendererIndex()` call made on the render
+thread while another thread is the writer, and `renderer.hrtfDatabase.getMutationWhileInUseCount()` counts a load, unload or
+`setProfile` on a renderer the audio thread is using (`isInUseByAudioThread()` reports the mark). A load into the renderer a swap just
+replaced, made before the next block, is counted too, but when the block that starts the crossfade from it runs, not when the load
+runs (the swap clears that renderer's mark so a stopped host leaves no stale mark); it is not counted if no block ever
+crossfades from that renderer. Debug builds also assert on a mutation of a marked renderer.
+One `HRTFDatabase` is used by one thread at a time: lookups are `const` but write inside the libmysofa handle.
 
 **Where the data lives.** The five profiles are compiled into SpatialCore (a `SpatialCoreHRTFData`
 library linked privately), so there is no install step and no path to set. The CMake option
@@ -387,12 +410,24 @@ profile it should replace.
 CMake stops at configure time with "is not a real SOFA/HDF5 file (a Git LFS pointer?). Run: git lfs
 pull". SpatialCore's own tests still read the source-tree files through `SPATIALCORE_HRTF_DIR`.
 
+**Test-only methods.** Public methods whose names end in `ForTesting` (`setSharedHRTFFolderForTesting`,
+`setLoaderFailureForTesting`, `BinauralRenderer::shrinkScratchForTesting`,
+`SpatialMapComponent::getSharedFaceIdentityForTesting` and `getSharedFaceConstructionCountForTesting`)
+exist for SpatialCore's own tests. They are public so the class layout does not depend on build
+settings, not because a plugin should call them: `shrinkScratchForTesting` in particular makes the
+audio path skip calls.
+
 **Threading.** `setHRTFProfile`, `waitForHRTFProfileIdle` and `setSharedHRTFFolderForTesting` are
 message-thread only. `getHRTFProfileStatus` is safe from any thread. The audio thread only does atomic
 operations (loads, stores, exchanges) for the profile handoff: no lock, no allocation, no file access.
-That guarantee covers the handoff, not every line of the render path: a few defensive
-`jassertfalse` plus `resize` guards remain in the binaural renderer, reachable only if `prepare()`
-was not called with a large enough block size (tracked as RTSF-01). `prepare()` itself may block
+The whole render path, `renderBlock` and everything it reaches, neither allocates nor takes a lock
+(proved on macOS, Apple Silicon, by the `[rt]` trap tests and a ThreadSanitizer run; Windows and Linux
+are checked in Phase 6). A host block longer than the size you passed to `prepare()` is rendered in
+full, in pieces of at most the prepared size, with no Debug assertion; `engine.getOversizedBlockCount()`
+counts such blocks, so you can show the mismatch in your own diagnostics. If a renderer's scratch buffers
+are ever too small for a call (a `prepare()` contract violation), the call is skipped (`renderSourceBuffers` outputs silence for that call and advances no state, `updateSourceHRIR` keeps the
+previous HRIR) and `BinauralRenderer::getScratchTooSmallCount()` goes up; nothing is grown on the audio thread.
+All of these counters are lock-free and safe to read from any thread. `prepare()` itself may block
 while a profile load in flight finishes, and must not overlap `setHRTFProfile` or `renderBlock`.
 
 **Moving an existing plugin over.** Delete your HRTF loading glue and any HRTF BinaryData of your own,
@@ -420,6 +455,22 @@ opt-in flag, and both only lengthen a transition at small block sizes (they neve
 Steady-state output is unchanged by these two; a recording that captures a profile swap will differ
 during the transition. Treat the Simple-path change above and these two as one release-note item, and
 bump the minor version when you ship them.
+
+**Source-compatibility notes (SpatialCore 0.5.0).** SpatialCore is pre-1.0 (no public release uses it yet; it
+becomes 1.0.0 with OpenSpatialDelay 2.0.0), and the project version is now 0.5.0. The realtime-safety
+work adds public API (`RenderEngine::getLegacyRouteWrongThreadCount()`, `getOversizedBlockCount()` and `isPrepareRendererFree()`,
+`BinauralRenderer::getScratchTooSmallCount()`, `HRTFDatabase::getMutationWhileInUseCount()` and
+`isInUseByAudioThread()`), which is a minor-version change. Two things can need a consumer edit, and are
+worth a line in your own release notes:
+
+- `TrajectoryEngine`'s final-position members (`finalAz_`, `finalEl_`, `finalDist_`) are now arrays of
+  `std::atomic<float>` instead of `float`. Reads through `getFinalAz/El/Dist()` and `isActive()` are
+  unchanged and may now be made from any thread. Code that took the address of a member as a `float*`,
+  bound a `float&` to one, or `memcpy`'d the arrays does not compile or no longer means the same; use the
+  getters.
+- `RenderEngine::getPrepareRendererIndex()` and `swapActiveRenderer()` are now out of line (defined in
+  `RenderEngine.cpp`), which changes the class layout: rebuild everything that includes `RenderEngine.h`
+  together with SpatialCore, as a submodule build does anyway.
 
 ## What to Keep vs Replace
 

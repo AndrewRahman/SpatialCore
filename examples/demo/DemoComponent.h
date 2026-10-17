@@ -15,8 +15,8 @@
 // Threads (DR-1): everything except renderAudio() and the audio callback runs on the message
 // thread. renderAudio() only loads atomics, writes buffers sized in prepareRender() and calls
 // renderBlock(); it takes no lock, allocates nothing and logs nothing. TrajectoryEngine is never
-// read there: its output is copied into the atomics on the message thread (that cross-thread read
-// is RTSF-02, Phase 5, and the demo avoids it).
+// read there: its output is copied into the atomics on the message thread (its getters are lock-free
+// atomics since RTSF-02, but copying on the message thread stays the recommended flow).
 
 #include <SpatialCore/Engine/RenderEngine.h>
 #include <SpatialCore/OSC/ADMOSCReceiver.h>

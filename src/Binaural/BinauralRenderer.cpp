@@ -30,8 +30,39 @@ void BinauralRenderer::ensureScratchCapacity()
         convTmpR.resize (needed, 0.0f);
 }
 
+int BinauralRenderer::getScratchTooSmallCount() const noexcept
+{
+    return scratchTooSmallCount_.load (std::memory_order_relaxed);
+}
+
+bool BinauralRenderer::scratchFits (size_t needed) noexcept
+{
+    if (convTmpL.size() >= needed && convTmpR.size() >= needed)
+        return true;
+
+    // Reachable only on a prepare-contract violation. Count it (any thread may read the counter),
+    // assert in Debug (JUCE logs and breaks only under a debugger), and let the caller skip: the
+    // audio thread never resizes (D-03, D-04, RTSF-01).
+    scratchTooSmallCount_.fetch_add (1, std::memory_order_relaxed);
+    jassertfalse;
+    return false;
+}
+
+void BinauralRenderer::shrinkScratchForTesting (size_t newSize)
+{
+    // TEST-ONLY seam: message or test thread, allocation allowed. A fresh vector swapped in, so the
+    // capacity equals the size too: a later audio-thread resize would have to allocate, and a
+    // test can see that.
+    std::vector<float> (newSize, 0.0f).swap (convTmpL);
+    std::vector<float> (newSize, 0.0f).swap (convTmpR);
+}
+
 void BinauralRenderer::setProfile (int profileIndex)
 {
+    // RTSF-03 (D-09): a setProfile on a renderer the audio thread is using is counted by its
+    // database, like a load. It still runs.
+    hrtfDatabase.noteMutationIfInUse();
+
     activeProfile = profileIndex;
 
     if (profileIndex == 0 || ! hrtfDatabase.isLoaded())
@@ -166,21 +197,17 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
             return;
     }
 
+    // The work buffers must hold the IR. ensureScratchCapacity() sizes them in prepare() and
+    // setProfile(), so this cannot fail for a profile loaded through setProfile(). If it ever
+    // does, skip before any lookup or write: the source keeps its previous HRIR and cached
+    // position, a later call retries, and the audio thread never grows a buffer (D-03).
+    if (! scratchFits (static_cast<size_t> (storedIRLength)))
+        return;
+
     // Query HRTF at exact source direction (realtime-safe: KD-tree lookup, no malloc)
     float delayL = 0.0f, delayR = 0.0f;
     std::vector<float>& tmpL = convTmpL;  // Reuse work buffer (safe: not in render path here)
     std::vector<float>& tmpR = convTmpR;
-
-    // Ensure work buffers are large enough for IR. ensureScratchCapacity() sizes them in
-    // prepare() and setProfile(), so this guard cannot fire for a profile loaded through
-    // setProfile(). The guard pattern itself (a jassertfalse plus an audio-thread resize) is
-    // RTSF-01 and is dealt with in Phase 5; it is deliberately left as is here.
-    if ((int) tmpL.size() < storedIRLength)
-    {
-        jassertfalse;  // Audio thread allocation -- should have been pre-allocated in prepare()
-        tmpL.resize (static_cast<size_t> (storedIRLength));
-        tmpR.resize (static_cast<size_t> (storedIRLength));
-    }
 
     // Use ITD-free HRIRs for smooth crossfading (no comb-filtering from ITD misalignment)
     if (itdActive)
@@ -216,16 +243,19 @@ void BinauralRenderer::renderSourceBuffers (const float* const* sourceBufs,
                                              int numSources, int numSamples,
                                              float* outL, float* outR)
 {
+    // An empty block has nothing to render and nothing to count (a negative value cast to size_t
+    // below would be huge).
+    if (numSamples <= 0)
+        return;
+
     // Zero output
     std::memset (outL, 0, sizeof (float) * static_cast<size_t> (numSamples));
     std::memset (outR, 0, sizeof (float) * static_cast<size_t> (numSamples));
 
-    if (convTmpL.size() < static_cast<size_t> (numSamples))
-    {
-        jassertfalse;  // Audio thread allocation -- should have been pre-allocated in prepare()
-        convTmpL.resize (static_cast<size_t> (numSamples));
-        convTmpR.resize (static_cast<size_t> (numSamples));
-    }
+    // A block longer than the scratch (max (prepared block size, 512, IR length)) is skipped, not grown for: the
+    // output stays zero and no convolver, ITD line or shelf state advances (D-03).
+    if (! scratchFits (static_cast<size_t> (numSamples)))
+        return;
 
     for (int src = 0; src < numSources && src < MAX_SOURCES; ++src)
     {
