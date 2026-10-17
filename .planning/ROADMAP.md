@@ -27,7 +27,7 @@ yet consume SpatialCore; the migration is unstarted.
 - [x] **Phase 2: Algorithm & Format Verification** - Ambisonics convention stated; gain paths verified against the panning laws (completed 2026-10-04)
 - [x] **Phase 3: Binaural Defects & HRTF Packaging** - The two inherited binaural bugs are fixed and a consumer gets HRTF data by linking (completed 2026-10-04)
 - [x] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction (completed 2026-10-05)
-- [ ] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds
+- [x] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds (completed 2026-10-17)
 - [ ] **Phase 6: Consumer Readiness & CI** - OSD can submodule, link, and build — proven in CI
 
 ## Phase Details
@@ -254,7 +254,32 @@ shipping publicly at v1.0.0.
 from scope. `SharedFFTCache` is already correctly spinlock-guarded at
 `PartitionedConvolver.cpp:16`; what remains unverified is concurrent-instance behaviour.
 **Locked rule in play**: DR-1.
-**Plans**: TBD
+**Plans**: 8/8 plans executed (run one at a time: every plan builds in the shared `build/`, `build-release/` and, from 05-04, `build-tsan/` trees, so each wave holds exactly one plan)
+
+Plans:
+**Wave 1**
+- [x] 05-01-PLAN.md — Proof tooling: a canary-checked allocation and lock trap (macOS, test-only) armed around renderBlock from the first block; the Ambisonics NFC audio-thread allocation fixed, byte-identical before and after (D-10) *(wave 1)*
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 05-02-PLAN.md — RTSF-01: oversized host blocks rendered in prepared-size pieces (D-11, bit-identical to prepared-size blocks); BinauralRenderer's two guards share one helper that skips, keeps the last good sound and counts (D-03, D-04) *(wave 2)*
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 05-03-PLAN.md — RTSF-05 matrix: every format, flag set, profile, block size, rate, algorithm, switch and trajectory shape trap-proven allocation- and lock-free; the lock inventory frozen by a source-scan rule (D-02) *(wave 3)*
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 05-04-PLAN.md — The ThreadSanitizer tree (D-01) and RTSF-02: the trajectory race shown, fixed with lock-free atomics, shown clean; the [tsan] subset gate *(wave 4)*
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 05-05-PLAN.md — RTSF-03: setHRTFProfile from a UI timer race-free under TSan; the legacy route kept, documented and watched by two misuse counters (D-09, D-10) *(wave 5)*
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 05-06-PLAN.md — VERIFY-02 engine side: OSD#96 isolation bit-identity, SharedFFTCache unit tests, eight engines on eight threads under TSan, the cache's permanent allocation documented (D-05, D-07, D-08) *(wave 6)*
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 05-07-PLAN.md — VERIFY-02 UI side: sixteen live maps share one face set and paint identically, churn beside live maps, UI suite clean under TSan (OSD#131, D-06, D-12) *(wave 7)*
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 05-08-PLAN.md — README realtime-safety check run as written (whole suite under TSan included), docs truth with the macOS-only scope (D-01, D-13), OSD hand-off row, evidence, then the requirement ticks *(wave 8)*
 
 ### Phase 6: Consumer Readiness & CI
 
@@ -291,7 +316,7 @@ External Dependencies.
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
-| 5. Realtime Safety Hardening | 0/TBD | Not started | - |
+| 5. Realtime Safety Hardening | 8/8 | Complete    | 2026-10-17 |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
 ## Coverage

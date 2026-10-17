@@ -420,28 +420,101 @@ public:
     // and renders.
     int getWriterViewOnRenderThreadCount() const noexcept;
 
+    // Diagnostic (RTSF-03, D-09, D-04): how many times swapActiveRenderer() or
+    // getPrepareRendererIndex() was called on the render thread while a different thread was
+    // the writer (it called setOutputFormat(), or one of those two legacy methods). Same rule
+    // as getWriterViewOnRenderThreadCount() (SC-17): 0 for a harness whose one thread both
+    // renders and swaps. Every build counts; Debug builds also assert. The call still runs
+    // exactly as before. Any thread, lock-free.
+    int getLegacyRouteWrongThreadCount() const noexcept;
+
+    // Diagnostic (D-11, D-04): how many renderBlock() calls carried more samples than
+    // prepare()'s maxBlockSize. Such a block is rendered completely and nothing is dropped:
+    // the direct-binaural HRTF path renders it in pieces of at most maxBlockSize, every other
+    // path needs no block-sized buffer. It does not allocate and does not assert, because it is
+    // handled. A zero-length block returns at once and is not counted. Any thread, lock-free.
+    int getOversizedBlockCount() const noexcept;
+
     //--------------------------------------------------------------------------
-    // Escape hatches (D-02 — leaf classes stay public). Consumers that need
-    // direct access to the underlying renderer/HRTF database (e.g. for
-    // profile loading, synchronous test setup per the CLAUDE.md gotcha)
-    // reach through here rather than the engine reimplementing a proxy API.
+    // Escape hatches (D-02 -- leaf classes stay public). The LEGACY HRTF route, kept for
+    // OpenSpatialDelay's current calls until the next major version (RTSF-03, D-09). The safe
+    // route is setHRTFProfile() below; do not mix the two on one engine.
+    //
+    // Thread contract, one line per method:
+    //   getBinauralRenderer (i)        any thread may call it and read the renderer. Mutating that
+    //                                  renderer or its hrtfDatabase (a load, unload, setProfile)
+    //                                  is allowed only on the renderer getPrepareRendererIndex()
+    //                                  names, only once the crossfade that follows the last
+    //                                  swapActiveRenderer() has started and ended (see "The
+    //                                  documented flow" below), and never from the audio thread.
+    //                                  A mutation of a renderer the audio thread is using (the
+    //                                  active one, or the source of a running crossfade, as of
+    //                                  the last rendered binaural block) still runs, but is
+    //                                  counted by HRTFDatabase::getMutationWhileInUseCount() and
+    //                                  asserts in Debug. A mutation of the renderer a swap just
+    //                                  replaced, made before the next block, is counted too, but
+    //                                  later: when that block starts the crossfade from it, not
+    //                                  when the mutation runs (swapActiveRenderer() clears the
+    //                                  mark, so the mark alone cannot see that window). No count
+    //                                  is made if no block ever crossfades from that renderer
+    //                                  (audio stopped, a format that does not use the HRTF
+    //                                  renderers, or a swap back to the same renderer): nothing
+    //                                  read it, and there is no assert in that case.
+    //   getActiveRendererIndexAtomic() any thread (an atomic; only the audio thread and
+    //                                  swapActiveRenderer() store to it).
+    //   getPrepareRendererIndex()      message thread only.
+    //   swapActiveRenderer()           message thread only. A call made on the render thread while
+    //                                  another thread is the writer is counted by
+    //                                  getLegacyRouteWrongThreadCount() and asserts in Debug (the
+    //                                  SC-17 pattern); the call still runs.
+    //   isRendererCrossfadeActive()    any thread (an atomic). True only while a crossfade runs.
+    //   isPrepareRendererFree()        any thread (atomics). The question to ask before a load.
+    //
+    // The documented flow: load into getBinauralRenderer (getPrepareRendererIndex()), setProfile
+    // on it, then swapActiveRenderer(). Do not start the next load straight after the swap:
+    // swapActiveRenderer() flips the active index at once, but the old renderer is still the
+    // crossfade source (or is still being rendered) until a block has run. Poll
+    // isPrepareRendererFree() and load once it is true. It is false from the swap until a block
+    // has completed that saw the swap and, if that block started a crossfade, until the
+    // crossfade has ended. It turns true after ONE block on a path that does not use the HRTF
+    // renderers (stereo variant, Ambisonics, discrete surround, the Simple path), where
+    // isRendererCrossfadeActive() never turns true, and after the crossfade has ended on the
+    // binaural HRTF path. Do not wait on isRendererCrossfadeActive() alone: it reads false
+    // between the swap and the first block as well as after the crossfade. If the host is not
+    // calling renderBlock() (transport stopped, plugin suspended) no block can complete, so
+    // isPrepareRendererFree() stays false; nothing is reading either renderer then and a load
+    // is safe, but the first binaural block after the host resumes crossfades from the renderer
+    // you reloaded, and that is counted (see the mutation counter above). The answer is a
+    // snapshot: it cannot stop a format switch to binaural from landing while a load is in
+    // flight. The prepare-index bookkeeping mirrors setOutputFormat()'s layout swap; the
+    // profile-load body itself (SOFA file IO via HRTFDatabase::loadFromFile) is consumer-side
+    // glue, not engine logic. The route stays until the next major version.
     //--------------------------------------------------------------------------
     BinauralRenderer& getBinauralRenderer (int index) { return binauralRenderers[static_cast<size_t> (index)]; }
     std::atomic<int>& getActiveRendererIndexAtomic() { return activeRendererIndex; }
 
-    // HRTF profile double-buffered swap escape hatches — message-thread-only
-    // (OSD's timerCallback()/loadHRTFProfile() reach through these; the
-    // prepare-index bookkeeping mirrors setOutputFormat()'s layout swap
-    // exactly, but the profile-load body itself (SOFA file IO via
-    // HRTFDatabase::loadFromFile) is OSD-specific glue code, not engine
-    // logic, so it stays a consumer-side call using getBinauralRenderer()).
-    int getPrepareRendererIndex() const { return prepareRendererIndex_; }
-    void swapActiveRenderer()
-    {
-        activeRendererIndex.store (prepareRendererIndex_, std::memory_order_release);
-        prepareRendererIndex_ = 1 - prepareRendererIndex_;
-    }
+    int getPrepareRendererIndex() const;
+    void swapActiveRenderer();
     bool isRendererCrossfadeActive() const { return rendererXfadeActive_.load (std::memory_order_acquire); }
+
+    /** True when no block still has to read the renderer the last swapActiveRenderer() replaced:
+        no crossfade is running and a block has completed since the swap (RTSF-03, WR-02). That
+        is the condition for the next load into getBinauralRenderer (getPrepareRendererIndex()).
+        True from the start and after prepare(). False after a swap until one block has completed
+        (so it stays false while the host is not rendering). Any thread; acquire loads only, no lock. */
+    bool isPrepareRendererFree() const noexcept
+    {
+        // The order of the two reads is load-bearing (WR-02). A block that starts a crossfade
+        // stores the fade flag (release) during the block and stores swapGenerationHandled_
+        // (release) at its end. Reading the generation pair FIRST: once this acquire load sees
+        // handled == generation, the fade-start store of that block happens-before it, so the
+        // fade-flag read after it sees true (or a later value). Reading the flag first would let a
+        // poller see false, be preempted across a whole block, then see handled == generation
+        // and answer true while that block's crossfade is reading the replaced renderer.
+        if (swapGenerationHandled_.load (std::memory_order_acquire) != swapGeneration_.load (std::memory_order_acquire))
+            return false;
+        return ! rendererXfadeActive_.load (std::memory_order_acquire);
+    }
 
     // Renderer crossfade length (a profile swap). Counted in elapsed SAMPLES, fixed when the
     // fade starts: max (kRendererXfadeBlocks x the block size at that moment,
@@ -510,6 +583,11 @@ public:
 private:
     class HRTFProfileLoader;   // defined in RenderEngine.cpp; a nested class sees the private state below
 
+    // TEST-ONLY seam (IN-07): SpatialCore's own tests define this struct to read the engine's
+    // stored NFC filter coefficients. A friend declaration adds no public method and changes no
+    // layout, and no consumer defines the struct.
+    friend struct RenderEngineTestAccess;
+
     //--------------------------------------------------------------------------
     // The 5 render paths (verbatim-transplanted bodies, Task 2). Internal —
     // renderBlock() is the only public entry point, matching the pre-move
@@ -522,6 +600,12 @@ private:
     // simpleWetL_/simpleWetR_. Returns true when the Woodworth path ran this block.
     bool renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh,
                                     int activeIdx, const RenderBlockContext* simpleCtx = nullptr);
+    // D-11: renders one piece of at most preparedMaxBlock_ samples of an HRTF block. The
+    // per-source work buffers are sized by prepare() for exactly that many samples, so a piece
+    // never needs a grow. renderDirectBinauralHRTF calls it once for a block of at most the
+    // prepared size (the consumer's own pointers) and once per piece for an oversized block.
+    bool renderDirectBinauralHRTFChunk (const RenderSources& chunk, float* outL, float* outR,
+                                         int activeIdx, const RenderBlockContext* simpleCtx);
     // D-15: the one function a binaural block goes through when engineSelectsHRTF is set. Plain
     // Simple and plain HRTF (including HRTF <-> HRTF) call exactly the path the flag-off dispatch
     // would, so the output is bit-identical; only a Simple <-> HRTF fade blends the two paths.
@@ -629,6 +713,22 @@ private:
     // the buffers above, so the fade allocates nothing on the audio thread (DR-1).
     std::vector<float> simpleWetL_, simpleWetR_;
     std::atomic<bool> rendererXfadeActive_ { false };
+
+    // --- Legacy route: swap bookkeeping (RTSF-03, D-09). swapActiveRenderer() clears the replaced
+    //     renderer's in-use mark (a stopped host would otherwise leave it stale), so the mark
+    //     cannot see a load into that renderer before the next block starts the crossfade from it.
+    //     Instead the swap snapshots the replaced database's mutation serial and bumps
+    //     swapGeneration_; the block that starts the crossfade compares the serial and counts a
+    //     difference (HRTFDatabase::countMutationBeforeFade). swapGenerationHandled_ is the
+    //     generation the last completed block had already seen at its top: every block, on any
+    //     path, releases the swaps it saw, because a block that does not crossfade from the old
+    //     renderer is also a block that does not read it. Wait-free, relaxed/acquire/release
+    //     atomics on the audio thread; nothing allocates or locks (DR-1). ---
+    std::atomic<unsigned> swapMutationSerial_[2] { { 0u }, { 0u } };   // message thread only
+    std::atomic<unsigned> swapGeneration_ { 0u };                      // message thread only
+    std::atomic<unsigned> swapGenerationHandled_ { 0u };               // audio thread (prepare() resets)
+    static_assert (std::atomic<unsigned>::is_always_lock_free,
+                   "the legacy swap bookkeeping requires lock-free std::atomic<unsigned>");
 
     // --- Engine-owned profile switching (see setHRTFProfile above). The worker
     //     only ever writes a renderer that is neither the active one nor the
@@ -756,6 +856,13 @@ private:
     std::atomic<std::size_t> renderThreadHash_ { 0 };
     std::atomic<std::size_t> writerThreadHash_ { 0 };
     mutable std::atomic<int> writerViewOnRenderThreadCount_ { 0 };
+    // RTSF-03 (D-09): the legacy-route misuse guard. legacyWriterThreadHash_ is the last
+    // non-render thread that called swapActiveRenderer() or getPrepareRendererIndex().
+    mutable std::atomic<int> legacyRouteWrongThreadCount_ { 0 };
+    mutable std::atomic<std::size_t> legacyWriterThreadHash_ { 0 };
+    void noteLegacyRouteCall() const noexcept;
+    // D-11: renderBlock() calls longer than preparedMaxBlock_ (relaxed, lock-free).
+    std::atomic<int> oversizedBlockCount_ { 0 };
     // A non-lock-free atomic would put a lock on the audio thread.
     static_assert (std::atomic<std::size_t>::is_always_lock_free,
                    "RenderEngine thread bookkeeping requires lock-free std::atomic<size_t>");

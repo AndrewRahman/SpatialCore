@@ -5,6 +5,7 @@
 #include <SpatialCore/Binaural/HRTFProfile.h>
 #include <SpatialCore/Binaural/HRTFProfileResolver.h>
 
+#include <array>
 #include <cstdlib>
 #include <new>
 #include <cstring>
@@ -473,7 +474,10 @@ void RenderEngine::claimReadyRenderer (bool hrtfPathThisBlock)
 
     if (! hrtfPathThisBlock)
     {
-        // No HRTF crossfade on this path: switch at once and give the old renderer back.
+        // No HRTF crossfade on this path: switch at once and give the old renderer back. The
+        // in-use mark is cleared BEFORE the release store, so the loader never sees a free
+        // renderer that is still marked (RTSF-03, T-05-13).
+        binauralRenderers[static_cast<size_t> (oldIdx)].hrtfDatabase.setInUseByAudioThread (false);
         rendererFree_[static_cast<size_t> (oldIdx)].store (true, std::memory_order_release);
         prevActiveRendererIdx_ = idx;
     }
@@ -499,6 +503,15 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
         hrtfLoader_->stopThread (15000);
         hrtfLoader_.reset();
     }
+
+    // RTSF-03: no block has rendered since this prepare, so no renderer is in use. The worker is
+    // stopped and the audio thread is not running, so clearing the marks here is single-threaded;
+    // prepare()'s own setProfile below then never counts.
+    for (auto& renderer : binauralRenderers)
+        renderer.hrtfDatabase.setInUseByAudioThread (false);
+    // WR-01: a swap made before this prepare is settled too (prepare() resets the crossfade state
+    // below), so the first block after it does not look back at that swap.
+    swapGenerationHandled_.store (swapGeneration_.load (std::memory_order_acquire), std::memory_order_release);
 
     juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32> (maxBlockSize), 1 };
 
@@ -587,14 +600,20 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     rendererFree_[static_cast<size_t> (activeIdx)].store (false, std::memory_order_release);
     rendererFree_[static_cast<size_t> (1 - activeIdx)].store (true, std::memory_order_release);
 
+    // WR-01 (iteration 3): prepare() settles every swap and ends every crossfade on EVERY route,
+    // not only once setHRTFProfile() has been used. A legacy consumer's swapActiveRenderer() leaves
+    // prevActiveRendererIdx_ on the replaced renderer; without this reset the first block after a
+    // prepare() would start a crossfade from it although swapGenerationHandled_ says the swap is
+    // settled, and a load made in between would go unseen. No block runs during prepare(), so these
+    // plain members are single-threaded here; the flag is the only one another thread reads.
+    rendererXfading_ = false;
+    rendererXfadeSamplesDone_ = 0;
+    rendererXfadeLengthSamples_ = 0;
+    rendererXfadeActive_.store (false, std::memory_order_release);
+    prevActiveRendererIdx_ = activeIdx;
+
     if (hrtfEverRequested_)
     {
-        rendererXfading_ = false;
-        rendererXfadeSamplesDone_ = 0;
-        rendererXfadeLengthSamples_ = 0;
-        rendererXfadeActive_.store (false, std::memory_order_release);
-        prevActiveRendererIdx_ = activeIdx;
-
         if (settingsChanged && ! firstPrepare)
         {
             // The loaded profile is at the old rate: reload it at the new settings. Until the new
@@ -725,6 +744,23 @@ void RenderEngine::renderBlock (const RenderSources& sources,
                                  float* const* outChannels,
                                  int numOutCh)
 {
+    // A zero-length (or negative) block has nothing to render: it writes nothing, takes no fade
+    // step and claims nothing, so a pending SC-20 format switch is still faded by the next real
+    // block. Checked before anything else touches engine state.
+    if (sources.numSamples <= 0)
+        return;
+
+    // D-11: a block longer than prepare()'s maxBlockSize is rendered completely (the HRTF path in
+    // pieces, see renderDirectBinauralHRTF) and counted, never asserted: it is handled.
+    if (sources.numSamples > preparedMaxBlock_)
+        oversizedBlockCount_.fetch_add (1, std::memory_order_relaxed);
+
+    // RTSF-03 (WR-01): the legacy swaps this block can act on. Loaded before the active index is
+    // read below; swapActiveRenderer() stores the index first and bumps the generation second, so
+    // a block that sees the new index but the old generation can only have started before the
+    // swap returned, when no load into the replaced renderer can have happened yet.
+    const unsigned blockSwapGeneration = swapGeneration_.load (std::memory_order_acquire);
+
     // D-06(a) / D-19(ii): every render path and the engine's own gain
     // computation read this sanitised copy, never the raw parameter. The
     // algorithm-layer guards remain the protection for consumers that call
@@ -846,6 +882,29 @@ void RenderEngine::renderBlock (const RenderSources& sources,
         applySwitchFade (ctx, layout, outChannels, numOutCh, src.numSamples, fadeInBlock);
 
     snapInterpolation_ = false;
+
+    // RTSF-03 (D-09): mark the renderers this block used (the active one, and the source of a
+    // running crossfade) and clear the other, so a legacy load into a renderer the audio thread
+    // is using is counted by that database. Runs after any fade bookkeeping, so a renderer
+    // handed back free this block (endRendererFade, claimReadyRenderer) is already unmarked.
+    // Two relaxed stores: no allocation, lock or logging (DR-1). WR-01: only a block that took
+    // the binaural path uses a renderer. Any other block (stereo variant, Ambisonics, discrete
+    // surround) leaves both unmarked, so a legacy load into the active renderer while the engine
+    // renders another format is not flagged.
+    const bool rendererPathRan = ! ctx.isStereoVariant && ctx.isBinaural
+                                 && (ctx.engineSelectsHRTF || ctx.useHRTF);
+    const auto markRendererUse = [this, rendererPathRan]
+    {
+        const int active = activeRendererIndex.load (std::memory_order_acquire);
+        for (int i = 0; i < 2; ++i)
+            binauralRenderers[static_cast<size_t> (i)].hrtfDatabase.setInUseByAudioThread (
+                rendererPathRan && (i == active || (rendererXfading_ && i == rendererXfadeFromIdx_)));
+    };
+    markRendererUse();
+
+    // RTSF-03 (WR-01): this block is done with every swap it saw, whatever path it took.
+    swapGenerationHandled_.store (blockSwapGeneration, std::memory_order_release);
+
     renderedSincePrepare_ = true;
 }
 
@@ -1059,6 +1118,19 @@ void RenderEngine::beginRendererFadeIfSwapped (int activeIdx, int numSamples)
         rendererXfadeSamplesDone_ = 0;
         rendererXfadeLengthSamples_ = std::max (kRendererXfadeBlocks * numSamples, kMinRendererXfadeSamples);
         rendererXfadeFromIdx_ = prevActiveRendererIdx_;
+
+        // RTSF-03 (WR-01): a legacy swap since the last completed block cleared the replaced
+        // renderer's in-use mark, so a load into it before this block went unseen. The crossfade
+        // reads it now: if its database was mutated since the swap, count that mutation here.
+        // Relaxed/acquire loads and one relaxed add: no allocation, lock or logging (DR-1).
+        if (swapGeneration_.load (std::memory_order_acquire) != swapGenerationHandled_.load (std::memory_order_relaxed))
+        {
+            auto& fromDatabase = binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].hrtfDatabase;
+            if (fromDatabase.getMutationSerial()
+                != swapMutationSerial_[static_cast<size_t> (rendererXfadeFromIdx_)].load (std::memory_order_relaxed))
+                fromDatabase.countMutationBeforeFade();
+        }
+
         prevRxFadeOut_ = 1.0f;
         prevRxFadeIn_ = 0.0f;
         prevActiveRendererIdx_ = activeIdx;
@@ -1069,11 +1141,17 @@ void RenderEngine::beginRendererFadeIfSwapped (int activeIdx, int numSamples)
 
 void RenderEngine::endRendererFade()
 {
+    // The renderer faded out is neither active nor fading any more. Clear its in-use mark FIRST,
+    // before anything another thread can observe (the crossfade flag a legacy consumer waits on,
+    // and the free flag the loader polls): a thread that sees the fade over, or the renderer
+    // free, then never sees it still marked (RTSF-03, T-05-13).
+    binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].hrtfDatabase.setInUseByAudioThread (false);
+
     rendererXfading_ = false;
     rendererXfadeSamplesDone_ = 0;
     rendererXfadeLengthSamples_ = 0;
     rendererXfadeActive_.store (false, std::memory_order_release);
-    // The renderer faded out is neither active nor fading any more: the worker may use it.
+    // The worker may use the faded-out renderer now.
     rendererFree_[static_cast<size_t> (rendererXfadeFromIdx_)].store (true, std::memory_order_release);
 }
 
@@ -1087,6 +1165,14 @@ void RenderEngine::endRendererFade()
 // D-15 addition: with simpleCtx set, a Simple-mode renderer on either side of a fade is the
 // Woodworth path (see the header declaration); with it null nothing changes. A caller that sets
 // simpleCtx must have a fade running (renderBinauralWithProfileFade guarantees it).
+//
+// D-11 (CR-03): the per-source work buffers are sized by prepare() for preparedMaxBlock_ samples
+// and are never grown on the audio thread. A block of at most that size is exactly one piece
+// rendered with the consumer's own pointers. A longer block (a host that delivers more than it
+// promised) is rendered completely, in consecutive pieces of at most preparedMaxBlock_ samples,
+// each piece rendered exactly as a block of that length would be: no sample is dropped, nothing
+// is allocated, and the state (convolvers, ITD lines, crossfade, Woodworth gains) advances piece
+// by piece. This is the same approach PartitionedConvolver::process takes (WR-02).
 //==============================================================================
 bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float* outL, float* outR, int numOutCh,
                                               int activeIdx, const RenderBlockContext* simpleCtx)
@@ -1100,9 +1186,6 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     // D-15: with simpleCtx set, a renderer in Simple mode is the Woodworth path, not a (silent)
     // convolver. At most one side of a fade is Simple here (see renderBinauralWithProfileFade).
     const bool activeIsSimple = simpleCtx != nullptr && activeRenderer.isSimpleMode();
-    const bool fromIsSimple = simpleCtx != nullptr && rendererXfading_
-                              && binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].isSimpleMode();
-    bool ranSimple = false;
 
     // Update per-source HRIRs at block boundary for any taps that moved
     // (new renderer only — old renderer keeps its existing HRIRs during crossfade).
@@ -1117,37 +1200,80 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
         }
     }
 
-    // Ensure per-source accumulation storage is sized for this block (issue
-    // CR-03: numSamples may exceed the maxBlockSize this engine was prepared
-    // with — e.g. a host requesting an oversized block. sourceAccumStorage_
-    // is otherwise fixed at MAX_SOURCES * maxBlockSize from prepare(), so an
-    // oversized block would overflow the per-source memset/write below.
-    // This mirrors the wetBufL_/wetBufR_ defensive-resize pattern immediately
-    // below. Regrowth can reallocate the backing vector, so every cached
-    // sourceAccumBufPtrs[src] MUST be re-derived afterward — stale pointers
-    // would alias freed memory.
-    if (sourceAccumStorage_.size() < static_cast<size_t> (MAX_SOURCES) * static_cast<size_t> (numSamples))
+    // An engine that was never prepared has no work buffers at all: write silence, touch nothing.
+    const int pieceMax = preparedMaxBlock_;
+    if (pieceMax <= 0)
     {
-        // An oversized block is a prepare-contract violation (the engine
-        // should have been prepared with the true maximum block size) —
-        // flag it loudly in debug builds, consistent with BinauralRenderer's
-        // own self-flagging elsewhere in this file.
-        jassertfalse;
-        sourceAccumStorage_.assign (static_cast<size_t> (MAX_SOURCES) * static_cast<size_t> (numSamples), 0.0f);
-        for (int src = 0; src < MAX_SOURCES; ++src)
-            sourceAccumBufPtrs[src] = sourceAccumStorage_.data() + static_cast<size_t> (src) * static_cast<size_t> (numSamples);
+        if (outL != nullptr && numSamples > 0)
+            std::memset (outL, 0, sizeof (float) * static_cast<size_t> (numSamples));
+        if (outR != nullptr && numSamples > 0)
+            std::memset (outR, 0, sizeof (float) * static_cast<size_t> (numSamples));
+        (void) numOutCh;
+        return false;
+    }
+
+    // A stack copy (fixed arrays, no heap, DR-1) whose per-sample pointers advance piece by piece.
+    RenderSources chunk = sources;
+    bool ranSimple = false;
+
+    for (int offset = 0; offset < numSamples; offset += pieceMax)
+    {
+        const int pieceLen = std::min (pieceMax, numSamples - offset);
+        chunk.numSamples = pieceLen;
+
+        ranSimple |= renderDirectBinauralHRTFChunk (chunk,
+                                                    outL != nullptr ? outL + offset : nullptr,
+                                                    outR != nullptr ? outR + offset : nullptr,
+                                                    activeIdx, simpleCtx);
+
+        // The SC-20 snap belongs to the start of the block, as the next block would see it.
+        snapInterpolation_ = false;
+
+        for (int t = 0; t < MAX_SOURCES; ++t)
+        {
+            if (chunk.monoBuffers[t] != nullptr)           chunk.monoBuffers[t] += pieceLen;
+            if (chunk.tapFadeGainPerSample[t] != nullptr)  chunk.tapFadeGainPerSample[t] += pieceLen;
+            if (chunk.distGainPerSample[t] != nullptr)     chunk.distGainPerSample[t] += pieceLen;
+        }
+    }
+
+    // Remaining channels (ch >= 2) are left untouched here; the consumer clears
+    // them exactly as the pre-move code did (`buffer.clear(ch, ...)` on a
+    // juce::AudioBuffer is a consumer-side concern, not engine state).
+    (void) numOutCh;
+    return ranSimple;
+}
+
+//==============================================================================
+// renderDirectBinauralHRTFChunk — one piece (at most preparedMaxBlock_ samples) of the HRTF
+// path: the body of the pre-D-11 renderDirectBinauralHRTF from the accumulation buffers on.
+// The buffers are the ones prepare() sized, so nothing here grows.
+//==============================================================================
+bool RenderEngine::renderDirectBinauralHRTFChunk (const RenderSources& sources, float* outL, float* outR,
+                                                   int activeIdx, const RenderBlockContext* simpleCtx)
+{
+    const int numSamples = sources.numSamples;
+
+    auto& activeRenderer = binauralRenderers[static_cast<size_t> (activeIdx)];
+
+    // Read from the live state at the top of every piece: a renderer crossfade can end inside an
+    // oversized block, and the pieces after it are plain.
+    const bool activeIsSimple = simpleCtx != nullptr && activeRenderer.isSimpleMode();
+    const bool fromIsSimple = simpleCtx != nullptr && rendererXfading_
+                              && binauralRenderers[static_cast<size_t> (rendererXfadeFromIdx_)].isSimpleMode();
+    bool ranSimple = false;
+
+    if (activeIsSimple && ! rendererXfading_)
+    {
+        // The fade that put a Simple renderer on this path ended in an earlier piece. Nothing is
+        // left to blend: this is the plain Woodworth path, exactly as the block after it would run.
+        renderSimpleBinauralWoodworth (sources, *simpleCtx, outL, outR, 2);
+        return true;
     }
 
     // Zero per-source accumulation buffers (contiguous allocation)
     for (int src = 0; src < MAX_SOURCES; ++src)
         std::memset (sourceAccumBufPtrs[src], 0, sizeof (float) * static_cast<size_t> (numSamples));
-
-    // Ensure wet buffers are sized
-    if (wetBufL_.size() < static_cast<size_t> (numSamples))
-    {
-        wetBufL_.resize (static_cast<size_t> (numSamples), 0.0f);
-        wetBufR_.resize (static_cast<size_t> (numSamples), 0.0f);
-    }
 
     // v1.0: Per-sample distGain interpolation to prevent clicks on rapid position changes
     for (int s = 0; s < numSamples; ++s)
@@ -1178,20 +1304,14 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     for (int t = 0; t < MAX_SOURCES; ++t)
         srcBufPtrs[t] = sourceAccumBufPtrs[t];
 
-    // The Woodworth path's destination when a side is Simple. simpleWetL_/R_ cover every block up
-    // to the prepared size; an oversized block is a prepare-contract violation (flagged above for
-    // the wet buffers), and then the Woodworth output goes straight into the buffer of its own
-    // side, which that violation path has already sized -- never an allocation here (DR-1).
-    const size_t ns = static_cast<size_t> (numSamples);
-    const bool simpleScratchFits = simpleWetL_.size() >= ns && simpleWetR_.size() >= ns;
-
-    // Active (new) side.
+    // Active (new) side. The Woodworth path's destination is simpleWetL_/R_, which prepare() sized
+    // to the same preparedMaxBlock_ as every other buffer here, so a piece always fits (DR-1).
     const float* newL = wetBufL_.data();
     const float* newR = wetBufR_.data();
     if (activeIsSimple)
     {
-        float* dstL = simpleScratchFits ? simpleWetL_.data() : wetBufL_.data();
-        float* dstR = simpleScratchFits ? simpleWetR_.data() : wetBufR_.data();
+        float* dstL = simpleWetL_.data();
+        float* dstR = simpleWetR_.data();
         renderSimpleBinauralWoodworth (sources, *simpleCtx, dstL, dstR, 2);
         ranSimple = true;
         newL = dstL;
@@ -1206,14 +1326,12 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     // Renderer-level crossfade.
     if (rendererXfading_)
     {
-        if (xfadeWetL_.size() < ns) { xfadeWetL_.resize (ns, 0.0f); xfadeWetR_.resize (ns, 0.0f); }
-
         const float* oldL = xfadeWetL_.data();
         const float* oldR = xfadeWetR_.data();
         if (fromIsSimple)
         {
-            float* dstL = simpleScratchFits ? simpleWetL_.data() : xfadeWetL_.data();
-            float* dstR = simpleScratchFits ? simpleWetR_.data() : xfadeWetR_.data();
+            float* dstL = simpleWetL_.data();
+            float* dstR = simpleWetR_.data();
             renderSimpleBinauralWoodworth (sources, *simpleCtx, dstL, dstR, 2);
             ranSimple = true;
             oldL = dstL;
@@ -1261,10 +1379,6 @@ bool RenderEngine::renderDirectBinauralHRTF (const RenderSources& sources, float
     if (outL != nullptr) std::memcpy (outL, wetBufL_.data(), sizeof (float) * static_cast<size_t> (numSamples));
     if (outR != nullptr) std::memcpy (outR, wetBufR_.data(), sizeof (float) * static_cast<size_t> (numSamples));
 
-    // Remaining channels (ch >= 2) are left untouched here; the consumer clears
-    // them exactly as the pre-move code did (`buffer.clear(ch, ...)` on a
-    // juce::AudioBuffer is a consumer-side concern, not engine state).
-    (void) numOutCh;
     return ranSimple;
 }
 
@@ -1496,8 +1610,12 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
     // were last written under a different order, and the distance gate below
     // would not rewrite them while the distance stays settled. Invalidate
     // every object's last-written distance so this block's update recomputes
-    // every active order (SpatialCore#21). No allocation: coefficients are
-    // assigned first-order into state already sized for first order.
+    // every active order (SpatialCore#21). No allocation: the update below
+    // assigns four floats into the coefficient storage the prepare() placeholder
+    // already sized (capacity of at least 8 floats, so assignImpl never
+    // reallocates). It builds no temporary Coefficients object: that temporary
+    // allocated on the audio thread (Phase 5 RESEARCH F1). The stored values are
+    // bit-identical to the old construction (D-10, pinned by [nfc][d10]).
     if (ambiOrder != lastNfcAmbiOrder_)
     {
         for (int t = 0; t < MAX_SOURCES; ++t)
@@ -1530,8 +1648,7 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
                 float b1 = (wZero - 1.0f);
                 float a0 = (1.0f + wPole);
                 float a1 = (wPole - 1.0f);
-                *nfcFilters[t][ord].coefficients =
-                    juce::dsp::IIR::Coefficients<float> (b0 / a0, b1 / a0, 1.0f, a1 / a0);
+                *nfcFilters[t][ord].coefficients = std::array<float, 4> { b0 / a0, b1 / a0, 1.0f, a1 / a0 };
             }
             prevNfcDistance[t] = smoothedNfcDistance[t];
         }
@@ -1721,6 +1838,80 @@ const RenderEngine::LayoutState& RenderEngine::getBlockLayout() const noexcept
 int RenderEngine::getWriterViewOnRenderThreadCount() const noexcept
 {
     return writerViewOnRenderThreadCount_.load (std::memory_order_relaxed);
+}
+
+int RenderEngine::getLegacyRouteWrongThreadCount() const noexcept
+{
+    return legacyRouteWrongThreadCount_.load (std::memory_order_relaxed);
+}
+
+void RenderEngine::noteLegacyRouteCall() const noexcept
+{
+    // RTSF-03 (D-09), the SC-17 rule applied to the two message-thread-only legacy calls. The
+    // caller is a known render thread and another thread is a known writer (it called
+    // setOutputFormat(), or one of these two legacy methods) -> count it (every build) and
+    // assert (Debug). The call itself still runs. A harness whose one thread renders and swaps
+    // is never flagged, and nothing is flagged until both threads have been seen. A call from
+    // any thread that is not the render thread makes that thread the legacy writer.
+    const std::size_t me = currentThreadHash();
+    const std::size_t renderer = renderThreadHash_.load (std::memory_order_relaxed);
+
+    if (renderer != 0 && me == renderer)
+    {
+        const std::size_t writer = writerThreadHash_.load (std::memory_order_relaxed);
+        const std::size_t legacyWriter = legacyWriterThreadHash_.load (std::memory_order_relaxed);
+        if ((writer != 0 && writer != me) || (legacyWriter != 0 && legacyWriter != me))
+        {
+            legacyRouteWrongThreadCount_.fetch_add (1, std::memory_order_relaxed);
+            jassertfalse;
+        }
+    }
+    else
+    {
+        legacyWriterThreadHash_.store (me, std::memory_order_relaxed);
+    }
+}
+
+int RenderEngine::getPrepareRendererIndex() const
+{
+    noteLegacyRouteCall();
+    return prepareRendererIndex_;
+}
+
+void RenderEngine::swapActiveRenderer()
+{
+    noteLegacyRouteCall();
+    const int newActive = prepareRendererIndex_;
+    const int replaced = 1 - newActive;
+
+    // WR-01: snapshot the replaced database's mutation serial BEFORE the new index is published,
+    // so a block that acts on the new index also sees this snapshot. A mutation of the replaced
+    // renderer from here on is what the crossfade-start check in beginRendererFadeIfSwapped counts.
+    swapMutationSerial_[static_cast<size_t> (replaced)].store (
+        binauralRenderers[static_cast<size_t> (replaced)].hrtfDatabase.getMutationSerial(),
+        std::memory_order_relaxed);
+
+    activeRendererIndex.store (newActive, std::memory_order_release);
+    swapGeneration_.fetch_add (1u, std::memory_order_release);
+
+    // WR-01 (iteration 1): re-derive the in-use marks now instead of leaving the ones the last
+    // rendered block wrote. If no block renders after this swap (transport stopped, plugin
+    // bypassed), the old active renderer would otherwise stay marked and the next legitimate load
+    // into it would be counted as a mutation while in use. Clearing it also hides a load made
+    // before the next block from the mark, which is why the swap snapshot above exists: that load
+    // is counted when the next block starts the crossfade from this renderer. A crossfade that is
+    // still running keeps its source marked (swapping during one breaks the contract anyway).
+    // Relaxed atomic stores: no allocation, lock or logging.
+    binauralRenderers[static_cast<size_t> (newActive)].hrtfDatabase.setInUseByAudioThread (true);
+    if (! rendererXfadeActive_.load (std::memory_order_acquire))
+        binauralRenderers[static_cast<size_t> (replaced)].hrtfDatabase.setInUseByAudioThread (false);
+
+    prepareRendererIndex_ = 1 - prepareRendererIndex_;
+}
+
+int RenderEngine::getOversizedBlockCount() const noexcept
+{
+    return oversizedBlockCount_.load (std::memory_order_relaxed);
 }
 
 std::size_t RenderEngine::currentThreadHash() noexcept

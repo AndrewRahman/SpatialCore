@@ -1,20 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 5
-current_phase_name: Realtime Safety Hardening
+current_phase: 06
+current_phase_name: Consumer Readiness & CI
 status: planning
-stopped_at: Phase 04 complete, ready to plan Phase 5
-last_updated: "2026-10-05T13:39:24.743Z"
-last_activity: 2026-10-05
-last_activity_desc: Phase 04 complete, transitioned to Phase 5
-state_head: d9af7588c09610ab40ee1ce5e0deac36450f9321
+stopped_at: Phase 05 complete; v1.0.0 milestone re-audit gaps_found (Phase 6 not started)
+last_updated: "2026-10-17T10:00:00.000Z"
+last_activity: 2026-10-17
+last_activity_desc: v1.0.0 milestone re-audit (21/25, gaps are Phase 6's four requirements)
+state_head: a9dfd1c63634f476ab7ee621fea4c7916519059a
 progress:
   total_phases: 6
-  completed_phases: 4
-  total_plans: 34
-  completed_plans: 34
-  percent: 67
+  completed_phases: 5
+  total_plans: 42
+  completed_plans: 42
 milestone_name: milestone
 ---
 
@@ -26,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 5 — Realtime Safety Hardening
+**Current focus:** Phase 06 — Consumer Readiness & CI (not yet discussed)
 
 ## Current Position
 
-Phase: 5 — Realtime Safety Hardening
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-05 — Phase 04 complete, transitioned to Phase 5
+Phase: 06 (Consumer Readiness & CI) — NOT STARTED
+Plan: none yet
+Status: Phase 05 complete (verification passed, UAT 2/2, validation and security verified 2026-10-17). Next: /gsd-discuss-phase 6
+Last activity: 2026-10-17 — v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -113,6 +112,14 @@ Progress: [███████░░░] 67%
 | Phase 04 P06 | 10 min | 2 tasks | 6 files |
 | Phase 04 P07 | 21 min | 2 tasks | 5 files |
 | Phase 04 P08 | 16 min | 2 tasks | 7 files |
+| Phase 05 P01 | 13 min | 2 tasks | 5 files |
+| Phase 05 P02 | 30 min | 2 tasks | 7 files |
+| Phase 05 P03 | 22 min | 3 tasks | 2 files |
+| Phase 05 P04 | 36 min | 2 tasks | 6 files |
+| Phase 05 P05 | 51 min | 3 tasks | 7 files |
+| Phase 05 P06 | 16 min | 2 tasks | 6 files |
+| Phase 05 P07 | 20 min | 2 tasks | 4 files |
+| Phase 05 P08 | 63 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -169,6 +176,21 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 04]: 04-08: EXTR-04 ticked on all-automated evidence; EXTR-05 (D-03 screenshots) and DATA-02 (D-22 title) stay unticked, pending human approval at the Phase 4 end-of-phase review
 - [Phase 04]: Code review --fix (2026-10-05), 5 review rounds to clean, ledger 18/18 fixed: ADMOSCSender skips non-finite positions and connect() drops queued replies; /xyz rescales an overflowing triple keeping direction; wrapAzimuth bounded (infinity -> NaN for the hold-last-good sanitiser); object numbers are 1-2 digits; ADMPositionQuery moved to its own header with a kCount_ sentinel; OSC param/global values documented finite-but-unbounded (not clamped); network tests use OS-assigned ports and token markers instead of fixed ports and quiet periods
 - [Phase 04]: end-of-phase review 2026-10-05: D-03 screenshots approved (drag to az 90, d 0.8 as designed), EXTR-05 ticked; D-22 title rejected (DM Sans Bold too small), documented revert applied (PresetSaveOverlay back to BASE, [ui][fonts][spy] overlay exemption pins 1 request, item 4 removed from the OSD row), gate re-run green, DATA-02 ticked
+- [Phase 05]: 05-01: realtime trap is a libmalloc malloc_logger hook plus a __DATA,__interpose dylib, test-only, APPLE and no -fsanitize; trap cases SKIP elsewhere (never a green zero)
+- [Phase 05]: 05-01: Ambisonics NFC coefficients are assigned in place from a std::array<float, 4>; raw output of all six formats byte-identical before and after (D-10)
+- [Phase 05]: Oversized HRTF block is rendered in prepared-size pieces (D-11); chunk-level branch handles a Simple-active blend whose fade ended mid-block
+- [Phase 05]: BinauralRenderer scratch guards share scratchFits: skip, count, Debug-only assert, never resize; shrinkScratchForTesting swaps fresh vectors so capacity equals size
+- [Phase 05]: Allocation and lock checks for blocks that look HRIRs up run in Release only: a Debug tree builds libmysofa with -DVDEBUG and it printf()s per interpolation
+- [Phase 05]: 05-03: AmbisonicsAlgorithm max-rE weights are static constexpr floats (0x3f6c835e, 0x3f3504f3, 0x3ec3ef15), removing a first-use __cxa_guard_acquire lock on the render thread; bit-identical (memcmp grid test and cmp of capture, Debug and Release) — The Phase 5 sweep found it; D-10 requires bit-identical sound
+- [Phase 05]: 05-03: allocation and lock checks for blocks that look an HRIR up run in Release only (libmysofa -DVDEBUG printf in Debug); [rt][rule] freezes the non-UI lock inventory with a reviewed thread per entry — Debug libmysofa traces are third-party; the Release run is the RTSF-05 proof
+- [Phase 05]: 05-04: TrajectoryEngine finals are lock-free relaxed std::atomic<float> stored once, active_ release/acquire; no lock or seqlock (DR-1)
+- [Phase 05]: 05-04: mixed-tick bound pinned at measured overall maxima (179 deg, 180 deg, 0.51); Circle, Figure8, Helix, Spiral jump by that much on their own, so RESEARCH A4 holds only for the nine smooth shapes
+- [Phase 05]: 05-05: RTSF-03 detect-never-block. Legacy swap or prepare-index on the render thread is counted (getLegacyRouteWrongThreadCount, SC-17 rule); a load or setProfile on an in-use renderer is counted once per call by HRTFDatabase; the mark is cleared before every rendererFree_ release store. No lock, no sample changed.
+- [Phase 05]: 05-05: the in-use mark is cleared in endRendererFade BEFORE rendererXfadeActive_ drops, so a legacy consumer waiting on isRendererCrossfadeActive() is never counted by mistake. The early-clear ordering is not mutation-provable by a deterministic test (end-of-block clear follows microseconds later).
+- [Phase 05]: SharedFFTCache documented as kept for the life of the process (a deliberate permanent allocation, not a leak; the Debug leaked-FFT line at exit is this cache); Windows/Linux fallback-FFT SpinLock contention left to Phase 6 (D-08, D-13)
+- [Phase 05]: 05-07: SpatialMapComponent face sharing proven by a construction counter and face identity (test-only read-only accessors); per-instance faces fail the sixteen-map test (delta 16, 15 differing identities)
+- [Phase 05]: 05-08: the realtime-safety check (rt trap, build-tsan subset, UI suite and whole suite under ThreadSanitizer) is a separate phase-end and pre-release check beside the unchanged everyday gate; proof scope is macOS (Apple Silicon), Windows and Linux in Phase 6 (D-01, D-13)
+- [Phase 05]: 05-08: Phase 5 requirements RTSF-01, RTSF-02, RTSF-03, RTSF-05 and VERIFY-02 ticked only after the VERIFICATION evidence section was written and the documented check passed (whole suite under ThreadSanitizer: 386 cases, exit 0, 0 warnings, 1938 s)
 
 ### Pending Todos
 
@@ -198,20 +220,20 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Open — Phase 3 or 5 | Phase 02 (02-04) |
+| Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Resolved — Phase 5 (05-06): documented as a deliberate process-lifetime allocation, D-08 | Phase 02 (02-04) |
 | Binaural | HUTUBS PP2 golden checksum fails in Debug only | Resolved — Phase 3 (03-02) | Phase 02 (02-10) |
 | Tests | Other tight test-local tolerances may fail on another compiler/build type (none fails today) | Open | Phase 02 (02-10) |
 | CI | ctest step runs zero tests; no arm64/FMA Release leg | Open — Phase 6 | Phase 02 (02-10) |
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Resolved — Phase 4 (04-03) | Phase 02 (02-07) |
-| Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Open — Phase 5 or 6 | v1.0.0 audit |
+| Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Resolved — Phase 5 (05-03): [rt][switch][tracer], [rt][switch][audit] | v1.0.0 audit |
 | Planning | 01-VALIDATION.md and 02-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`, `2`) | Open | v1.0.0 audit |
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 
 ## Session Continuity
 
-Last session: 2026-10-05T10:00:17.180Z
-Stopped at: Phase 04 complete, ready to plan Phase 5
+Last session: 2026-10-06T03:46:50.950Z
+Stopped at: Completed 05-08-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`

@@ -1,10 +1,8 @@
 #pragma once
 
-// Umbrella include — DSP modules only (Phase 8 locked scope, D-03 split).
-// UI headers (SpatialMapComponent, SMLLookAndFeel, ReverseSlider,
-// IndicatorToggle, StyledButton) are deliberately NOT included here; they
-// land in a separate SpatialCoreUI umbrella in Phase 9. Consumers that need
-// UI widgets include <SpatialCore/UI/*.h> directly for now.
+// Umbrella include -- DSP modules only. UI headers are deliberately NOT
+// included here: link SpatialCoreUI and include <SpatialCore/UI/*.h>
+// directly (for example SpatialMapComponent.h and SMLLookAndFeel.h).
 
 // Core
 #include <SpatialCore/Core/Types.h>

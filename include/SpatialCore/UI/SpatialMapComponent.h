@@ -93,6 +93,17 @@ public:
         if (index < 0 || index >= numObjects_) return false;
         return objects[(size_t)index].enabled;
     }
+    /** TEST-ONLY, read-only. Not part of the consumer API: a plugin must never call it.
+        Identity of the shared regular typeface this map draws with, for
+        SpatialCore's multi-instance regression test (Spatial-Media-Lab/OpenSpatialDelay#131, D-06).
+        Every live map returns the same pointer. Changes nothing. */
+    const juce::Typeface* getSharedFaceIdentityForTesting() const noexcept { return monoFaces_->regular.get(); }
+
+    /** TEST-ONLY, read-only. Not part of the consumer API: a plugin must never call it.
+        How many times the shared face set has been constructed in this
+        process (once per "no map alive" to "a map alive" transition). For the same regression test. */
+    static int getSharedFaceConstructionCountForTesting() noexcept;
+
     void setTrajectoryState (int index, const TrajectoryEngine::TrajectoryState& ts) { if (index >= 0 && index < numObjects_) trajectoryStates[(size_t)index] = ts; }
     void advanceStarAnimation (float dt) { starTime += dt; }
     void setObjectActivityLevel (int index, float level) { if (index >= 0 && index < numObjects_) activityLevel[(size_t)index] = level; }
@@ -132,7 +143,8 @@ private:
     // The three faces are parsed once and shared by every live map (IN-05), not once per instance;
     // they are released when the last map is destroyed. The constructor asserts none is null, because
     // a null typeface would make FontOptions fall back to the default look-and-feel, which is exactly
-    // what D-06 exists to prevent.
+    // what D-06 exists to prevent. The `[ui][multi]` tests (OSD#131) prove the sharing with sixteen
+    // live maps and fail if this goes back to a per-instance face set.
     struct MonoFaces
     {
         MonoFaces();

@@ -15,6 +15,7 @@
 #include <future>
 #include <memory>
 #include <random>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -29,8 +30,9 @@ using namespace spatialcore::test;
 // added by Plans 03-06, 03-07 and 03-09.
 // ============================================================================
 
+// [tsan] marks the thread-interaction subset the build-tsan gate runs (D-01).
 TEST_CASE ("Profile switch: legacy escape-hatch swap KEMAR to SADIE is click-free and dropout-free at every block size",
-           "[hrtf-switch][click][legacy]")
+           "[hrtf-switch][click][legacy][tsan]")
 {
     // The legacy swap is: load into getPrepareRendererIndex()'s renderer, then swapActiveRenderer().
     // The renderer crossfade used to be counted in BLOCKS (8 x the block size), so at 32 and 64
@@ -252,7 +254,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: one call loads KEMAR from embedded data and the audio thread plays it",
-           "[hrtf-switch][tracer]")
+           "[hrtf-switch][tracer][tsan]")
 {
     constexpr double kRate = 48000.0;
     constexpr int kBlock = 64;
@@ -388,7 +390,7 @@ TEST_CASE ("Profile switch: every embedded profile becomes active through the en
 }
 
 TEST_CASE ("Profile switch: a failed request leaves the current profile playing and reports why",
-           "[hrtf-switch][failure]")
+           "[hrtf-switch][failure][tsan]")
 {
     const TempFolder nonExistent ("failure");
 
@@ -489,7 +491,7 @@ TEST_CASE ("Profile switch: a failed request leaves the current profile playing 
 }
 
 TEST_CASE ("Profile switch: the most recent request wins, and a settled request is a no-op",
-           "[hrtf-switch][latest-wins]")
+           "[hrtf-switch][latest-wins][tsan]")
 {
     const TempFolder nonExistent ("latest");
 
@@ -545,7 +547,7 @@ TEST_CASE ("Profile switch: the most recent request wins, and a settled request 
 }
 
 TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the new sample rate",
-           "[hrtf-switch][prepare]")
+           "[hrtf-switch][prepare][tsan]")
 {
     const TempFolder nonExistent ("prepare");
 
@@ -586,7 +588,7 @@ TEST_CASE ("Profile switch: prepare() during a load is safe and reloads at the n
 }
 
 TEST_CASE ("Profile switch: a broken same-name shared file plays the built-in copy and says so",
-           "[hrtf-switch][status]")
+           "[hrtf-switch][status][tsan]")
 {
     const TempFolder folder ("status", true);
     const juce::String stub = "version https://git-lfs.github.com/spec/v1\n"
@@ -609,7 +611,7 @@ TEST_CASE ("Profile switch: a broken same-name shared file plays the built-in co
 }
 
 TEST_CASE ("Profile switch: a file dropped into the shared folder is used on the next switch, no restart",
-           "[hrtf-switch][d11]")
+           "[hrtf-switch][d11][tsan]")
 {
     const TempFolder folder ("d11", true);   // starts empty
 
@@ -634,7 +636,7 @@ TEST_CASE ("Profile switch: a file dropped into the shared folder is used on the
 }
 
 TEST_CASE ("Profile switch: switching while a non-binaural format renders completes and strands nothing",
-           "[hrtf-switch][non-binaural]")
+           "[hrtf-switch][non-binaural][tsan]")
 {
     const TempFolder nonExistent ("surround");
 
@@ -665,7 +667,7 @@ TEST_CASE ("Profile switch: switching while a non-binaural format renders comple
 }
 
 TEST_CASE ("Profile switch: a crossfade abandoned by a path change frees its renderer",
-           "[hrtf-switch][abandon]")
+           "[hrtf-switch][abandon][tsan]")
 {
     const TempFolder nonExistent ("abandon");
 
@@ -735,7 +737,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: switching while another thread renders never deadlocks or produces non-finite audio",
-           "[hrtf-switch][threads]")
+           "[hrtf-switch][threads][tsan]")
 {
     ThreadsResult result;
 
@@ -851,7 +853,7 @@ TEST_CASE ("Profile switch: switching while another thread renders never deadloc
 }
 
 TEST_CASE ("Profile switch: every switch completes while a paced render thread runs, claims and frees included",
-           "[hrtf-switch][churn]")
+           "[hrtf-switch][churn][tsan]")
 {
     // The [threads] case above fires requests faster than a SOFA load finishes, so almost every
     // result is superseded before it is published and only the last switch reaches the audio
@@ -960,7 +962,7 @@ TEST_CASE ("Profile switch: every switch completes while a paced render thread r
 }
 
 TEST_CASE ("Profile switch: destroying the engine during a load returns promptly",
-           "[hrtf-switch][shutdown]")
+           "[hrtf-switch][shutdown][tsan]")
 {
     // Section 0 destroys the engine at once. Section 1 waits until the loader has certainly
     // started on the SOFA parse first, which is the case the shutdown contract is about.
@@ -1121,7 +1123,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: setHRTFProfile KEMAR to SADIE is click-free and dropout-free at every block size",
-           "[hrtf-switch][click]")
+           "[hrtf-switch][click][tsan]")
 {
     // SADIE (1) is copied into a temporary shared folder, so the case also runs in a build that
     // embeds only KEMAR. KEMAR (5) is embedded in every build.
@@ -1141,7 +1143,7 @@ TEST_CASE ("Profile switch: setHRTFProfile KEMAR to SADIE is click-free and drop
 }
 
 TEST_CASE ("Profile switch: the renderer crossfade lasts max (8 blocks, 4096 samples) on both swap paths",
-           "[hrtf-switch][click][xfade-length]")
+           "[hrtf-switch][click][xfade-length][tsan]")
 {
     // The length is fixed when the fade starts and counted in elapsed samples, so at 512-sample
     // blocks and above it is the old 8-block fade (4096 samples) and below that it is 4096 samples.
@@ -1246,7 +1248,7 @@ namespace
 }
 
 TEST_CASE ("Profile switch: with engineSelectsHRTF a switch between Simple and an HRTF profile is click-free and dropout-free",
-           "[hrtf-switch][simple]")
+           "[hrtf-switch][simple][tsan]")
 {
     // The real files go into a temporary shared folder, so every profile works in every build.
     const TempFolder folder ("simple", true);
@@ -1274,7 +1276,7 @@ TEST_CASE ("Profile switch: with engineSelectsHRTF a switch between Simple and a
 }
 
 TEST_CASE ("Profile switch: with engineSelectsHRTF Simple to and from each of profiles 1, 2 and 4 is click-free at 32 samples",
-           "[hrtf-switch][simple]")
+           "[hrtf-switch][simple][tsan]")
 {
     const TempFolder folder ("simple-rest", true);
     REQUIRE (copyProfilesInto (folder.dir, { 1, 2, 4 }));
@@ -1298,7 +1300,7 @@ TEST_CASE ("Profile switch: with engineSelectsHRTF Simple to and from each of pr
 }
 
 TEST_CASE ("Profile switch: during a Simple <-> HRTF fade the Woodworth path runs once per block and the two are blended equal-power",
-           "[hrtf-switch][simple][blend]")
+           "[hrtf-switch][simple][blend][tsan]")
 {
     // The blend is rebuilt outside the engine: the Simple side from a flag-off Simple engine, the HRTF
     // side from a flag-off HRTF engine, and the ramp from the renderer crossfade's published law
@@ -1438,7 +1440,7 @@ TEST_CASE ("Profile switch: during a Simple <-> HRTF fade the Woodworth path run
 }
 
 TEST_CASE ("Profile switch: engineSelectsHRTF with no switch is bit-identical to the path the active renderer implies",
-           "[hrtf-switch][flag-identity]")
+           "[hrtf-switch][flag-identity][tsan]")
 {
     constexpr int kB = 64;
     constexpr int kBlocks = 20;
@@ -1531,7 +1533,7 @@ TEST_CASE ("Profile switch: engineSelectsHRTF with no switch is bit-identical to
 }
 
 TEST_CASE ("Profile switch: engineSelectsHRTF alone computes the Woodworth gains, so profile 0 is never silent (WR-06)",
-           "[hrtf-switch][flag-identity][wr06]")
+           "[hrtf-switch][flag-identity][wr06][tsan]")
 {
     constexpr int kB = 64;
     constexpr int kBlocks = 20;
@@ -1565,7 +1567,7 @@ TEST_CASE ("Profile switch: engineSelectsHRTF alone computes the Woodworth gains
 }
 
 TEST_CASE ("Profile switch: engineSelectsHRTF ignores the consumer's useHRTF on every block, through a switch",
-           "[hrtf-switch][flag-identity]")
+           "[hrtf-switch][flag-identity][tsan]")
 {
     constexpr int kB = 64;
     const TempFolder nonExistent ("ignore");
@@ -1605,4 +1607,860 @@ TEST_CASE ("Profile switch: engineSelectsHRTF ignores the consumer's useHRTF on 
     CHECK (countMismatches (lL, mL, first) == 0);
     CHECK (countMismatches (lR, mR, first) == 0);
     CHECK (*std::max_element (lL.begin(), lL.end()) > 1.0e-4f);
+}
+
+// ============================================================================
+// Legacy HRTF route: misuse detection (RTSF-03, D-09). The route stays exactly as it is;
+// a call on the wrong thread is counted (and asserts in Debug), never blocked.
+// ============================================================================
+namespace
+{
+    /** Runs `first` on one thread and then `second` on another, with no two engine calls ever
+        overlapping. The first thread stays alive (idle, waiting) until the second has joined:
+        a joined thread's id can be handed to the next thread, and the detectors compare thread
+        ids, so a reused id would hide the very misuse a test is making. */
+    void runOnTwoThreads (const std::function<void()>& first, const std::function<void()>& second)
+    {
+        std::promise<void> firstDone;
+        std::promise<void> release;
+        std::shared_future<void> releaseFuture = release.get_future().share();
+
+        std::thread firstThread ([&]
+        {
+            first();
+            firstDone.set_value();
+            releaseFuture.wait();
+        });
+
+        firstDone.get_future().wait();
+
+        std::thread secondThread (second);
+        secondThread.join();
+
+        release.set_value();
+        firstThread.join();
+    }
+
+    /** Four blocks of the Simple binaural path (no profile has to be loaded). */
+    void renderFourBlocks (RenderEngine& engine)
+    {
+        LiveRender live (engine, makeBinauralContext (BinauralPath::Simple, kRate), kBlock, kRate);
+        for (int b = 0; b < 4; ++b)
+            live.renderOne();
+    }
+
+    std::unique_ptr<RenderEngine> makePreparedBinauralEngine()
+    {
+        // On the heap: a std::thread has a small stack, and the engine is large.
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        return engine;
+    }
+}
+
+TEST_CASE ("Profile switch: a legacy swap or prepare-index call on the render thread is counted (D-09)",
+           "[hrtf-switch][misuse][tsan]")
+{
+    // The deliberate misuse calls trip jassertfalse in Debug: JUCE logs one line each and
+    // continues (it only breaks under a debugger). Release builds only count.
+    SECTION ("a writer thread, then a render thread that swaps and reads the prepare index: counted twice")
+    {
+        auto engine = makePreparedBinauralEngine();
+        runOnTwoThreads ([&] { engine->setOutputFormat (OutputFormat::Binaural); },
+                         [&]
+                         {
+                             renderFourBlocks (*engine);
+                             engine->swapActiveRenderer();
+                             (void) engine->getPrepareRendererIndex();
+                         });
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 2);
+    }
+
+    SECTION ("one thread that writes, renders and swaps is never counted")
+    {
+        auto engine = makePreparedBinauralEngine();
+        engine->setOutputFormat (OutputFormat::Binaural);
+        renderFourBlocks (*engine);
+        engine->swapActiveRenderer();
+        (void) engine->getPrepareRendererIndex();
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a legacy writer thread that only reads the prepare index, then a render thread that swaps: counted once")
+    {
+        auto engine = makePreparedBinauralEngine();
+        runOnTwoThreads ([&] { (void) engine->getPrepareRendererIndex(); },
+                         [&]
+                         {
+                             renderFourBlocks (*engine);
+                             engine->swapActiveRenderer();
+                         });
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 1);
+    }
+
+    SECTION ("the render thread finishes first, then a writer thread swaps: not counted")
+    {
+        auto engine = makePreparedBinauralEngine();
+        runOnTwoThreads ([&] { renderFourBlocks (*engine); },
+                         [&] { engine->swapActiveRenderer(); });
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// In-use detection on the legacy route (RTSF-03, D-09)
+// ----------------------------------------------------------------------------
+namespace
+{
+    int mutationCount (RenderEngine& engine, int rendererIndex)
+    {
+        return engine.getBinauralRenderer (rendererIndex).hrtfDatabase.getMutationWhileInUseCount();
+    }
+
+    /** The documented legacy flow, on one thread: wait for no crossfade, load into the prepare
+        renderer, setProfile on it, swap, then render until the crossfade has ended (4096 samples
+        at 64-sample blocks is 64 blocks; 80 gives margin). Returns the swapped-to renderer. */
+    int legacyLoadSwapRender (RenderEngine& engine, LiveRender& live, int profile)
+    {
+        REQUIRE_FALSE (engine.isRendererCrossfadeActive());
+        const int prepareIdx = engine.getPrepareRendererIndex();
+        auto& renderer = engine.getBinauralRenderer (prepareIdx);
+        REQUIRE (renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (profile)), static_cast<float> (kRate)));
+        renderer.setProfile (profile);
+        engine.swapActiveRenderer();
+        for (int b = 0; b < 80; ++b)
+            live.renderOne();
+        REQUIRE_FALSE (engine.isRendererCrossfadeActive());
+        return prepareIdx;
+    }
+}
+
+TEST_CASE ("Profile switch: a load into the renderer the audio thread is using is counted, the documented flows are not (D-09)",
+           "[hrtf-switch][misuse][in-use][tsan]")
+{
+    auto engine = std::make_unique<RenderEngine>();
+    engine->prepare (kRate, kBlock);
+    engine->setOutputFormat (OutputFormat::Binaural);
+    REQUIRE (loadProfileIntoActiveRenderer (*engine, 2, kRate));   // CIPIC, before the first block
+
+    LiveRender live (*engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+    for (int b = 0; b < 8; ++b)
+        live.renderOne();
+
+    SECTION ("loads into the prepare-index renderer, with the crossfade over, are never counted")
+    {
+        // Two full cycles: each load goes into the renderer that is neither active nor fading.
+        const int first = legacyLoadSwapRender (*engine, live, 5);    // KEMAR
+        const int second = legacyLoadSwapRender (*engine, live, 2);   // CIPIC
+        CHECK (first != second);
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a load after a swap with no block rendered in between is not counted (WR-01)")
+    {
+        // The audio stops after the swap (transport stopped, plugin bypassed). The old active
+        // renderer must not keep the in-use mark the last block gave it.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        REQUIRE (mutationCount (*engine, 0) == 0);
+        REQUIRE (mutationCount (*engine, 1) == 0);
+
+        REQUIRE (engine->getPrepareRendererIndex() == other);
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();                       // no block renders from here on
+
+        // `wasActive` is the prepare renderer again, and nothing is reading it.
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+        auto& renderer = engine->getBinauralRenderer (wasActive);
+        CHECK_FALSE (renderer.hrtfDatabase.isInUseByAudioThread());
+        CHECK (renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        renderer.setProfile (5);
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a load into the replaced renderer between a swap and the next block is counted when that block starts the crossfade (WR-01)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        // The swap cleared the replaced renderer's mark, so this load is not seen as it runs...
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        REQUIRE_FALSE (replaced.hrtfDatabase.isInUseByAudioThread());
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 0);
+
+        // ...but the block that starts the crossfade from it reads it, and counts the load.
+        live.renderOne();
+        REQUIRE (engine->isRendererCrossfadeActive());
+        CHECK (mutationCount (*engine, wasActive) == 1);
+        CHECK (mutationCount (*engine, other) == 0);
+
+        // Counted once: the rest of the fade and its end add nothing.
+        for (int b = 0; b < 80; ++b)
+            live.renderOne();
+        REQUIRE_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (mutationCount (*engine, wasActive) == 1);
+        CHECK (mutationCount (*engine, other) == 0);
+        CHECK (engine->getLegacyRouteWrongThreadCount() == 0);
+    }
+
+    SECTION ("a swap followed by a load into the replaced renderer is not counted when no block crossfades from it (WR-01)")
+    {
+        // 1. A block on a format that does not use the HRTF renderers sits between the swap and
+        //    the load: nothing reads either renderer, so the load is safe at once, and the later
+        //    binaural block that starts the crossfade finds nothing to count.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        RenderBlockContext stereoCtx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        stereoCtx.isStereoVariant = true;
+        LiveRender stereoLive (*engine, stereoCtx, kBlock, kRate);
+        stereoLive.renderOne();
+
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        live.renderOne();   // binaural again: the crossfade from `wasActive` starts here
+        CHECK (engine->isRendererCrossfadeActive());
+        CHECK (mutationCount (*engine, wasActive) == 0);
+        CHECK (mutationCount (*engine, other) == 0);
+    }
+
+    SECTION ("a swap, a load, and a swap back with no block between never crossfade, so nothing is counted (WR-01)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();                        // `wasActive` replaced, prepare renderer again
+
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        REQUIRE (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        replaced.setProfile (5);
+        engine->swapActiveRenderer();                        // and active again
+
+        for (int b = 0; b < 4; ++b)
+            live.renderOne();
+        CHECK_FALSE (engine->isRendererCrossfadeActive());   // active == the renderer the last block used
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+    }
+
+    SECTION ("audio stopped after a swap, a load into the replaced renderer, then audio resumes: counted at the first crossfade block (WR-01)")
+    {
+        // Pins the documented behaviour: with no block between the swap and the load the load is
+        // not counted as it runs (nothing is reading), but the first block after the host resumes
+        // crossfades from the renderer that was just reloaded, and that is counted.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 0);
+        live.renderOne();
+        CHECK (mutationCount (*engine, wasActive) == 1);
+    }
+
+    SECTION ("the flag reads false between a swap and the next block; the fade source is protected once the fade runs (WR-02)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+
+        // Right after the swap the crossfade has not started, so waiting only for "flag false"
+        // would let the next load through; isPrepareRendererFree() is the condition to wait on.
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK_FALSE (engine->isPrepareRendererFree());
+
+        live.renderOne();   // this block starts the crossfade from `wasActive`
+        REQUIRE (engine->isRendererCrossfadeActive());
+        CHECK_FALSE (engine->isPrepareRendererFree());
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+
+        // A load now is a load into the fade source: counted once. The documented rule (wait for
+        // the flag to be seen true, then false) keeps a consumer out of this window.
+        auto& source = engine->getBinauralRenderer (wasActive);
+        CHECK (source.hrtfDatabase.isInUseByAudioThread());
+        CHECK (source.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 1);
+
+        // Once the fade is over, the same renderer is free again.
+        for (int b = 0; b < 80; ++b)
+            live.renderOne();
+        REQUIRE_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (source.hrtfDatabase.isInUseByAudioThread());
+        CHECK (source.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 1);
+        CHECK (mutationCount (*engine, other) == 0);
+    }
+
+    SECTION ("isPrepareRendererFree() turns true after one block on a path with no crossfade, where the flag never does (WR-02)")
+    {
+        // Free from the start, and free again once the documented flow has run its course.
+        CHECK (engine->isPrepareRendererFree());
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        CHECK (engine->isPrepareRendererFree());
+
+        // Swap while the engine renders a format that does not use the HRTF renderers.
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+        CHECK_FALSE (engine->isPrepareRendererFree());
+
+        RenderBlockContext stereoCtx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        stereoCtx.isStereoVariant = true;
+        LiveRender stereoLive (*engine, stereoCtx, kBlock, kRate);
+        stereoLive.renderOne();
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->isRendererCrossfadeActive());   // the flag never turned true
+
+        // The Simple path (useHRTF false) is such a path too.
+        const int simpleWasActive = other;
+        auto& prepared2 = engine->getBinauralRenderer (wasActive);
+        REQUIRE (prepared2.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        prepared2.setProfile (5);
+        engine->swapActiveRenderer();
+        REQUIRE (engine->getPrepareRendererIndex() == simpleWasActive);
+        CHECK_FALSE (engine->isPrepareRendererFree());
+        LiveRender simpleLive (*engine, makeBinauralContext (BinauralPath::Simple, kRate), kBlock, kRate);
+        simpleLive.renderOne();
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+    }
+
+    SECTION ("isPrepareRendererFree() stays false while no block renders, and a swap back to the same renderer frees it after one block (WR-02)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+        CHECK_FALSE (engine->isPrepareRendererFree());     // no block can complete: the documented exception
+
+        engine->swapActiveRenderer();                      // back to the renderer the last block used
+        CHECK_FALSE (engine->isPrepareRendererFree());
+        live.renderOne();
+        CHECK (engine->isPrepareRendererFree());           // no crossfade was needed
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+    }
+
+    SECTION ("a swap settled by prepare() starts no crossfade from the replaced renderer, so a load made after it is safe (WR-01)")
+    {
+        // Legacy route only: setHRTFProfile() is never called, so engine-owned bookkeeping is off.
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();                      // `wasActive` is the replaced renderer now
+        CHECK_FALSE (engine->isPrepareRendererFree());
+
+        engine->prepare (kRate, kBlock);                   // the host prepares again (rate or size change, offline render)
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        REQUIRE (engine->getPrepareRendererIndex() == wasActive);
+
+        // isPrepareRendererFree() says a load into the replaced renderer is safe: do it.
+        auto& replaced = engine->getBinauralRenderer (wasActive);
+        CHECK (replaced.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, wasActive) == 0);
+
+        // The first binaural block must not fade from the renderer it was just promised free.
+        live.renderOne();
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (replaced.hrtfDatabase.isInUseByAudioThread());
+        CHECK (engine->getBinauralRenderer (other).hrtfDatabase.isInUseByAudioThread());
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+    }
+
+    SECTION ("a legacy crossfade that is running when prepare() is called ends there, and the replaced renderer is free (WR-01)")
+    {
+        const int wasActive = legacyLoadSwapRender (*engine, live, 5);
+        const int other = 1 - wasActive;
+        auto& prepared = engine->getBinauralRenderer (other);
+        REQUIRE (prepared.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (2)), static_cast<float> (kRate)));
+        prepared.setProfile (2);
+        engine->swapActiveRenderer();
+        live.renderOne();                                  // starts the crossfade from `wasActive`
+        REQUIRE (engine->isRendererCrossfadeActive());
+
+        engine->prepare (kRate, kBlock);
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+
+        live.renderOne();                                  // does not pick the fade up again
+        CHECK_FALSE (engine->isRendererCrossfadeActive());
+        CHECK (engine->isPrepareRendererFree());
+        CHECK_FALSE (engine->getBinauralRenderer (wasActive).hrtfDatabase.isInUseByAudioThread());
+        CHECK (mutationCount (*engine, 0) == 0);
+        CHECK (mutationCount (*engine, 1) == 0);
+    }
+
+    SECTION ("a load into the active renderer while a stereo-variant block renders is not counted (WR-01)")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);
+        REQUIRE (engine->getBinauralRenderer (active).hrtfDatabase.isInUseByAudioThread());
+
+        // A format that does not use the HRTF renderers: the marks clear after one block.
+        RenderBlockContext stereoCtx = makeBinauralContext (BinauralPath::HRTF, kRate);
+        stereoCtx.isStereoVariant = true;
+        LiveRender stereoLive (*engine, stereoCtx, kBlock, kRate);
+        stereoLive.renderOne();
+
+        CHECK_FALSE (engine->getBinauralRenderer (active).hrtfDatabase.isInUseByAudioThread());
+        CHECK_FALSE (engine->getBinauralRenderer (1 - active).hrtfDatabase.isInUseByAudioThread());
+        CHECK (engine->getBinauralRenderer (active).hrtfDatabase.loadFromFile (
+            getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == 0);
+    }
+
+    SECTION ("a load and a setProfile on the active renderer are counted once each, the other renderer stays at 0")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);   // KEMAR is now the active renderer
+        const int other = 1 - active;
+        REQUIRE (engine->getActiveRendererIndexAtomic().load() == active);
+        REQUIRE (mutationCount (*engine, active) == 0);
+
+        auto& renderer = engine->getBinauralRenderer (active);
+        // Debug builds log one JUCE assertion line per deliberate misuse below.
+        CHECK (renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (5)), static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == 1);
+
+        renderer.setProfile (5);
+        CHECK (mutationCount (*engine, active) == 2);
+
+        CHECK (mutationCount (*engine, other) == 0);
+        CHECK (renderer.hrtfDatabase.isInUseByAudioThread());
+        CHECK_FALSE (engine->getBinauralRenderer (other).hrtfDatabase.isInUseByAudioThread());
+    }
+
+    SECTION ("loadFromBinaryData into an in-use database counts exactly once although it closes the handle twice")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);
+        const int before = mutationCount (*engine, active);
+
+        CHECK (engine->getBinauralRenderer (active).hrtfDatabase.loadFromBinaryData (5, static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == before + 1);
+        CHECK (mutationCount (*engine, 1 - active) == 0);
+    }
+
+    SECTION ("loadFromMemory and unload into an in-use database count once each")
+    {
+        const int active = legacyLoadSwapRender (*engine, live, 5);
+        int size = 0;
+        const char* data = HRTFDatabase::getEmbeddedProfileData (5, size);
+        REQUIRE (data != nullptr);
+
+        auto& database = engine->getBinauralRenderer (active).hrtfDatabase;
+        CHECK (database.loadFromMemory (data, size, static_cast<float> (kRate)));
+        CHECK (mutationCount (*engine, active) == 1);
+
+        database.unload();
+        CHECK (mutationCount (*engine, active) == 2);
+    }
+}
+
+TEST_CASE ("Profile switch: the engine's own loader never trips the in-use detector (D-09)",
+           "[hrtf-switch][misuse][in-use][tsan]")
+{
+    struct Result
+    {
+        int switchesDone = 0;
+        int switchesWanted = 0;
+        long nonFinite = 0;
+        int mutations0 = -1;
+        int mutations1 = -1;
+        int legacyWrongThread = -1;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][in-use]", 120, [&result]
+    {
+        const TempFolder nonExistent ("in-use");
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+#if SPATIALCORE_EMBEDS_ALL_HRTF
+        const std::vector<int> sequence { 2, 3, 5, 0, 3, 5 };
+#else
+        const std::vector<int> sequence { 5, 0, 5, 0, 5, 0 };
+#endif
+        result.switchesWanted = static_cast<int> (sequence.size());
+
+        std::atomic<bool> stop { false };
+        long nonFinite = 0;
+
+        std::thread renderThread ([&]
+        {
+            LiveRender live (*engine, makeBinauralContext (BinauralPath::HRTF, kRate), kBlock, kRate);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                live.renderOne (static_cast<float> (block % 360) - 180.0f);
+                if (! live.lastFinite)
+                    ++nonFinite;
+                ++block;
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+        });
+
+        for (const int profile : sequence)
+        {
+            engine->setHRTFProfile (profile);
+
+            const auto waitStart = std::chrono::steady_clock::now();
+            while (engine->getHRTFProfileStatus().activeProfile != profile
+                   && elapsedMs (waitStart) < 20000.0 * timeoutScale())
+                juce::Thread::sleep (1);
+
+            if (engine->getHRTFProfileStatus().activeProfile != profile)
+                break;
+
+            ++result.switchesDone;
+        }
+
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.mutations0 = mutationCount (*engine, 0);
+        result.mutations1 = mutationCount (*engine, 1);
+        result.legacyWrongThread = engine->getLegacyRouteWrongThreadCount();
+    });
+
+    CHECK (result.switchesDone == result.switchesWanted);
+    CHECK (result.nonFinite == 0);
+    CHECK (result.mutations0 == 0);
+    CHECK (result.mutations1 == 0);
+    CHECK (result.legacyWrongThread == 0);
+}
+
+// ----------------------------------------------------------------------------
+// ROADMAP criterion 3 on the safe route, and the legacy flow, with a render thread running
+// (RTSF-03, D-09)
+// ----------------------------------------------------------------------------
+namespace
+{
+    /** Four moving objects of one 440 Hz sine, so the audio thread does real HRIR updates every
+        block. The sine is shared by the four slots. */
+    struct FourObjectRender
+    {
+        RenderEngine& engine;
+        RenderBlockContext ctx;
+        std::vector<float> mono, one;
+        std::vector<std::vector<float>> out;
+        double phase = 0.0;
+        bool lastFinite = true;
+
+        FourObjectRender (RenderEngine& e, const RenderBlockContext& c)
+            : engine (e), ctx (c),
+              mono (static_cast<size_t> (kBlock), 0.0f), one (static_cast<size_t> (kBlock), 1.0f),
+              out (2, std::vector<float> (static_cast<size_t> (kBlock), 0.0f))
+        {
+        }
+
+        void renderOne (int64_t block)
+        {
+            const double w = 2.0 * 3.14159265358979323846 * 440.0 / kRate;
+            for (auto& v : mono)
+            {
+                v = 0.25f * static_cast<float> (std::sin (phase));
+                phase += w;
+            }
+
+            RenderSources sources;
+            sources.numSamples = kBlock;
+            for (int o = 0; o < 4; ++o)
+            {
+                sources.monoBuffers[o] = mono.data();
+                sources.tapFadeGainPerSample[o] = one.data();
+                sources.distGainPerSample[o] = one.data();
+                sources.objectLive[o] = true;
+                sources.objects[o].azimuthDeg = static_cast<float> ((block * (o + 1) + o * 90) % 360) - 180.0f;
+                sources.objects[o].elevationDeg = 10.0f * static_cast<float> (o);
+                sources.objects[o].distance = 0.5f;
+                sources.objects[o].enabled = true;
+            }
+
+            float* ptrs[2] = { out[0].data(), out[1].data() };
+            engine.renderBlock (sources, ctx, ptrs, 2);
+
+            lastFinite = true;
+            for (auto& channel : out)
+                for (float v : channel)
+                    lastFinite = lastFinite && std::isfinite (v);
+        }
+    };
+}
+
+TEST_CASE ("Profile switch: setHRTFProfile from a 30 Hz UI timer during audio processing is race-free (RTSF-03)",
+           "[hrtf-switch][ui-timer][tsan]")
+{
+    // ROADMAP criterion 3: a UI timer switching profiles while another thread renders. A request
+    // every 33 ms is faster than most loads, so many are superseded before they are published
+    // (latest wins); the audio keeps playing the current profile throughout. Under
+    // ThreadSanitizer this case is the proof that the route has no data race.
+    struct Result
+    {
+        long nonFinite = 0;
+        long blocks = 0;
+        long ticks = 0;
+        std::set<int> activeSeen;
+        int mutations0 = -1;
+        int mutations1 = -1;
+        int legacyWrongThread = -1;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][ui-timer]", 300, [&result]
+    {
+        const TempFolder nonExistent ("ui-timer");
+
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        engine->setOutputFormat (OutputFormat::Binaural);
+        engine->setSharedHRTFFolderForTesting (nonExistent.dir);
+
+        RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);   // engineComputesGains
+        ctx.engineSelectsHRTF = true;
+        ctx.engineDerivesDispatch = true;
+
+#if SPATIALCORE_EMBEDS_ALL_HRTF
+        const int cycle[] = { 2, 3, 5, 0 };
+#else
+        const int cycle[] = { 5, 0, 5, 0 };
+#endif
+
+        std::atomic<bool> stop { false };
+        long nonFinite = 0;
+        long blocks = 0;
+
+        std::thread renderThread ([&]
+        {
+            FourObjectRender render (*engine, ctx);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                render.renderOne (block);
+                if (! render.lastFinite)
+                    ++nonFinite;
+                ++block;
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+            blocks = static_cast<long> (block);
+        });
+
+        // The timer thread: a 33 ms tick that requests the next profile and reads the status.
+        std::set<int> activeSeen;
+        long ticks = 0;
+        std::thread timerThread ([&]
+        {
+            // Two phases of 30 Hz ticks. A storm (the first second, scaled): every tick asks for a
+            // different profile, faster than a load finishes, so almost every load is superseded
+            // and the audio keeps the current profile. Then a dwell, driven by progress and not by
+            // a tick count (IN-01): each profile of the cycle is asked for on every tick (so
+            // setHRTFProfile is still called at 30 Hz) until the audio thread has made it the
+            // active one, and only then does the wanted profile move on. How long a load takes
+            // (a loaded machine, ThreadSanitizer) then changes how long the test runs, never how
+            // many distinct profiles it sees. A step that never completes within its scaled
+            // timeout moves on, and the distinct-profile check below reports it. Both phases run
+            // while the render thread renders; a load that is superseded is not an error.
+            const auto start = std::chrono::steady_clock::now();
+            const double stormMs = 1000.0 * timeoutScale();
+            // A bound, not a duration: a step ends the moment its profile is active (about 0.3 s on an
+            // idle machine). The loader runs at low priority, so a heavily oversubscribed machine
+            // can starve it for tens of seconds; 4 steps plus the final settle stay inside the
+            // watchdog below.
+            const double stepTimeoutMs = 40000.0 * timeoutScale();
+            auto next = start;
+            int wanted = cycle[0];
+
+            // One 30 Hz tick: request `profile`, read the status, wait for the next 33 ms slot.
+            const auto tick = [&] (int profile)
+            {
+                engine->setHRTFProfile (profile);
+                const int active = engine->getHRTFProfileStatus().activeProfile;
+                activeSeen.insert (active);
+                ++ticks;
+                next += std::chrono::milliseconds (33);
+                std::this_thread::sleep_until (next);
+                return active;
+            };
+
+            while (elapsedMs (start) < stormMs)
+            {
+                wanted = cycle[ticks % 4];
+                tick (wanted);
+            }
+
+            for (const int profile : cycle)
+            {
+                wanted = profile;
+                const auto stepStart = std::chrono::steady_clock::now();
+                while (tick (wanted) != wanted && elapsedMs (stepStart) < stepTimeoutMs)
+                {
+                }
+            }
+            // A timer that stops: the last request settles, and the audio thread claims it.
+            engine->setHRTFProfile (wanted);
+            engine->waitForHRTFProfileIdle (30000 * timeoutScale());
+            const auto settleStart = std::chrono::steady_clock::now();
+            while (engine->getHRTFProfileStatus().activeProfile != wanted
+                   && elapsedMs (settleStart) < 10000.0 * timeoutScale())
+                std::this_thread::sleep_for (std::chrono::milliseconds (2));
+            activeSeen.insert (engine->getHRTFProfileStatus().activeProfile);
+        });
+
+        timerThread.join();
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.blocks = blocks;
+        result.ticks = ticks;
+        result.activeSeen = activeSeen;
+        result.mutations0 = mutationCount (*engine, 0);
+        result.mutations1 = mutationCount (*engine, 1);
+        result.legacyWrongThread = engine->getLegacyRouteWrongThreadCount();
+    });
+
+    char line[200];
+    std::snprintf (line, sizeof (line), "ui-timer: %ld ticks, %ld blocks, %zu distinct active profiles, %ld non-finite",
+                   result.ticks, result.blocks, result.activeSeen.size(), result.nonFinite);
+    WARN (line);
+    for (const int profile : result.activeSeen)
+    {
+        std::snprintf (line, sizeof (line), "ui-timer: profile %d was active", profile);
+        WARN (line);
+    }
+
+    CHECK (result.nonFinite == 0);
+    CHECK (result.blocks > 0);
+    // The dwell waits for each profile of the cycle to become active, so this count does not depend
+    // on how fast the machine is: three distinct profiles with the full embedded set (2, 3, 5 and
+    // Simple), two on the one-profile build (5 and Simple).
+#if SPATIALCORE_EMBEDS_ALL_HRTF
+    CHECK (result.activeSeen.size() >= 3);
+#else
+    CHECK (result.activeSeen.size() >= 2);
+#endif
+    CHECK (result.mutations0 == 0);
+    CHECK (result.mutations1 == 0);
+    CHECK (result.legacyWrongThread == 0);
+}
+
+TEST_CASE ("Profile switch: the documented legacy load-and-swap flow is race-free while another thread renders (D-09)",
+           "[hrtf-switch][legacy][threads][tsan]")
+{
+    struct Result
+    {
+        int cyclesDone = 0;
+        long nonFinite = 0;
+        int mutations0 = -1;
+        int mutations1 = -1;
+        int legacyWrongThread = -1;
+    } result;
+
+    runWithWatchdog ("[hrtf-switch][legacy][threads]", 120, [&result]
+    {
+        auto engine = std::make_unique<RenderEngine>();
+        engine->prepare (kRate, kBlock);
+        engine->setOutputFormat (OutputFormat::Binaural);
+
+        RenderBlockContext ctx = makeBinauralContext (BinauralPath::HRTF, kRate);   // isBinaural, useHRTF, engineComputesGains
+
+        std::atomic<bool> stop { false };
+        std::atomic<int> blocksRendered { 0 };
+        long nonFinite = 0;
+
+        // The legacy consumer's first load goes into the active renderer before audio starts.
+        loadProfileIntoActiveRenderer (*engine, 2, kRate);
+
+        std::thread renderThread ([&]
+        {
+            FourObjectRender render (*engine, ctx);
+            int64_t block = 0;
+            while (! stop.load (std::memory_order_acquire))
+            {
+                render.renderOne (block);
+                if (! render.lastFinite)
+                    ++nonFinite;
+                ++block;
+                blocksRendered.fetch_add (1, std::memory_order_release);
+                std::this_thread::sleep_for (std::chrono::microseconds (250));
+            }
+        });
+
+        const auto waitFor = [] (const std::function<bool()>& condition)
+        {
+            const auto start = std::chrono::steady_clock::now();
+            while (! condition() && elapsedMs (start) < 20000.0 * timeoutScale())
+                std::this_thread::sleep_for (std::chrono::milliseconds (1));
+            return condition();
+        };
+
+        const int profiles[] = { 2, 3, 5, 3 };
+        for (const int profile : profiles)
+        {
+            // Wait for at least four blocks since the last swap and for no crossfade, the
+            // documented flow, then load into the prepare renderer and swap.
+            const int sinceBlocks = blocksRendered.load (std::memory_order_acquire) + 4;
+            if (! waitFor ([&] { return blocksRendered.load (std::memory_order_acquire) >= sinceBlocks
+                                         && ! engine->isRendererCrossfadeActive(); }))
+                break;
+
+            auto& renderer = engine->getBinauralRenderer (engine->getPrepareRendererIndex());
+            if (! renderer.hrtfDatabase.loadFromFile (getSofaFile (testProfileFile (profile)), static_cast<float> (kRate)))
+                break;
+            renderer.setProfile (profile);
+            engine->swapActiveRenderer();
+            ++result.cyclesDone;
+        }
+
+        // Let the last crossfade finish while the render thread still runs.
+        waitFor ([&] { return ! engine->isRendererCrossfadeActive(); });
+
+        stop.store (true, std::memory_order_release);
+        renderThread.join();
+
+        result.nonFinite = nonFinite;
+        result.mutations0 = mutationCount (*engine, 0);
+        result.mutations1 = mutationCount (*engine, 1);
+        result.legacyWrongThread = engine->getLegacyRouteWrongThreadCount();
+    });
+
+    CHECK (result.cyclesDone == 4);
+    CHECK (result.nonFinite == 0);
+    CHECK (result.mutations0 == 0);
+    CHECK (result.mutations1 == 0);
+    CHECK (result.legacyWrongThread == 0);
 }

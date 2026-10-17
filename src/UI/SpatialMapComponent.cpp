@@ -1,5 +1,6 @@
 #include <SpatialCore/UI/SpatialMapComponent.h>
 #include "SpatialCoreUIFontData.h"
+#include <atomic>
 #include <cmath>
 
 namespace spatialcore
@@ -7,6 +8,9 @@ namespace spatialcore
 
 namespace
 {
+    // Counts MonoFaces constructions for the OSD#131 regression test (TEST-ONLY read).
+    std::atomic<int> monoFacesConstructionCount { 0 };
+
     // Colours matching OSD's Colours_OSD namespace (Source/PluginEditor.cpp)
     const juce::Colour mapVoid       (0xff010204);  // oklch(8% 0.015 260)
     const juce::Colour textEtched    (0xff5a5e63);  // oklch(48% 0.01 260) — cardinals
@@ -36,6 +40,8 @@ const juce::Colour SpatialMapComponent::objectColours[SpatialMapComponent::MAX_S
 
 SpatialMapComponent::MonoFaces::MonoFaces()
 {
+    monoFacesConstructionCount.fetch_add (1, std::memory_order_relaxed);
+
     // Embedded JetBrains Mono, loaded the way SMLLookAndFeel loads it (D-05, D-06)
     regular = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoRegular_ttf, SpatialCoreUIFontData::JetBrains_MonoRegular_ttfSize);
     medium  = juce::Typeface::createSystemTypefaceFor (SpatialCoreUIFontData::JetBrains_MonoMedium_ttf,  SpatialCoreUIFontData::JetBrains_MonoMedium_ttfSize);
@@ -43,6 +49,11 @@ SpatialMapComponent::MonoFaces::MonoFaces()
 
     // IN-05: a null face would silently resolve through the default look-and-feel instead.
     jassert (regular != nullptr && medium != nullptr && bold != nullptr);
+}
+
+int SpatialMapComponent::getSharedFaceConstructionCountForTesting() noexcept
+{
+    return monoFacesConstructionCount.load (std::memory_order_relaxed);
 }
 
 SpatialMapComponent::SpatialMapComponent (int numObjects)

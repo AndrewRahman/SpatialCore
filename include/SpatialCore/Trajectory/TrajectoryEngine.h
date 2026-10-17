@@ -37,7 +37,22 @@ inline float unwrapAzimuthDelta (float delta)
 // Trajectory Animation Engine — Per-Object Spatial Movement
 // Extracted from PluginProcessor for independent testability and reuse.
 // Computes animated spatial positions from origin + trajectory shape.
-// Timer thread updates state at ~60Hz; audio thread reads final positions.
+//
+// Thread contract (RTSF-02, SpatialCore#18):
+//   - tick(), reset(), resetAll(), getState() and evaluateRandomNoise() run on ONE
+//     thread (the timer or message thread). The state they touch other than the
+//     final positions (phase_, noise_, rng_, ...) is not safe to read from another thread.
+//   - getFinalAz/El/Dist() and isActive(), and the three final-position arrays
+//     behind them, may be read from ANY thread, wait-free (lock-free atomics, no
+//     mutex, spinlock or retry loop).
+//   - Each value is published whole (never torn, and a Random azimuth is wrapped
+//     before it is stored), but a reader may combine values from two consecutive
+//     ticks: azimuth from one, elevation from the next. The size of that mixed
+//     reading is bounded by one tick of motion, pinned per shape by the
+//     [trajectory][step] test.
+//   - The recommended consumer flow is still docs/integration-guide.md's: copy the
+//     positions into per-object atomics on the message thread, and let the audio
+//     thread read those.
 //==============================================================================
 class TrajectoryEngine
 {
@@ -92,10 +107,10 @@ public:
                                                 bool reverse = false);
 
     /** Get the current animated position for an object. */
-    float getFinalAz   (int i) const { return finalAz_[i]; }
-    float getFinalEl   (int i) const { return finalEl_[i]; }
-    float getFinalDist (int i) const { return finalDist_[i]; }
-    bool  isActive     (int i) const { return active_[i].load (std::memory_order_relaxed); }
+    float getFinalAz   (int i) const { return finalAz_[i].load (std::memory_order_relaxed); }
+    float getFinalEl   (int i) const { return finalEl_[i].load (std::memory_order_relaxed); }
+    float getFinalDist (int i) const { return finalDist_[i].load (std::memory_order_relaxed); }
+    bool  isActive     (int i) const { return active_[i].load (std::memory_order_acquire); }
 
     /** Get visualization state (used by editor). */
     TrajectoryState getState (int objectIndex) const;
@@ -109,10 +124,14 @@ public:
     /** Reset all objects. */
     void resetAll();
 
-    // Direct access to final position arrays (read by processBlock)
-    float finalAz_[kMaxObjects]   = {};
-    float finalEl_[kMaxObjects]   = {};
-    float finalDist_[kMaxObjects] = {};
+    // Final position arrays: written by the one tick/reset thread, readable from any
+    // thread (see the thread contract above). Each value is stored once, finished.
+    // active_ is stored with release after the three values and loaded with acquire.
+    static_assert (std::atomic<float>::is_always_lock_free,
+                   "the audio-side read of trajectory positions must be wait-free");
+    std::atomic<float> finalAz_[kMaxObjects]   = {};
+    std::atomic<float> finalEl_[kMaxObjects]   = {};
+    std::atomic<float> finalDist_[kMaxObjects] = {};
     std::atomic<bool> active_[kMaxObjects] = {};
 
     // State for getTrajectoryState() visualization

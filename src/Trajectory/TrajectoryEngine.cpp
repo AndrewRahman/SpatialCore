@@ -8,7 +8,7 @@ void TrajectoryEngine::tick (int t, const ObjectInput& input, float dt)
 {
     if (input.shape == 0)
     {
-        active_[t].store (false, std::memory_order_relaxed);
+        active_[t].store (false, std::memory_order_release);
         prevShape_[t] = 0;
         return;
     }
@@ -73,24 +73,29 @@ void TrajectoryEngine::tick (int t, const ObjectInput& input, float dt)
         for (int k = 0; k < 3; ++k)
             dist += rn.ampDist[k] * std::sin (p * rn.freqDist[k] + rn.phaseDist[k]);
 
-        finalAz_[t] = input.originAz + az;
-        finalEl_[t] = juce::jlimit (-90.0f, 90.0f, input.originEl + el);
-        float distScaleR = 1.0f - input.originDist;
-        finalDist_[t] = juce::jlimit (0.0f, 1.0f, input.originDist + dist * distScaleR);
+        // Compute each value in a local and store it once, already wrapped or clamped, so a
+        // reader on another thread never sees Random's pre-wrap azimuth (RTSF-02).
+        const float distScaleR = 1.0f - input.originDist;
+        const float azOut   = wrapAzimuth (input.originAz + az);
+        const float elOut   = juce::jlimit (-90.0f, 90.0f, input.originEl + el);
+        const float distOut = juce::jlimit (0.0f, 1.0f, input.originDist + dist * distScaleR);
 
-        finalAz_[t] = wrapAzimuth (finalAz_[t]);
+        finalAz_[t].store (azOut, std::memory_order_relaxed);
+        finalEl_[t].store (elOut, std::memory_order_relaxed);
+        finalDist_[t].store (distOut, std::memory_order_relaxed);
     }
     else
     {
         auto result = computeTrajectory (input.shape, phase_[t],
                                           input.originAz, input.originEl, input.originDist,
                                           input.reverse);
-        finalAz_[t]   = result.azDeg;
-        finalEl_[t]   = result.elDeg;
-        finalDist_[t] = result.dist;
+        finalAz_[t].store (result.azDeg, std::memory_order_relaxed);
+        finalEl_[t].store (result.elDeg, std::memory_order_relaxed);
+        finalDist_[t].store (result.dist, std::memory_order_relaxed);
     }
 
-    active_[t].store (true, std::memory_order_relaxed);
+    // Publish: pairs with the acquire load in isActive().
+    active_[t].store (true, std::memory_order_release);
 
     baseAzimuth_[t]   = input.originAz;
     baseElevation_[t] = input.originEl;
@@ -139,10 +144,12 @@ TrajectoryEngine::evaluateRandomNoise (int objectIndex, float time) const
 //==============================================================================
 void TrajectoryEngine::reset (int i, float azDeg, float elDeg, float dist)
 {
-    active_[i].store (false, std::memory_order_relaxed);
-    finalAz_[i]   = azDeg;
-    finalEl_[i]   = elDeg;
-    finalDist_[i] = dist;
+    // Values first, then active_ with release, the same order tick() uses and the header
+    // documents: a reader that acquires active_ == false sees the reset position.
+    finalAz_[i].store (azDeg, std::memory_order_relaxed);
+    finalEl_[i].store (elDeg, std::memory_order_relaxed);
+    finalDist_[i].store (dist, std::memory_order_relaxed);
+    active_[i].store (false, std::memory_order_release);
     phase_[i]     = 0.0f;
     prevShape_[i] = 0;
     randomTime_[i] = 0.0f;
