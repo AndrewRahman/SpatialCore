@@ -1,5 +1,7 @@
 #pragma once
 
+#include <SpatialCore/Core/Types.h>
+
 #include <cmath>
 #include <algorithm>
 
@@ -14,7 +16,9 @@ namespace spatialcore
 class DopplerVelocity
 {
 public:
-    static constexpr int kMaxObjects = 12;
+    // Unified with MAX_SOURCES by SC-1 (AndrewRahman/SpatialCore#3) so a doppler slot exists for every
+    // object slot; never give it its own value.
+    static constexpr int kMaxObjects = MAX_SOURCES;
 
     /** Update Doppler for a single object based on its current spatial position.
         Call once per block per enabled object. */

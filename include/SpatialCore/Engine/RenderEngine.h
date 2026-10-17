@@ -833,7 +833,7 @@ private:
     static constexpr int kMaxAmbiChannels = (kMaxAmbiOrder + 1) * (kMaxAmbiOrder + 1);
     static constexpr float kNfcReferenceRadius = 1.5f; // meters (typical studio monitoring distance)
     float prevSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
-    juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // 12 objects x 6 orders
+    juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // MAX_SOURCES objects x 6 orders
     float smoothedNfcDistance[MAX_SOURCES] = {};
     float prevNfcDistance[MAX_SOURCES] = {};
     int   lastNfcAmbiOrder_ = -1;  // order the NFC filters were last updated for (SpatialCore#21)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <SpatialCore/Core/Types.h>
+
 #include <juce_core/juce_core.h>
 #include <atomic>
 #include <cmath>
@@ -57,7 +59,9 @@ inline float unwrapAzimuthDelta (float delta)
 class TrajectoryEngine
 {
 public:
-    static constexpr int kMaxObjects = 12;
+    // Unified with MAX_SOURCES by SC-1 (AndrewRahman/SpatialCore#3) so a trajectory slot exists for every
+    // object slot; never give it its own value.
+    static constexpr int kMaxObjects = MAX_SOURCES;
 
     struct TrajectoryResult
     {
