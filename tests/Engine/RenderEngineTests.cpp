@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <thread>
@@ -2122,4 +2123,112 @@ TEST_CASE ("RenderEngine: the fade-in block starts its gain interpolation from i
     const float g3 = gainAt (kBlockSize - 1);
     CHECK_THAT (g1, WithinAbs (g3, 1e-4));
     CHECK_THAT (g2, WithinAbs (g3, 1e-4));
+}
+
+// ============================================================================
+// SC-20 publish-after-check race (OSP Phase 3 review WR-04). renderBlock()
+// used to peek the fresh bit to decide on a fade-out and, when the peek found
+// nothing, acquire the latest layout with a SECOND load. A setOutputFormat()
+// that landed between the two loads was acquired with no fade-out and no
+// fade-in: a hard cut, which is the click SC-20 exists to remove.
+//
+// The layout-peek test hook publishes inside exactly that window, so the
+// interleaving is deterministic instead of a timing accident. The 7.1.4 path is
+// warmed first: on the unfixed engine the hard-started block glides from those
+// warm targets, so its first sample is clearly non-zero. Record 0 (the last
+// block before the hook is armed) shows the old layout was playing at full level.
+//
+// With the fix, the block during which the publish landed keeps the held layout
+// unfaded (block 1), the next block fades it out (block 2), and the block after
+// that fades the new layout in (block 3).
+// ============================================================================
+namespace
+{
+    struct Sc20RaceHook
+    {
+        RenderEngine* engine = nullptr;
+        OutputFormat target = OutputFormat::Binaural;
+        bool armed = false;
+        int publishes = 0;
+    };
+
+    struct Sc20RaceRecord
+    {
+        OutputFormat format = OutputFormat::Binaural;
+        bool firstSampleAllZero = false;
+        bool lastSampleAllZero = false;
+        double energy = 0.0;
+    };
+}
+
+TEST_CASE ("RenderEngine: a publish landing right after the block's fresh-bit check still fades out, then in (SC-20)",
+           "[engine][sc20][sc20-race]")
+{
+    Sc20Rig a (true, OutputFormat::Surround7_1_4);
+
+    // Warm the 7.1.4 path at azimuth 30.
+    for (int b = 0; b < 3; ++b)
+        a.render();
+
+    // Settle on Binaural (fade-out, fade-in, then two steady blocks).
+    a.engine.setOutputFormat (OutputFormat::Binaural);
+    for (int b = 0; b < 4; ++b)
+        a.render();
+    CHECK (a.blockFormat() == OutputFormat::Binaural);
+
+    constexpr int kRecords = 7;
+    Sc20RaceRecord records[kRecords];
+    const auto record = [&] (int i)
+    {
+        records[i].format = a.blockFormat();
+        records[i].firstSampleAllZero = a.everyChannelZeroAt (0);
+        records[i].lastSampleAllZero = a.everyChannelZeroAt (kBlockSize - 1);
+        records[i].energy = a.energy();
+    };
+    record (0);
+
+    Sc20RaceHook h;
+    h.engine = &a.engine;
+    h.target = OutputFormat::Surround7_1_4;
+    h.armed = true;
+    a.engine.setLayoutPeekHookForTesting (+[] (void* ctx)
+    {
+        auto* st = static_cast<Sc20RaceHook*> (ctx);
+        if (! st->armed)
+            return;
+        st->armed = false;
+        ++st->publishes;
+        st->engine->setOutputFormat (st->target);
+    }, &h);
+
+    for (int i = 1; i < kRecords; ++i)
+    {
+        a.render();
+        record (i);
+    }
+    a.engine.setLayoutPeekHookForTesting (nullptr, nullptr);
+
+    int t = -1;
+    for (int i = 0; i < kRecords; ++i)
+        if (records[i].format == OutputFormat::Surround7_1_4)
+        {
+            t = i;
+            break;
+        }
+
+    const bool prevLastZero = t >= 1 && records[t - 1].lastSampleAllZero;
+    const bool firstZero = t >= 1 && records[t].firstSampleAllZero;
+    std::printf ("SC20-RACE-SUMMARY transitionBlock=%d publishes=%d prevLastZero=%d firstZero=%d\n",
+                 t, h.publishes, prevLastZero ? 1 : 0, firstZero ? 1 : 0);
+
+    REQUIRE (h.publishes == 1);
+    REQUIRE ((t >= 1 && t + 1 < kRecords));
+    CHECK (records[t - 1].lastSampleAllZero);
+    CHECK (records[t].firstSampleAllZero);
+    // The block the publish landed in keeps the held layout unfaded, the next block fades it
+    // out, the next fades the new layout in.
+    CHECK (t == 3);
+    CHECK (records[t - 1].energy > 1e-10);
+    CHECK (records[t].energy > 1e-10);
+    CHECK_FALSE (records[t + 1].firstSampleAllZero);
 }

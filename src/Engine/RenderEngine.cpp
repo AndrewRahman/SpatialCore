@@ -789,6 +789,9 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     }
     else
     {
+        if (layoutPeekHook_ != nullptr && blockCtx.engineFadesFormatSwitch
+            && renderedSincePrepare_ && ! fadeInPending_)
+            layoutPeekHook_ (layoutPeekHookContext_);
         layoutPtr = &acquireBlockLayout();
         fadeInBlock = blockCtx.engineFadesFormatSwitch && fadeInPending_;
         fadeInPending_ = false;
