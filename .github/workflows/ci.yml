@@ -201,7 +201,6 @@ jobs:
     runs-on: ubuntu-24.04
     if: github.event_name != 'schedule'
     timeout-minutes: 120
-    continue-on-error: true
 
     steps:
       - name: Checkout repository
@@ -358,12 +357,29 @@ jobs:
         run: |
           set -euo pipefail
           cmake --version
-          cmake -E capabilities | head -c 600 || true
+          echo "vcpkg root: ${VCPKG_INSTALLATION_ROOT:-<unset>}"
 
-      - name: Configure
+      - name: Install zlib
+        # SpatialCore and libmysofa need zlib, and Windows has none (on Linux and macOS it is a
+        # system library). libmysofa's own MSVC branch tries "nuget install zlib", which finds no
+        # such package. The runner's preinstalled vcpkg builds it: static library, dynamic C
+        # runtime (x64-windows-static-md), the runtime JUCE uses.
         run: |
           set -euo pipefail
-          cmake -S . -B build
+          "$VCPKG_INSTALLATION_ROOT/vcpkg.exe" install zlib:x64-windows-static-md
+          ls "$VCPKG_INSTALLATION_ROOT/installed/x64-windows-static-md/lib"
+
+      - name: Configure
+        # libmysofa's MSVC branch adds no zlib include path (it expects a nuget package unpacked
+        # inside its own source tree), so the vcpkg include folder reaches the C compiler as -I,
+        # through the CFLAGS and CXXFLAGS environment variables, which CMake appends to its
+        # default compiler flags on the first configure.
+        run: |
+          set -euo pipefail
+          zlib_root=$(cygpath -m "$VCPKG_INSTALLATION_ROOT/installed/x64-windows-static-md")
+          export CFLAGS="-I$zlib_root/include"
+          export CXXFLAGS="-I$zlib_root/include"
+          cmake -S . -B build -DCMAKE_PREFIX_PATH="$zlib_root"
           juce_version=$(git -C build/_deps/juce-src describe --tags)
           echo "JUCE checkout: $juce_version"
           if [ "$juce_version" != "9.0.0" ]; then
