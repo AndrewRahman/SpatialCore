@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-10-17T13:26:02.856Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-10-17T15:52:02.569Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
-state_head: f46685d2f8ac715888708eff4077ca6febab1bc6
+state_head: 0308d8a4b69c310fb89cea5491da2fb2ea36b0ca
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 43
+  completed_plans: 44
 milestone_name: milestone
 ---
 
@@ -121,6 +121,7 @@ Progress: [███████░░░] 67%
 | Phase 05 P07 | 20 min | 2 tasks | 4 files |
 | Phase 05 P08 | 63 min | 3 tasks | 8 files |
 | Phase 06 P01 | 69 min | 2 tasks | 6 files |
+| Phase 06 P02 | 20 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -194,6 +195,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 05]: 05-08: Phase 5 requirements RTSF-01, RTSF-02, RTSF-03, RTSF-05 and VERIFY-02 ticked only after the VERIFICATION evidence section was written and the documented check passed (whole suite under ThreadSanitizer: 386 cases, exit 0, 0 warnings, 1938 s)
 - [Phase 06]: SPATIALCORE_BUILD_TESTS defaults to PROJECT_IS_TOP_LEVEL (consumer gets no test targets unless it sets it ON); top-level enable_testing() writes the root CTestTestfile.cmake so root ctest finds the suite — INTG-01 no surprise targets; CI-01 root cause (BASE root ctest found 0 tests)
 - [Phase 06]: ctest --no-tests=error -N exits 0 with zero tests; CI must run ctest --no-tests=error without -N and check the ui: listing count — Observed at BASE in plan 06-01; only the real run exits 8
+- [Phase 06]: INTG-02 detector counts a block only when engineComputesGains is false, the rendered path reads consumer gains, an object is active and every active object's gains on that path are exactly 0; it counts and (Debug) asserts, never computes gains for the consumer
+- [Phase 06]: On discrete surround a misuse block is silent on the speaker channels only: the LFE channel is generated from the mono sum, not from per-speaker gains
 
 ### Pending Todos
 
@@ -236,7 +239,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-17T13:26:02.640Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-10-17T15:52:02.344Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
