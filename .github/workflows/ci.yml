@@ -373,13 +373,17 @@ jobs:
         # libmysofa's MSVC branch adds no zlib include path (it expects a nuget package unpacked
         # inside its own source tree), so the vcpkg include folder reaches the C compiler as -I,
         # through the CFLAGS and CXXFLAGS environment variables, which CMake appends to its
-        # default compiler flags on the first configure.
+        # default compiler flags on the first configure. zlib 1.3.2 names its static Windows
+        # library zs.lib, which CMake's FindZLIB does not search for, so the library is given
+        # explicitly.
         run: |
           set -euo pipefail
           zlib_root=$(cygpath -m "$VCPKG_INSTALLATION_ROOT/installed/x64-windows-static-md")
           export CFLAGS="-I$zlib_root/include"
           export CXXFLAGS="-I$zlib_root/include"
-          cmake -S . -B build -DCMAKE_PREFIX_PATH="$zlib_root"
+          cmake -S . -B build \
+            -DZLIB_INCLUDE_DIR="$zlib_root/include" \
+            -DZLIB_LIBRARY="$zlib_root/lib/zs.lib"
           juce_version=$(git -C build/_deps/juce-src describe --tags)
           echo "JUCE checkout: $juce_version"
           if [ "$juce_version" != "9.0.0" ]; then
