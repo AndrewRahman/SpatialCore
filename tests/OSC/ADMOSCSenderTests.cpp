@@ -271,6 +271,11 @@ TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 3
 
     // About one second of 60 Hz wall-clock calls. A loaded machine stretches the
     // sleeps, so the rate is judged against the elapsed time actually measured.
+    // The calls are paced against absolute deadlines and the wait is a spin, not a
+    // sleep: a hosted macOS CI runner stretches a 16 ms sleep to about 75 ms, which
+    // would make the caller slower than the 30 Hz clock under test (a tick sends at
+    // most one message per call) and the case would judge the runner's timer, not
+    // the sender.
     const auto start = std::chrono::steady_clock::now();
     auto lastCall = start;
     for (int i = 0; i < 60; ++i)
@@ -278,7 +283,9 @@ TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 3
         az += 1.0f;
         sender.tick (&az, &el, &dist, &enabled, 1);
         lastCall = std::chrono::steady_clock::now();
-        juce::Thread::sleep (16);
+        const auto deadline = start + (i + 1) * std::chrono::milliseconds (16);
+        while (std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
     }
     const double elapsed = std::chrono::duration<double> (lastCall - start).count();
 
