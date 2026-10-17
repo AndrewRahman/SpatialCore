@@ -7,7 +7,7 @@ status: planning
 stopped_at: Phase 05 complete; v1.0.0 milestone re-audit gaps_found (Phase 6 not started)
 last_updated: "2026-10-17T10:00:00.000Z"
 last_activity: 2026-10-17
-last_activity_desc: Phase 4 Nyquist validated (19/19 rows green); milestone re-audit 21/25, gaps are Phase 6's four requirements
+last_activity_desc: Phase 2 Nyquist validated (0 gaps); Phase 4 Nyquist validated (19/19 rows green); milestone re-audit 21/25, gaps are Phase 6's four requirements
 state_head: a9dfd1c63634f476ab7ee621fea4c7916519059a
 progress:
   total_phases: 6
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 Phase: 06 (Consumer Readiness & CI) — NOT STARTED
 Plan: none yet
 Status: Phase 05 complete (verification passed, UAT 2/2, validation and security verified 2026-10-17). Next: /gsd-discuss-phase 6
-Last activity: 2026-10-17 — Phase 4 Nyquist validated (0 gaps, 19/19 rows green, `04-VALIDATION.md` now validated). Earlier the same day: v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
+Last activity: 2026-10-17 — Phase 2 Nyquist validated (0 gaps, every row green in Debug and Release, `02-VALIDATION.md` now validated). Phase 4 Nyquist validated (0 gaps, 19/19 rows green, `04-VALIDATION.md` now validated). Earlier the same day: v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -227,7 +227,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Resolved — Phase 4 (04-03) | Phase 02 (02-07) |
 | Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Resolved — Phase 5 (05-03): [rt][switch][tracer], [rt][switch][audit] | v1.0.0 audit |
-| Planning | 01-VALIDATION.md and 02-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`, `2`) | Open | v1.0.0 audit |
+| Planning | 01-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`); 02-VALIDATION.md validated 2026-10-17 | Open | v1.0.0 audit |
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 

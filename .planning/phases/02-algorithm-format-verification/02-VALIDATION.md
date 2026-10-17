@@ -126,6 +126,7 @@ checks. Full-suite command used by every plan:
 - **Tag sweep:** all 20 Phase 2 tags pass on their own in Debug, including `[counts]`, `[band]` and `[g02-2]`.
 - **Oracles:** `ShReference.h`, `EarReference.h` and `PanningReference.h` regenerate byte-identical with the README recipe on Python 3.14, and each passes `-fsyntax-only`.
 - **Text gates:** both 02-07 gates pass. The 02-09-T1 content greps pass. Its CRLF clause fails, but that is expected: IN-13 later converted `docs/integration-guide.md` and the skill to LF and pinned them in `.gitattributes`. The clause is stale and is not a gap.
+- **Re-check after merging Phase 5 (`origin/main` at `b6492f9`):** the Release suite passes 387/387 test cases, every Phase 2 tag passes in Debug, and `[ambi-pin]` passes in Release.
 - **Issue #22** is still open. **DR-3** stays manual-only: the OSD 30391cd build passed at execution (02-07, 02-09 summaries) and was not re-run in this audit.
 
 ## Validation Audit 2026-10-17
