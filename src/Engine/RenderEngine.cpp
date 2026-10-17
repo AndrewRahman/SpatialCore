@@ -774,24 +774,46 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     //
     // SC-20 (opt-in): a block that sees a newly published layout renders the
     // layout it already holds, faded out, and the following block takes the new
-    // one, faded in. The held slot is the reader's own slot, which the writer
-    // never touches, so rendering it needs no acquire; hasFresh() is only a
-    // hint. With the flag false this is exactly the old acquire.
+    // one, faded in. With the flag false this is exactly the old single acquire.
+    //
+    // SC-20 publish-after-check race (OSP Phase 3 review WR-04): ONE fresh-bit
+    // load decides a fade-on block. A false result is never followed by an
+    // acquire in the same block, because it can turn true at any instant (the
+    // writer publishes from another thread), whereas a true result holds until
+    // the reader's own acquire (only the reader clears the bit). A publish that
+    // lands after the load keeps its fresh bit set, so the next block's load
+    // sees it and fades out, then in; it is never heard unfaded. The hold and
+    // fade-out blocks render the reader's own slot, which the writer never
+    // touches, so they need no acquire.
+    //
+    // Two alternatives from the review are deliberately NOT used:
+    //  (a) acquire first, then render the previously held slot faded out: after
+    //      acquireLatest() that slot is the pending slot, and the next publish()
+    //      hands it to the writer, whose activateLayout() rewrites it
+    //      (reallocating vbapTriplets) while the fade-out renders it. A data race.
+    //  (b) a fade-in-only block when the reader moved unexpectedly: the old
+    //      layout's last block ended at full level, so starting the new one at 0
+    //      is a step, which is still a click.
     bool fadeOutBlock = false;
     bool fadeInBlock = false;
     const LayoutState* layoutPtr = nullptr;
-    if (blockCtx.engineFadesFormatSwitch && renderedSincePrepare_ && ! fadeInPending_
-        && layoutSlots_.hasFresh())
+    if (blockCtx.engineFadesFormatSwitch && renderedSincePrepare_ && ! fadeInPending_)
     {
+        const bool fresh = layoutSlots_.hasFresh();   // the one load for this block
         layoutPtr = &layoutBuffers[static_cast<size_t> (layoutSlots_.readSlot())];
-        fadeOutBlock = true;
-        fadeInPending_ = true;
+        if (fresh)
+        {
+            fadeOutBlock = true;
+            fadeInPending_ = true;
+        }
+        else if (layoutPeekHook_ != nullptr)
+        {
+            // Test seam: lets a test publish exactly inside the former race window.
+            layoutPeekHook_ (layoutPeekHookContext_);
+        }
     }
     else
     {
-        if (layoutPeekHook_ != nullptr && blockCtx.engineFadesFormatSwitch
-            && renderedSincePrepare_ && ! fadeInPending_)
-            layoutPeekHook_ (layoutPeekHookContext_);
         layoutPtr = &acquireBlockLayout();
         fadeInBlock = blockCtx.engineFadesFormatSwitch && fadeInPending_;
         fadeInPending_ = false;
