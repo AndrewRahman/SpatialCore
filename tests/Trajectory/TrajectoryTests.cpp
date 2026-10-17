@@ -571,7 +571,7 @@ TEST_CASE ("TrajectoryEngine: a reader thread sees only finished, in-range posit
         }
     });
 
-    // Timer thread (the only writer): all 12 objects through all 13 shapes at speed 4.
+    // Timer thread (the only writer): every object (kMaxObjects, equal to MAX_SOURCES) through all 13 shapes at speed 4.
     std::thread ticker ([&]
     {
         while (! readerStarted.load())

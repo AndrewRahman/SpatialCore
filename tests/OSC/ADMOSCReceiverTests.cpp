@@ -271,8 +271,8 @@ TEST_CASE ("ADMOSCReceiver: Out-of-range object number is ignored", "[osc][edge]
     RecordingListener listener;
     auto receiver = createTestReceiver (listener);
 
-    sendOSC (*receiver, "/adm/obj/0/azim", { 90.0f });    // 0 is below valid range (1-12)
-    sendOSC (*receiver, "/adm/obj/13/azim", { 90.0f });   // 13 is above valid range (MAX_SOURCES=12)
+    sendOSC (*receiver, "/adm/obj/0/azim", { 90.0f });    // 0 is below valid range (1..MAX_SOURCES)
+    sendOSC (*receiver, "/adm/obj/" + juce::String (MAX_SOURCES + 1) + "/azim", { 90.0f });   // MAX_SOURCES + 1 is above valid range
 
     CHECK (listener.positionCallCount == 0);
 }
@@ -305,19 +305,19 @@ TEST_CASE ("ADMOSCReceiver: /osd/global/ forwards any property name -- consumer 
     CHECK (listener.lastGlobalProperty == "nonexistent");
 }
 
-TEST_CASE ("ADMOSCReceiver: All 12 objects addressable", "[osc][edge]")
+TEST_CASE ("ADMOSCReceiver: All MAX_SOURCES objects addressable", "[osc][edge]")
 {
     RecordingListener listener;
     auto receiver = createTestReceiver (listener);
 
-    for (int i = 1; i <= 12; ++i)
+    for (int i = 1; i <= MAX_SOURCES; ++i)
     {
         float targetAz = static_cast<float> (i * 15);
         sendOSC (*receiver, "/osd/obj/" + juce::String (i) + "/azim", { targetAz });
         CHECK (listener.lastPositionObjectIndex == i - 1);
         CHECK_THAT (listener.lastAz, WithinAbs (targetAz, 0.5f));
     }
-    CHECK (listener.positionCallCount == 12);
+    CHECK (listener.positionCallCount == MAX_SOURCES);
 }
 
 TEST_CASE ("ADMOSCReceiver: Malformed address with no object number is ignored", "[osc][edge]")

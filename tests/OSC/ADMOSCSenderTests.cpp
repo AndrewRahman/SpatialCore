@@ -193,8 +193,9 @@ namespace
                       const bool* enabled, int n)
     {
         const float el[MAX_SOURCES] = {};
-        const float dist[MAX_SOURCES] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f,
-                                          0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        float dist[MAX_SOURCES];
+        for (float& d : dist)
+            d = 0.5f;
         sender.tick (az, el, dist, enabled, n, t);
     }
 }
