@@ -5,10 +5,10 @@ current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
 stopped_at: Phase 6 context gathered
-last_updated: "2026-10-17T10:44:43.422Z"
+last_updated: "2026-10-17T12:12:51.239Z"
 last_activity: 2026-10-17
-last_activity_desc: v1.0.0 milestone re-audit (21/25, gaps are Phase 6's four requirements)
-state_head: 5e7fac9a7479b40e25b1891b1dcb38dd1fb60f40
+last_activity_desc: Phase 06 execution started
+state_head: b1ca4a452f6534b35f070c9de10d0bd7607b3b16
 progress:
   total_phases: 6
   completed_phases: 5
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 06 — Consumer Readiness & CI (not yet discussed)
+**Current focus:** Phase 06 — Consumer Readiness & CI
 
 ## Current Position
 
-Phase: 06 (Consumer Readiness & CI) — READY TO EXECUTE
-Plan: none yet
-Status: Ready to execute
-Last activity: 2026-10-17 — v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
+Phase: 06 (Consumer Readiness & CI) — EXECUTING
+Plan: 1 of 10
+Status: Executing Phase 06
+Last activity: 2026-10-17 — Phase 06 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
