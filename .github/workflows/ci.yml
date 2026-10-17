@@ -305,7 +305,6 @@ jobs:
     runs-on: windows-2025
     if: github.event_name != 'schedule'
     timeout-minutes: 120
-    continue-on-error: true
     defaults:
       run:
         shell: bash
