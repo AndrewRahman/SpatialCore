@@ -7,7 +7,7 @@ namespace spatialcore
 {
 
 //==============================================================================
-// HRIR transition timing (issue #234, decisions D-01 / D-04 / D-06 / D-15).
+// HRIR transition timing (issue Spatial-Media-Lab/OpenSpatialDelay#234, decisions D-01 / D-04 / D-06 / D-15).
 //
 // The binaural HRIR transition is defined in WALL-CLOCK time, never in host
 // blocks, so a moving source transitions identically at every host buffer size
@@ -18,7 +18,7 @@ namespace spatialcore
 // apart.
 //==============================================================================
 
-/** HRIR crossfade duration (correlation-compensated gains, #234 pulsing / O212).  21.333 ms == exactly 1024 samples at
+/** HRIR crossfade duration (correlation-compensated gains, Spatial-Media-Lab/OpenSpatialDelay#234 pulsing / O212).  21.333 ms == exactly 1024 samples at
     48 kHz (the pre-#234 4 x 256-sample crossfade at a 256-sample host buffer). */
 inline constexpr float kHRIRCrossfadeMs = 64.0f / 3.0f;
 

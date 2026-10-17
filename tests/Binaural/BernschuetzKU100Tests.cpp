@@ -20,7 +20,11 @@ namespace
     // Replaces the FNV checksum 0xb5acb6188c85f737: byte-exact float hashes differ across
     // build types by one ulp (research Pitfall 6). D-17 governs any future change of these
     // values.
-    constexpr HRIRFingerprint kGoldenFingerprint { 128, 11.0f, 43.0f, 5.42644277, 0.302691799, 1.26062512f, 0.268568307f, 11, 16 };
+    // delayL/delayR are the onset SHIFT since the WR-01 fix (Spatial-Media-Lab/OpenSpatialDelay#234,
+    // O212): getAlignedHRIR reports onset - minOnset, so the leading ear is 0 and the other
+    // carries the ITD. Before it they were the absolute onsets 11 / 43; only these two
+    // fields moved (energy, peaks and peak indices are unchanged, the aligned waveform is the same).
+    constexpr HRIRFingerprint kGoldenFingerprint { 128, 0.0f, 32.0f, 5.42644277, 0.302691799, 1.26062512f, 0.268568307f, 11, 16 };
     constexpr int kGoldenIRLength = 128;
     constexpr int kGoldenNumPositions = 16020;
 }

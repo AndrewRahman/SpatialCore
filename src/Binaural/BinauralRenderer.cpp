@@ -89,7 +89,7 @@ void BinauralRenderer::setProfile (int profileIndex)
 
     // Mirror lengths: computed here (not in prepare) because this is where the
     // per-source convolvers are prepared at currentSampleRate, so both state
-    // machines always count identical sample totals (#234, D-06).
+    // machines always count identical sample totals (Spatial-Media-Lab/OpenSpatialDelay#234, D-06).
     itdXfadeSamples       = hrirTransitionMsToSamples (currentSampleRate, kHRIRCrossfadeMs);
     itdWarmupFloorSamples = hrirTransitionMsToSamples (currentSampleRate, kHRIRWarmupMinMs);
 
@@ -235,8 +235,8 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
     else
         hrtfDatabase.getInterpolatedHRIR (azRad, elRad, tmpL.data(), tmpR.data(), delayL, delayR);
 
-    // Custom SOFA input is untrusted (#218): a negative or huge delay must never
-    // alias in the ITD ring (#234, D-13).
+    // Custom SOFA input is untrusted (Spatial-Media-Lab/OpenSpatialDelay#218): a negative or huge delay must never
+    // alias in the ITD ring (Spatial-Media-Lab/OpenSpatialDelay#234, D-13).
     delayL = juce::jlimit (0.0f, static_cast<float> (kMaxITDSamples), delayL);
     delayR = juce::jlimit (0.0f, static_cast<float> (kMaxITDSamples), delayR);
 

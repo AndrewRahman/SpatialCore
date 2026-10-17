@@ -27,14 +27,14 @@ public:
     void prepare (int maxBlockSize, int irLength, double sampleRate = 48000.0);
 
     /** Set or update the impulse response.
-        v1.0.5: Dual-convolver crossfade (issue #50) -- the new IR is loaded
+        v1.0.5: Dual-convolver crossfade (issue Spatial-Media-Lab/OpenSpatialDelay#50) -- the new IR is loaded
         into the inactive slot, which warms for max(IR length,
         kHRIRWarmupMinMs) samples and then crossfades over kHRIRCrossfadeMs
-        with correlation-compensated gains (computeCrossfadeGains; #234
+        with correlation-compensated gains (computeCrossfadeGains; Spatial-Media-Lab/OpenSpatialDelay#234
         "pulsing", O212 -- O211's equal-power curve bumped +3 dB between the
         highly correlated, time-aligned neighbouring HRIRs).  This eliminates overlap-save boundary
         discontinuities that caused audible pops during HRTF transitions.
-        v2.0.0 (issue #234): both durations are counted in SAMPLES (converted
+        v2.0.0 (issue Spatial-Media-Lab/OpenSpatialDelay#234): both durations are counted in SAMPLES (converted
         from ms at the prepared sample rate), so the transition has the same
         wall-clock duration -- and is pop-free -- at every host buffer size and
         sample rate. */
@@ -52,7 +52,7 @@ public:
 
     bool isPrepared() const { return fftSize > 0; }
 
-    /** Correlation-compensated crossfade gains (#234 "pulsing", O212).
+    /** Correlation-compensated crossfade gains (Spatial-Media-Lab/OpenSpatialDelay#234 "pulsing", O212).
         Progress t = k / C, a = 1 - t, b = t, and
             g = 1 / sqrt (a^2 + b^2 + 2 rho a b),  fadeOut = a g,  fadeIn = b g,
         so a blend of two outputs whose IRs have normalised correlation rho
@@ -106,16 +106,15 @@ private:
     // waits across calls to accumulate a full block before producing output.
     //
     // That per-call overlap-add is one half of the Spatial-Media-Lab/OpenSpatialDelay#234 small-block fix; the
-    // other half is the sample-based warm-up and crossfade above (BUG-02, Phase 3).
-    // Both are covered by [convolver][blocksize], [bug02][moving] and
-    // [bug02][steady]. Spatial-Media-Lab/OpenSpatialDelay#234 stays open for OSD's
-    // delay line and pitch shifter, which this library does not contain.
+    // other half is the sample-counted warm-up and crossfade of setIR() (TransitionTiming.h,
+    // which replaced Phase 3's BUG-02 call-counted rule). Both are covered by
+    // [convolver][blocksize], [convolver][transition], [bug02][moving] and [bug02][steady].
     struct ConvSlot
     {
         std::vector<float> irFreqDomain;     // IR in frequency domain
         std::vector<float> fftWorkBuf;       // FFT work buffer (this call's own block)
         std::vector<float> overlapAccum;     // Persistent overlap-add accumulator (shifted each call)
-        std::vector<float> irTime;           // #234 pulsing: time-domain copy of the IR (fftSize, zero-padded) for rho
+        std::vector<float> irTime;           // Spatial-Media-Lab/OpenSpatialDelay#234 pulsing: time-domain copy of the IR (fftSize, zero-padded) for rho
         double irEnergy = 0.0;               // sum of irTime^2
     };
 
@@ -125,7 +124,7 @@ private:
     enum class State { Idle, Warmup, Crossfading };
     State state = State::Idle;
 
-    // Issue #234: transition timing is counted in samples, derived from the
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#234: transition timing is counted in samples, derived from the
     // ms-defined constants in TransitionTiming.h at prepare() time.
     int activeSlot = 0;                          // Index of the currently active slot (0 or 1)
     int crossfadeSamples = 1024;                 // Crossfade length (21.333 ms)

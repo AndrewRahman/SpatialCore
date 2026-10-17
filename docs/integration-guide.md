@@ -447,13 +447,21 @@ opt-in flag, and both only lengthen a transition at small block sizes (they neve
 - The renderer crossfade of a profile swap lasts `max (8 blocks, kMinRendererXfadeSamples = 4096)`
   samples, fixed when the fade starts. At blocks of 512 samples and above it is the old 8-block fade;
   at 256 and below it is longer (at least 85 ms at 48 kHz).
-- A convolver's warm-up before a new IR is faded in now also waits until the new slot has convolved at
-  least one IR length of samples. A 558-sample KEMAR IR at 512-sample calls therefore warms for two
-  calls where it used to warm for one, and the convolver crossfade is never shorter than
-  `PartitionedConvolver::kMinCrossfadeSamples` (2048).
+- A convolver's HRIR transition is counted in samples from `Binaural/TransitionTiming.h`, never in
+  calls (Spatial-Media-Lab/OpenSpatialDelay#234, decided and A/B-tested in OpenSpatialDelay O211/O212;
+  it replaces Phase 3's call-counted rule of one warm-up call, then `max (4 calls, 2048 samples)`).
+  The inactive slot warms for `max (IR length, kHRIRWarmupMinMs = 5.333 ms)` and then crossfades over
+  `kHRIRCrossfadeMs = 21.333 ms` (256 and 1024 samples at 48 kHz) at every call size and sample rate;
+  either may begin or end mid-call. The fade gains are correlation-compensated: `a = 1 - t`, `b = t`,
+  `g = 1 / sqrt (a^2 + b^2 + 2 rho a b)` with `rho` the zero-lag correlation of the two IRs, so neither
+  coherent neighbouring HRIRs (an equal-power fade bumps them +3 dB) nor unrelated ones (a linear fade
+  dips them -3 dB) change level mid-fade. `BinauralRenderer` moves the ITD on the same warm-up and
+  crossfade window, and its ITD line is 512 samples and carries each ear's onset shift relative to the
+  earlier ear (0 for the leading ear), so every bundled profile's rendered onset equals the raw HRIR
+  onset.
 
-Steady-state output is unchanged by these two; a recording that captures a profile swap will differ
-during the transition. Treat the Simple-path change above and these two as one release-note item, and
+Steady-state output is unchanged by these two; a recording that captures a profile swap or a moving
+source will differ during the transition. Treat the Simple-path change above and these two as one release-note item, and
 bump the minor version when you ship them.
 
 **Source-compatibility notes (SpatialCore 0.5.0).** SpatialCore is pre-1.0 (no public release uses it yet; it

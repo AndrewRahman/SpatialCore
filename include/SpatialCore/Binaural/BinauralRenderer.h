@@ -151,7 +151,7 @@ private:
     // rendered per-ear onset equals the raw HRIR onset (WR-01, O212).
     //
     // The applied ITD is a MIRROR of the per-source PartitionedConvolver
-    // transition (#234, D-06): same warmup max(irLen, kHRIRWarmupMinMs), same
+    // transition (Spatial-Media-Lab/OpenSpatialDelay#234, D-06): same warmup max(irLen, kHRIRWarmupMinMs), same
     // kHRIRCrossfadeMs window, same latest-wins coalescing, counted on the same
     // samples, so the time offset and the HRIR tone change move together as ONE
     // transition.  A first load snaps (nothing audible to slew from).  If the
@@ -184,8 +184,11 @@ private:
     // carried (SADIE up to about 124 at 48 kHz), which is why the ring grew from
     // 64 to 512 in O211 (D-13); 512 now stays as headroom for high sample rates
     // and custom SOFA files with real Data.Delay values.  Larger delays
-    // (untrusted) are clamped to kMaxITDSamples.
-    // Must stay a power of two (mask indexing).
+    // (untrusted) are clamped to kMaxITDSamples.  This resolves the wrap that
+    // Phase 3 recorded here as a deferred defect (AndrewRahman/SpatialCore#25,
+    // WR-05, D-16): both halves of its intended fix (a larger ring, delays
+    // relative to min (delayL, delayR)) are in, and BinauralRendererTests pins the
+    // new timing.  Must stay a power of two (mask indexing).
     static constexpr int kITDBufferSize = 512;
     static constexpr int kMaxITDSamples = kITDBufferSize - 2;   // 2-tap read needs index + 1 inside the ring
     float itdBufferL[MAX_SOURCES][kITDBufferSize] = {};
