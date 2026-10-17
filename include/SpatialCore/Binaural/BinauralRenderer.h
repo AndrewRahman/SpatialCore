@@ -144,8 +144,11 @@ private:
     void ensureScratchCapacity();
 
     // ITD (Inter-aural Time Difference) tracking for smooth HRIR transitions.
-    // When using getAlignedHRIR(), HRIRs are time-aligned (ITD removed).
-    // ITD is applied as a separate fractional-sample delay.
+    // When using getAlignedHRIR(), the two ears' HRIRs are time-aligned to the
+    // EARLIER ear's onset (the interaural shift is removed; the common leading
+    // onset stays in both waveforms).  The interaural shift is applied here as a
+    // separate per-ear fractional-sample delay (0 for the leading ear), so the
+    // rendered per-ear onset equals the raw HRIR onset (WR-01, O212).
     //
     // The applied ITD is a MIRROR of the per-source PartitionedConvolver
     // transition (#234, D-06): same warmup max(irLen, kHRIRWarmupMinMs), same
@@ -173,12 +176,15 @@ private:
     int   itdXfadeSamples = 1024;                    // kHRIRCrossfadeMs at currentSampleRate (set in setProfile)
     int   itdWarmupFloorSamples = 256;               // kHRIRWarmupMinMs at currentSampleRate (set in setProfile)
 
-    // Short delay lines for ITD application.  The delay line carries the ABSOLUTE
-    // HRIR onset, because all five bundled SOFA files have Data.Delay = 0 and
-    // getAlignedHRIR's onset fallback reports the onset (KEMAR about 31..64 samples
-    // at 48 kHz, SADIE about 53..124 at 48 kHz, about 247 at 96 kHz, about 496 at
-    // 192 kHz).  512 covers every bundled profile up to 192 kHz; larger delays
-    // (custom SOFA, untrusted) are clamped to kMaxITDSamples (#234, D-13).
+    // Short delay lines for ITD application.  All five bundled SOFA files have
+    // Data.Delay = 0, so getAlignedHRIR's onset fallback supplies the delay: the
+    // per-ear onset SHIFT relative to the earlier ear (WR-01, O212), i.e. 0 for
+    // the leading ear and the ITD (up to about +-48 samples at 48 kHz, scaling
+    // with the sample rate) for the other.  Before O212 the absolute onset was
+    // carried (SADIE up to about 124 at 48 kHz), which is why the ring grew from
+    // 64 to 512 in O211 (D-13); 512 now stays as headroom for high sample rates
+    // and custom SOFA files with real Data.Delay values.  Larger delays
+    // (untrusted) are clamped to kMaxITDSamples.
     // Must stay a power of two (mask indexing).
     static constexpr int kITDBufferSize = 512;
     static constexpr int kMaxITDSamples = kITDBufferSize - 2;   // 2-tap read needs index + 1 inside the ring
