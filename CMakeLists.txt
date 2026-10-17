@@ -59,6 +59,23 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
+# --- Source-based coverage (TEST-01, Phase 6) ---
+# Off by default. scripts/coverage.sh and the CI `coverage` job turn it on in a separate build tree
+# (build-cov/) to measure how much of SpatialCore the automated tests run. It instruments
+# SpatialCore's own targets (and the tests under tests/), not libmysofa, which is fetched above.
+# Reports stay inside GitHub: a job summary and a downloadable artifact, never an outside service (D-15).
+option(SPATIALCORE_ENABLE_COVERAGE "Instrument a top-level Clang build for source-based coverage (TEST-01)" OFF)
+if(SPATIALCORE_ENABLE_COVERAGE)
+    if(NOT PROJECT_IS_TOP_LEVEL)
+        message(WARNING "SPATIALCORE_ENABLE_COVERAGE applies only to SpatialCore's own top-level build and is ignored when SpatialCore is consumed with add_subdirectory().")
+    elseif(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "SPATIALCORE_ENABLE_COVERAGE needs Clang or AppleClang (source-based coverage, llvm-cov); the compiler here is ${CMAKE_CXX_COMPILER_ID}.")
+    else()
+        add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+        add_link_options(-fprofile-instr-generate)
+    endif()
+endif()
+
 # --- Embedded HRTF profiles (DATA-01, OQ-6) ---
 # SpatialCore carries the five SOFA profiles as BinaryData, so a consumer that links
 # SpatialCore gets them with no install step, no path and no BinaryData target of its own.
