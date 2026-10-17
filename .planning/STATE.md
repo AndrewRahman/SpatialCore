@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 05
-current_phase_name: Realtime Safety Hardening
-status: verifying
-stopped_at: Completed 05-08-PLAN.md
-last_updated: "2026-10-06T03:46:51.014Z"
-last_activity: 2026-10-06
-last_activity_desc: Phase 05 execution started
+current_phase: 06
+current_phase_name: Consumer Readiness & CI
+status: planning
+stopped_at: Phase 05 complete; v1.0.0 milestone re-audit gaps_found (Phase 6 not started)
+last_updated: "2026-10-17T10:00:00.000Z"
+last_activity: 2026-10-17
+last_activity_desc: v1.0.0 milestone re-audit (21/25, gaps are Phase 6's four requirements)
 state_head: a9dfd1c63634f476ab7ee621fea4c7916519059a
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 42
   completed_plans: 42
 milestone_name: milestone
@@ -25,14 +25,14 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 05 — Realtime Safety Hardening
+**Current focus:** Phase 06 — Consumer Readiness & CI (not yet discussed)
 
 ## Current Position
 
-Phase: 05 (Realtime Safety Hardening) — EXECUTING
-Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-10-06 — Phase 05 execution started
+Phase: 06 (Consumer Readiness & CI) — NOT STARTED
+Plan: none yet
+Status: Phase 05 complete (verification passed, UAT 2/2, validation and security verified 2026-10-17). Next: /gsd-discuss-phase 6
+Last activity: 2026-10-17 — v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04

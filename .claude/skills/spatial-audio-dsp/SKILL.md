@@ -38,7 +38,7 @@ g2 = sin(az_src - az_spk1) / sin(az_spk2 - az_spk1)
 Constant-power normalization: `scale = 1 / sqrt(g1² + g2²)`.
 
 **3D (height layouts: 7.1.4, 9.1.6, virtual speakers):**
-Pre-compute Delaunay triangulation of speakers into triplets. For each triplet {i,j,k}, store 3x3 inverse of direction matrix `[spk_i spk_j spk_k]`. At runtime:
+Pre-compute triplets from every non-degenerate speaker triple (`|det| >= 0.01`; not a Delaunay triangulation). For each triplet {i,j,k}, store 3x3 inverse of direction matrix `[spk_i spk_j spk_k]`. At runtime:
 1. Convert source to Cartesian: `p = [cos(el)sin(az), cos(el)cos(az), sin(el)]`
 2. For each triplet: `gains = inv_matrix × p`
 3. Select triplet where all 3 gains are positive (source inside triangle)

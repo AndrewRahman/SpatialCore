@@ -42,7 +42,7 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 
 ### Speaker Layouts
 - 15 ITU-R BS.775/BS.2051 standard layouts with SMPTE channel ordering
-- 16-speaker virtual array for binaural rendering (9 ear-level + 6 height + zenith)
+- Binaural output uses no virtual speaker array: each source is rendered directly (per-source HRTF convolution, or the Simple Woodworth path)
 - Automatic bus negotiation — format detected from DAW track I/O
 
 ### ADM-OSC Integration

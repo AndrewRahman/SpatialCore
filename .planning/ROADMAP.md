@@ -27,7 +27,7 @@ yet consume SpatialCore; the migration is unstarted.
 - [x] **Phase 2: Algorithm & Format Verification** - Ambisonics convention stated; gain paths verified against the panning laws (completed 2026-10-04)
 - [x] **Phase 3: Binaural Defects & HRTF Packaging** - The two inherited binaural bugs are fixed and a consumer gets HRTF data by linking (completed 2026-10-04)
 - [x] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction (completed 2026-10-05)
-- [ ] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds
+- [x] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds (completed 2026-10-17)
 - [ ] **Phase 6: Consumer Readiness & CI** - OSD can submodule, link, and build — proven in CI
 
 ## Phase Details
@@ -316,7 +316,7 @@ External Dependencies.
 | 2. Algorithm & Format Verification | 10/10 | Complete    | 2026-10-04 |
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
-| 5. Realtime Safety Hardening | 8/8 | In Progress|  |
+| 5. Realtime Safety Hardening | 8/8 | Complete    | 2026-10-17 |
 | 6. Consumer Readiness & CI | 0/TBD | Not started | - |
 
 ## Coverage
