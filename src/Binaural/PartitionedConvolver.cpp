@@ -53,7 +53,10 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_, double samp
         slots[s].irFreqDomain.assign (static_cast<size_t> (fftSize * 2), 0.0f);
         slots[s].fftWorkBuf.resize (static_cast<size_t> (fftSize * 2), 0.0f);
         slots[s].overlapAccum.assign (static_cast<size_t> (fftSize), 0.0f);
+        slots[s].irTime.assign (static_cast<size_t> (fftSize), 0.0f);   // #234 pulsing: rho source, never resized on the audio thread
+        slots[s].irEnergy = 0.0;
     }
+    crossfadeRho = 0.0f;
 
     // Work buffers for dual-slot output mixing
     slotOutputA.resize (static_cast<size_t> (maxBlockSize), 0.0f);
@@ -65,19 +68,11 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_, double samp
     hasPendingIR = false;
 
     // Issue #234: transition durations are ms-defined and counted in samples.
-    // The equal-power gain table is built here (never on the audio thread):
-    // fadeIn[k] = fadeCurve[k], fadeOut[k] = fadeCurve[C - k], k = 0..C.
+    // The crossfade gains are correlation-compensated per transition
+    // (computeCrossfadeGains, #234 "pulsing"), computed per sample.
     crossfadeSamples   = hrirTransitionMsToSamples (sampleRate, kHRIRCrossfadeMs);
     warmupFloorSamples = hrirTransitionMsToSamples (sampleRate, kHRIRWarmupMinMs);
     warmupSamples      = std::max (irLen, warmupFloorSamples);
-
-    fadeCurve.assign (static_cast<size_t> (crossfadeSamples) + 1, 0.0f);
-    constexpr double halfPi = 1.57079632679489661923;
-    for (int k = 0; k <= crossfadeSamples; ++k)
-        fadeCurve[static_cast<size_t> (k)] = static_cast<float> (
-            std::sin (halfPi * static_cast<double> (k) / static_cast<double> (crossfadeSamples)));
-    fadeCurve.front() = 0.0f;
-    fadeCurve.back()  = 1.0f;
 
     reset();
 }
@@ -85,9 +80,33 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_, double samp
 void PartitionedConvolver::loadIRIntoSlot (ConvSlot& slot, const float* ir, int length)
 {
     std::fill (slot.irFreqDomain.begin(), slot.irFreqDomain.end(), 0.0f);
-    for (int i = 0; i < std::min (length, fftSize); ++i)
+    std::fill (slot.irTime.begin(), slot.irTime.end(), 0.0f);
+    double energy = 0.0;
+    const int n = std::min (length, std::min (fftSize, static_cast<int> (slot.irTime.size())));
+    for (int i = 0; i < n; ++i)
+    {
         slot.irFreqDomain[static_cast<size_t> (i)] = ir[i];
+        slot.irTime[static_cast<size_t> (i)] = ir[i];
+        energy += static_cast<double> (ir[i]) * static_cast<double> (ir[i]);
+    }
+    slot.irEnergy = energy;
     fft->performRealOnlyForwardTransform (slot.irFreqDomain.data(), true);
+}
+
+// #234 "pulsing": normalised zero-lag correlation of two slots' time-domain IRs,
+// clamped to [0, 1] (anti-correlated pairs are treated as uncorrelated) and 0 for
+// a zero-norm IR.  O(irLen), no allocation -- called once per transition start.
+float PartitionedConvolver::computeIRCorrelation (const ConvSlot& a, const ConvSlot& b) noexcept
+{
+    if (a.irEnergy <= 0.0 || b.irEnergy <= 0.0)
+        return 0.0f;
+    const size_t n = std::min (a.irTime.size(), b.irTime.size());
+    double dot = 0.0;
+    for (size_t i = 0; i < n; ++i)
+        dot += static_cast<double> (a.irTime[i]) * static_cast<double> (b.irTime[i]);
+    const double rho = dot / std::sqrt (a.irEnergy * b.irEnergy);
+    if (! (rho > 0.0)) return 0.0f;   // also catches NaN
+    return static_cast<float> (std::min (rho, 1.0));
 }
 
 void PartitionedConvolver::resetSlot (ConvSlot& slot)
@@ -127,6 +146,13 @@ void PartitionedConvolver::setIR (const float* ir, int length)
     int inactiveSlot = 1 - activeSlot;
     resetSlot (slots[static_cast<size_t> (inactiveSlot)]);
     loadIRIntoSlot (slots[static_cast<size_t> (inactiveSlot)], ir, length);
+
+    // #234 "pulsing": measure how coherent the outgoing and incoming IRs are, so
+    // the crossfade keeps constant power for this pair.  This is also the path a
+    // coalesced pendingIR takes when it becomes the new target (process() calls
+    // setIR after the active slot swap), so rho is always vs the IR being left.
+    crossfadeRho = computeIRCorrelation (slots[static_cast<size_t> (activeSlot)],
+                                         slots[static_cast<size_t> (inactiveSlot)]);
 
     // Issue #234: warm for max(IR length, floor) samples -- anchored to the IR
     // length (the slot needs a full IR of history), never to the host block size.
@@ -229,8 +255,8 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
 
     // v1.0.5: Dual-convolver state machine (issue #50), sample-counted (#234).
     // Three states: Idle (single slot), Warmup (both slots process, output only
-    // the active one), Crossfading (exact per-sample equal-power blend from the
-    // fadeCurve table).  Warmup lasts warmupSamples = max(irLen, floor) and the
+    // the active one), Crossfading (exact per-sample correlation-compensated
+    // blend, computeCrossfadeGains with this transition's rho).  Warmup lasts warmupSamples = max(irLen, floor) and the
     // crossfade lasts crossfadeSamples, both counted in samples, so a state
     // change may begin or end mid-block and the transition has the same
     // wall-clock duration at every host buffer size.
@@ -277,8 +303,9 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
                 for (int j = 0; j < n; ++j)
                 {
                     const int k = stateSampleCount + j + 1;   // 1..crossfadeSamples
-                    out[i + j] = a[i + j] * fadeCurve[static_cast<size_t> (crossfadeSamples - k)]
-                               + b[i + j] * fadeCurve[static_cast<size_t> (k)];
+                    float gOut, gIn;
+                    computeCrossfadeGains (k, crossfadeSamples, crossfadeRho, gOut, gIn);
+                    out[i + j] = a[i + j] * gOut + b[i + j] * gIn;
                 }
 
                 i += n;
@@ -328,7 +355,11 @@ void PartitionedConvolver::clearAll()
     // Zero frequency-domain IR data so the next setIR does a direct load
     // instead of crossfading from stale IR (used during preset transitions)
     for (int s = 0; s < 2; ++s)
+    {
         std::fill (slots[s].irFreqDomain.begin(), slots[s].irFreqDomain.end(), 0.0f);
+        std::fill (slots[s].irTime.begin(), slots[s].irTime.end(), 0.0f);
+        slots[s].irEnergy = 0.0;
+    }
 }
 
 } // namespace spatialcore

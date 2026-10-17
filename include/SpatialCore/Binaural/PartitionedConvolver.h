@@ -5,6 +5,7 @@
 #include <SpatialCore/Binaural/TransitionTiming.h>
 #include <vector>
 #include <memory>
+#include <cmath>
 
 namespace spatialcore
 {
@@ -28,8 +29,10 @@ public:
     /** Set or update the impulse response.
         v1.0.5: Dual-convolver crossfade (issue #50) -- the new IR is loaded
         into the inactive slot, which warms for max(IR length,
-        kHRIRWarmupMinMs) samples and then equal-power crossfades over
-        kHRIRCrossfadeMs.  This eliminates overlap-save boundary
+        kHRIRWarmupMinMs) samples and then crossfades over kHRIRCrossfadeMs
+        with correlation-compensated gains (computeCrossfadeGains; #234
+        "pulsing", O212 -- O211's equal-power curve bumped +3 dB between the
+        highly correlated, time-aligned neighbouring HRIRs).  This eliminates overlap-save boundary
         discontinuities that caused audible pops during HRTF transitions.
         v2.0.0 (issue #234): both durations are counted in SAMPLES (converted
         from ms at the prepared sample rate), so the transition has the same
@@ -48,6 +51,30 @@ public:
     void clearAll();
 
     bool isPrepared() const { return fftSize > 0; }
+
+    /** Correlation-compensated crossfade gains (#234 "pulsing", O212).
+        Progress t = k / C, a = 1 - t, b = t, and
+            g = 1 / sqrt (a^2 + b^2 + 2 rho a b),  fadeOut = a g,  fadeIn = b g,
+        so a blend of two outputs whose IRs have normalised correlation rho
+        keeps constant broadband power: rho = 1 is plain linear (equal-gain),
+        rho = 0 is the sqrt-normalised linear law (equal-power-like).  The
+        endpoints are exact: k = 0 -> (1, 0), k = C -> (0, 1).
+        rho is clamped to [0, 1]. */
+    static void computeCrossfadeGains (int k, int C, float rho, float& fadeOut, float& fadeIn) noexcept
+    {
+        if (C <= 0 || k >= C) { fadeOut = 0.0f; fadeIn = 1.0f; return; }
+        if (k <= 0)           { fadeOut = 1.0f; fadeIn = 0.0f; return; }
+        const double r = rho > 0.0f ? (rho < 1.0f ? static_cast<double> (rho) : 1.0) : 0.0;
+        const double b = static_cast<double> (k) / static_cast<double> (C);
+        const double a = 1.0 - b;
+        const double g = 1.0 / std::sqrt (a * a + b * b + 2.0 * r * a * b);
+        fadeOut = static_cast<float> (a * g);
+        fadeIn  = static_cast<float> (b * g);
+    }
+
+    /** Normalised correlation <h_active, h_new> / (|h_active| |h_new|), clamped
+        to [0, 1], of the transition most recently started (test/diagnostic). */
+    float getCrossfadeRho() const noexcept { return crossfadeRho; }
 
 private:
     std::shared_ptr<juce::dsp::FFT> fft;  // Shared via process-global FFT cache (issue Spatial-Media-Lab/OpenSpatialDelay#131)
@@ -88,6 +115,8 @@ private:
         std::vector<float> irFreqDomain;     // IR in frequency domain
         std::vector<float> fftWorkBuf;       // FFT work buffer (this call's own block)
         std::vector<float> overlapAccum;     // Persistent overlap-add accumulator (shifted each call)
+        std::vector<float> irTime;           // #234 pulsing: time-domain copy of the IR (fftSize, zero-padded) for rho
+        double irEnergy = 0.0;               // sum of irTime^2
     };
 
     ConvSlot slots[2];
@@ -99,11 +128,11 @@ private:
     // Issue #234: transition timing is counted in samples, derived from the
     // ms-defined constants in TransitionTiming.h at prepare() time.
     int activeSlot = 0;                          // Index of the currently active slot (0 or 1)
-    int crossfadeSamples = 1024;                 // Equal-power crossfade length (21.333 ms)
+    int crossfadeSamples = 1024;                 // Crossfade length (21.333 ms)
     int warmupFloorSamples = 256;                // Warmup floor (5.333 ms), independent of host block size
     int warmupSamples = 256;                     // Warmup length of the current transition: max(irLen, floor)
     int stateSampleCount = 0;                    // Samples elapsed in the current Warmup / Crossfading state
-    std::vector<float> fadeCurve;                // crossfadeSamples + 1 entries: sin (pi/2 * k / C); [0] = 0, [C] = 1
+    float crossfadeRho = 0.0f;                   // rho between active and incoming IR, set when a transition starts
 
     // Deferred IR: if setIR() is called mid-transition, store it for later
     std::vector<float> pendingIR;
@@ -118,6 +147,7 @@ private:
     void processSlot (ConvSlot& slot, const float* in, float* out, int numSamples);
     void resetSlot (ConvSlot& slot);
     void loadIRIntoSlot (ConvSlot& slot, const float* ir, int length);
+    static float computeIRCorrelation (const ConvSlot& a, const ConvSlot& b) noexcept;
 };
 
 } // namespace spatialcore

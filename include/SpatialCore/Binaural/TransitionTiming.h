@@ -11,13 +11,14 @@ namespace spatialcore
 //
 // The binaural HRIR transition is defined in WALL-CLOCK time, never in host
 // blocks, so a moving source transitions identically at every host buffer size
-// and sample rate.  Both the PartitionedConvolver (equal-power HRIR crossfade,
+// and sample rate.  Both the PartitionedConvolver (correlation-compensated HRIR
+// crossfade -- see PartitionedConvolver::computeCrossfadeGains --
 // warmup floor) and the BinauralRenderer (ITD slew, plan 10-12) convert these
 // constants with hrirTransitionMsToSamples(), so the two durations cannot drift
 // apart.
 //==============================================================================
 
-/** Equal-power HRIR crossfade duration.  21.333 ms == exactly 1024 samples at
+/** HRIR crossfade duration (correlation-compensated gains, #234 pulsing / O212).  21.333 ms == exactly 1024 samples at
     48 kHz (the pre-#234 4 x 256-sample crossfade at a 256-sample host buffer). */
 inline constexpr float kHRIRCrossfadeMs = 64.0f / 3.0f;
 
