@@ -98,3 +98,14 @@ Requirement → test map (task IDs are filled in by the planner; see RESEARCH §
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** approved 2026-10-17 (validate-phase audit: 19/19 rows green, 0 gaps)
+
+## Validation Audit 2026-10-17
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+| Rows green | 19 |
+| Release ctest passed | 339 |
+| UI tests listed | 14 |
