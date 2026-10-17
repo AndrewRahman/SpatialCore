@@ -42,7 +42,7 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 
 ### Speaker Layouts
 - 15 ITU-R BS.775/BS.2051 standard layouts with SMPTE channel ordering
-- 16-speaker virtual array for binaural rendering (9 ear-level + 6 height + zenith)
+- Binaural output uses no virtual speaker array: each source is rendered directly (per-source HRTF convolution, or the Simple Woodworth path)
 - Automatic bus negotiation — format detected from DAW track I/O
 
 ### ADM-OSC Integration
@@ -129,6 +129,42 @@ The last command is a listing check: it must print tests whose names start with 
 
 CI currently runs zero tests (this is fixed in Phase 6), so this local gate is the one that counts.
 
+#### Realtime-safety check (every phase end and before a release tag)
+
+The everyday gate above is unchanged. This second check proves that nothing `RenderEngine::renderBlock` reaches allocates, takes a lock or races with another thread. Run it at every phase end gate and before any release tag, not on every edit. Proved on macOS (Apple Silicon); Windows and Linux are checked in Phase 6.
+
+```bash
+# 1. Allocation and lock trap, Release (macOS only, skipped elsewhere; also part of the Release ctest).
+#    The trap is armed in any macOS tree built without a sanitizer, Debug included; the HRIR-lookup
+#    cases assert allocations in Release only.
+./build-release/tests/SpatialCoreTests "[rt]"
+
+# 2. ThreadSanitizer tree (third tree, git-ignored)
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
+  -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread"
+# Optional: -DFETCHCONTENT_FULLY_DISCONNECTED=ON plus -DFETCHCONTENT_SOURCE_DIR_JUCE=..., _CATCH2=... and _MYSOFA=...
+# pointing at an existing tree's _deps/*-src avoids a second download.
+cmake --build build-tsan -j8
+
+# 3. Thread-interaction subset ([tsan]: every [hrtf-switch] case (including the misuse and in-use ones), the [sc16] and [sc17] cases, [fftcache], [multi] and [trajectory][threads])
+SPATIALCORE_TEST_TIMEOUT_SCALE=10 TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1" ./build-tsan/tests/SpatialCoreTests "[tsan]" > /tmp/sc-tsan.log 2>&1; echo "exit=$?"
+grep -c "WARNING: ThreadSanitizer" /tmp/sc-tsan.log
+
+# 4. The UI suite under ThreadSanitizer
+SPATIALCORE_TEST_TIMEOUT_SCALE=10 TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1" ./build-tsan/tests/SpatialCoreUITests > /tmp/sc-tsan-ui.log 2>&1; echo "exit=$?"
+grep -c "WARNING: ThreadSanitizer" /tmp/sc-tsan-ui.log
+
+# 5. The whole SpatialCoreTests suite under ThreadSanitizer
+SPATIALCORE_TEST_TIMEOUT_SCALE=10 TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1" ./build-tsan/tests/SpatialCoreTests > /tmp/sc-tsan-full.log 2>&1; echo "exit=$?" >> /tmp/sc-tsan-full.log
+tail -1 /tmp/sc-tsan-full.log
+grep -c "WARNING: ThreadSanitizer" /tmp/sc-tsan-full.log
+```
+
+A run passes only when its exit status is 0 and its warning count is 0. The ThreadSanitizer tree is `RelWithDebInfo` because an `-O0` instrumented SADIE HRTF load takes longer than the engine's 15 s shutdown wait. The allocation trap is not built in that tree (ThreadSanitizer's allocator hides allocations from it), so its cases report skipped there and Catch2's summary line counts them as skipped instead of saying "All tests passed"; the recorded exit status is the verdict. Measured run times on an Apple Silicon Mac, each run alone: `[rt]` in Release about 20 s, the `[tsan]` subset about 17 min (992 s, 40 cases), the UI suite under ThreadSanitizer about 45 s, the whole suite under ThreadSanitizer about 32 min (1938 s, 386 cases of which 43 are skipped trap cases). Run the last one in the background and wait for it. CI runs none of this until Phase 6.
+
 ### Demo app
 
 `SpatialCoreDemo` is a small JUCE app that shows how a plugin wires ADM-OSC, trajectories and the spatial map into `RenderEngine` (see `examples/demo/DemoComponent.cpp`). It is off by default and is only built in a top-level build, so a consumer that adds SpatialCore as a subdirectory never builds it:
@@ -142,7 +178,9 @@ Run it with no arguments for the interactive app. `--screenshots <dir>` writes `
 
 ## Versioning
 
-SpatialCore follows semantic versioning (`v1.0.0`). Each plugin pins to a specific version via its git submodule pointer.
+SpatialCore follows semantic versioning. It is pre-1.0 (currently `0.5.0`) because no public release uses it yet; it becomes `1.0.0` when OpenSpatialDelay ships a release built on it (that release is OpenSpatialDelay 2.0.0). Until then the minor number tracks the milestone phase and the API may change between minors. Each plugin pins to a specific commit via its git submodule pointer.
+
+From 1.0.0 on:
 
 - **Major:** Breaking API changes (new virtual methods, removed functions)
 - **Minor:** New features (new algorithm, new output format, new UI widget)

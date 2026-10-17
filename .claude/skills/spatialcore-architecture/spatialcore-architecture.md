@@ -133,6 +133,10 @@ SpatialCore uses semantic versioning. Plugins pin to a version via git submodule
 
 - `processBlock` is **lock-free** — no malloc, locks, or logging
 - Algorithms are **stateless** — all state in context structs
-- Layout changes use **double-buffered atomic swap** for thread safety
+- Layout changes use a **three-slot wait-free handoff** (SC-16): the audio thread acquires its layout once per block and reads it afterwards through `getBlockLayout()`
 - HRTF profile loading is an **engine-owned background loader** via `RenderEngine::setHRTFProfile`, status via `getHRTFProfileStatus` (the audio thread only claims the loaded renderer from an atomic mailbox and crossfades)
 - Position updates are **smoothed** (LinearSmoothedValue, 10ms ramp)
+- Realtime safety is **proved, not assumed** (Phase 5): the `[rt]` trap tests count allocations and locks on `renderBlock` (macOS, Release), `[rt][rule]` freezes the lock inventory, and `build-tsan` runs the `[tsan]` subset and the whole suite with zero ThreadSanitizer warnings. Run it at every phase end and before a tag (README "Realtime-safety check"). Proved on macOS (Apple Silicon); Windows and Linux are checked in Phase 6
+- A host block longer than the prepared size is **rendered in full**, in pieces, and counted (`getOversizedBlockCount()`); `BinauralRenderer` scratch guards skip the call (`renderSourceBuffers` outputs silence for that call and advances no state, `updateSourceHRIR` keeps the previous HRIR) and count (`getScratchTooSmallCount()`); nothing is grown on the audio thread
+- `TrajectoryEngine` final positions are **lock-free `std::atomic<float>`**, readable from any thread; the legacy HRTF route (`swapActiveRenderer` and friends) is message-thread only and its misuse is counted (`getLegacyRouteWrongThreadCount()`, `HRTFDatabase::getMutationWhileInUseCount()`); load again only once `isPrepareRendererFree()` is true (not on `isRendererCrossfadeActive()` alone, which never turns true off the binaural HRTF path); prefer `setHRTFProfile`
+- `SharedFFTCache` keeps one FFT per order for the **life of the process**, deliberately; `SMLLookAndFeel` loads its typefaces per instance, so share one across editors

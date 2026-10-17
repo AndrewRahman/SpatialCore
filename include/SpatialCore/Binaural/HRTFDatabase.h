@@ -3,6 +3,8 @@
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <atomic>
+
 // Forward declaration -- libmysofa is a private dependency
 struct MYSOFA_EASY;
 
@@ -12,6 +14,24 @@ namespace spatialcore
 //==============================================================================
 // HRTF Database -- loads SOFA files and provides HRIR lookup
 // Wraps libmysofa for SOFA parsing and nearest-neighbor interpolation
+//
+// Thread contract (RTSF-03, D-09):
+//   - ONE database is used by ONE thread at a time. The lookups are const, but
+//     mysofa_getfilter_float writes a scratch buffer inside the libmysofa handle
+//     (easy->fir), so two threads looking up on one database race even though
+//     neither "writes" it as far as the C++ interface shows.
+//   - loadFromMemory / loadFromFile / loadFromBinaryData / unload allocate and
+//     parse. They run on the message thread or the engine's loader thread, never
+//     on a database the audio thread is using. Exclusive ownership is the
+//     contract; no lock is taken anywhere (the audio path must not wait).
+//   - RenderEngine marks the database of every renderer the audio thread renders
+//     from (setInUseByAudioThread). A mutation of a marked database still runs,
+//     exactly as before, but is counted by getMutationWhileInUseCount() and
+//     asserts in Debug, so a misuse is visible without breaking a consumer.
+//   - Every mutator also bumps a mutation serial (getMutationSerial()), marked or not. The
+//     engine compares it across a legacy swap to catch a load into the crossfade source in the
+//     window before the next block (countMutationBeforeFade()).
+//   - Not copyable: it owns a raw libmysofa handle and the atomics below.
 //==============================================================================
 class HRTFDatabase
 {
@@ -49,7 +69,9 @@ public:
     bool loadFromBinaryData (int profileIndex, float targetSampleRate);
 
     /** Get interpolated HRIR pair for a direction (our convention: radians).
-        Writes irLength samples to irL and irR buffers (must be pre-allocated). */
+        Writes irLength samples to irL and irR buffers (must be pre-allocated).
+        const, but it writes the libmysofa handle's scratch buffer: one database is used by
+        one thread at a time (see the class comment). */
     void getInterpolatedHRIR (float azimuthRad, float elevationRad,
                               float* irL, float* irR,
                               float& delayL, float& delayR) const;
@@ -58,7 +80,9 @@ public:
         The returned HRIRs have ITD removed (time-aligned onsets). The ITD values
         are returned separately in delayL/delayR (in samples, fractional).
         This produces phase-coherent HRIRs that can be smoothly crossfaded
-        without comb-filtering artifacts from ITD misalignment. */
+        without comb-filtering artifacts from ITD misalignment.
+        const, but it writes the libmysofa handle's scratch buffer: one database is used by
+        one thread at a time (see the class comment). */
     void getAlignedHRIR (float azimuthRad, float elevationRad,
                          float* irL, float* irR,
                          float& delayL, float& delayR) const;
@@ -93,8 +117,38 @@ public:
     int  getNumPositions() const { return numPositions; }
     bool isLoaded() const { return loaded; }
 
-    /** Unload current profile and free resources. */
+    /** Unload current profile and free resources. Allocation-free but not audio-thread safe:
+        message or loader thread, on a database the audio thread is not using. */
     void unload();
+
+    /** RenderEngine's mark (RTSF-03, D-09): true while the audio thread renders from this
+        database (the active renderer's, or the source of a running renderer crossfade, as of
+        the last rendered block). One relaxed store; any thread. */
+    void setInUseByAudioThread (bool inUse) noexcept;
+
+    /** The current mark. Relaxed load; any thread. */
+    bool isInUseByAudioThread() const noexcept;
+
+    /** How many mutating calls (a load, unload, or BinauralRenderer::setProfile) ran while
+        the in-use mark was set. One per call, even though loadFromBinaryData closes the handle
+        twice internally; the destructor never counts. Lock-free, any thread. */
+    int getMutationWhileInUseCount() const noexcept;
+
+    /** Called once at the start of every public mutator and by BinauralRenderer::setProfile.
+        It always bumps the mutation serial. When the in-use mark is set it also increments the
+        counter, asserts in Debug and returns true; the mutation then proceeds exactly as before
+        (D-09: detect, never block). */
+    bool noteMutationIfInUse() noexcept;
+
+    /** How many mutating calls have started on this database, marked or not (wraps; compare for
+        inequality only). Relaxed load; any thread. RenderEngine snapshots it at a legacy swap. */
+    unsigned getMutationSerial() const noexcept;
+
+    /** RenderEngine only (RTSF-03): adds one to getMutationWhileInUseCount() for a mutation that
+        the in-use mark could not see because it ran between swapActiveRenderer() and the first
+        block that crossfades from this database. One relaxed add; no assert, no logging, so the
+        audio thread may call it. */
+    void countMutationBeforeFade() noexcept;
 
     /** Convert a raw HRIR to minimum-phase in-place using cepstral decomposition.
         Preserves magnitude spectrum but removes excess phase, so time-domain
@@ -122,6 +176,19 @@ private:
     /** Shared SOFA-parsing body for loadFromMemory/loadFromFile — byte-identical
         libmysofa call sequence regardless of byte source (D-09, minimum-diff). */
     bool loadFromBytes (const void* data, int dataSize, float targetSampleRate);
+
+    /** Closes the libmysofa handle and clears the loaded state, without counting. Used by the
+        destructor and by every internal path that must not count (the public mutator already
+        did, once). */
+    void closeHandle() noexcept;
+
+    // RTSF-03 (D-09): relaxed bookkeeping. A non-lock-free atomic would put a lock on the path.
+    std::atomic<bool> inUseByAudioThread_ { false };
+    std::atomic<int> mutationWhileInUseCount_ { 0 };
+    std::atomic<unsigned> mutationSerial_ { 0 };
+    static_assert (std::atomic<bool>::is_always_lock_free && std::atomic<int>::is_always_lock_free
+                       && std::atomic<unsigned>::is_always_lock_free,
+                   "HRTFDatabase bookkeeping requires lock-free std::atomic<bool>, <int> and <unsigned>");
 
     MYSOFA_EASY* easyHandle = nullptr;
     int irLength     = 0;

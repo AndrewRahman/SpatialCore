@@ -4,6 +4,7 @@
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <juce_dsp/juce_dsp.h>
+#include <atomic>
 #include <vector>
 
 namespace spatialcore
@@ -12,6 +13,15 @@ namespace spatialcore
 //==============================================================================
 // Binaural Renderer -- manages HRTF convolution for all algorithms
 // Routes spatial accumulation buffers through per-source convolvers
+//
+// Thread contract (RTSF-03, D-09): one renderer is driven by one thread at a time.
+// prepare() and setProfile() allocate and run off the audio thread (the message thread, or
+// RenderEngine's loader thread on a renderer the audio thread is not using).
+// updateSourceHRIR() and renderSourceBuffers() run on the audio thread. A setProfile() on a
+// renderer the audio thread is using still runs, as it always did, but its database counts it
+// (HRTFDatabase::getMutationWhileInUseCount()) and asserts in Debug. The safe route is
+// RenderEngine::setHRTFProfile(), which hands a renderer over only while the audio thread is
+// not using it.
 //==============================================================================
 class BinauralRenderer
 {
@@ -34,16 +44,46 @@ public:
 
     /** Update a single source's HRIR based on its current 3D position.
         Realtime-safe: KD-tree lookup + in-place FFT, no allocation.
-        Called from processBlock at block boundaries when position changes. */
+        Called from processBlock at block boundaries when position changes.
+        If the scratch buffers are smaller than the loaded IR (a prepare-contract violation,
+        see getScratchTooSmallCount()) the call returns without touching anything: the source
+        keeps its previous HRIR and the next call retries. It never grows a buffer. */
     void updateSourceHRIR (int sourceIndex, float azRad, float elRad);
 
     /** Render per-source accumulation buffers through HRTF convolvers.
         sourceBufs: [numSources][numSamples], outL/outR: [numSamples]
-        Only enabled sources are convolved. */
+        Only enabled sources are convolved. outL/outR are zeroed first. If numSamples is larger
+        than the scratch buffers (max (the block size prepare() was given, 512, the loaded IR
+        length); see getScratchTooSmallCount()) the call outputs silence for that block (it leaves the zeroed
+        output, so there is no "last good sound" to hold) and advances no convolver,
+        ITD line or shelf state, so the renderer's next normal block is unaffected; it never
+        grows a buffer. A caller with a longer block should render it in pieces. A zero or
+        negative numSamples returns at once. */
     void renderSourceBuffers (const float* const* sourceBufs,
                               const bool* sourceEnabled,
                               int numSources, int numSamples,
                               float* outL, float* outR);
+
+    /** How many updateSourceHRIR or renderSourceBuffers calls found the scratch buffers smaller
+        than they needed. That only happens when the caller renders more samples than the scratch
+        holds (max (the block size prepare() was given, 512, the loaded IR length); a block
+        between the prepared size and that threshold is accepted and the convolver chunks it
+        itself), or after shrinkScratchForTesting(). Each such call skipped its work instead of
+        growing a buffer on the audio thread: updateSourceHRIR keeps the source's previous HRIR,
+        and renderSourceBuffers leaves its zeroed output and advances no convolver, ITD line or
+        shelf state. Debug builds also assert. Any thread, lock-free (D-03, D-04, RTSF-01). */
+    int getScratchTooSmallCount() const noexcept;
+
+    /** TEST-ONLY. Not part of the consumer API: a plugin must never call it. Shrinking the
+        scratch below the loaded IR or the block size makes the audio path skip every call
+        (silence, see getScratchTooSmallCount()) until the next prepare() or setProfile().
+        Replaces both convolution scratch buffers with ones of exactly newSize floats
+        (capacity too), so a test can reach the
+        scratch-too-small guards, which prepare() and setProfile() otherwise make unreachable
+        through the public API. Message or test thread only (it allocates). Declared
+        unconditionally, like RenderEngine::setLoaderFailureForTesting(), so the class layout
+        never depends on build settings. */
+    void shrinkScratchForTesting (size_t newSize);
 
     /** Check if the renderer is in Simple (Woodworth) mode. */
     bool isSimpleMode() const { return activeProfile == 0; }
@@ -87,6 +127,16 @@ private:
 
     // Temporary work buffers for convolution output
     std::vector<float> convTmpL, convTmpR;
+
+    // Counted by the scratch-too-small guards (see getScratchTooSmallCount()). Relaxed and
+    // lock-free, so any thread may read it.
+    std::atomic<int> scratchTooSmallCount_ { 0 };
+
+    /** The one guard behind both audio-thread entry points (D-03, D-04, RTSF-01). True when both
+        scratch buffers hold at least `needed` floats. Otherwise it counts the miss in
+        scratchTooSmallCount_, asserts (Debug only) and returns false, and the caller skips its
+        work. It never resizes, in any build type. */
+    bool scratchFits (size_t needed) noexcept;
 
     /** Grows convTmpL/convTmpR to max (currentBlockSize, 512, storedIRLength). Called from
         prepare() and setProfile() only (message or loader thread). Grow-only. */

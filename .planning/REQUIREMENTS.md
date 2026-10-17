@@ -238,7 +238,8 @@ otherwise. What remains is verifying the named gaps, not building the modules.
 
 Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one widened, one closed.
 
-- [ ] **RTSF-01**: `BinauralRenderer` cannot allocate on the audio thread in a Release build
+- [x] **RTSF-01**: `BinauralRenderer` cannot allocate on the audio thread in a Release build
+  - **Complete (Phase 5):** proven by `[rt][scratch]`, `[oversized]`, the rewritten CR-03 case and `[rt]` in Release (Plan 05-02; evidence in `05-08-SUMMARY.md`).
   - Tracked by **SpatialCore#19** (filed 2026-08-10).
   - **Widened — there are two sites, not one.**
     - `src/Binaural/BinauralRenderer.cpp:196-209` (`renderSourceBuffers`)
@@ -251,7 +252,8 @@ Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one wi
   - Acceptance: neither site can allocate in Release. Prefer one shared guarded helper over two
     copies of the fallback. Verified in a Release build.
 
-- [ ] **RTSF-02**: TrajectoryEngine final positions are safe to read from the audio thread
+- [x] **RTSF-02**: TrajectoryEngine final positions are safe to read from the audio thread
+  - **Complete (Phase 5):** proven by `[trajectory][threads][tsan]` and `[trajectory][step]`, clean under ThreadSanitizer (Plan 05-04; evidence in `05-08-SUMMARY.md`).
   - Tracked by **SpatialCore#18** (filed 2026-08-10).
   - **Confirmed real.** `TrajectoryEngine.h:30` documents a
     60 Hz-timer-writes / audio-thread-reads contract, but only `active_` is atomic
@@ -261,7 +263,8 @@ Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one wi
 
   - Acceptance: atomic floats or an atomically-swapped struct. Clean under thread sanitizer.
 
-- [ ] **RTSF-03**: `HRTFDatabase` access to the libmysofa handle is thread-safe
+- [x] **RTSF-03**: `HRTFDatabase` access to the libmysofa handle is thread-safe
+  - **Complete (Phase 5):** proven by `[hrtf-switch][ui-timer]`, `[hrtf-switch][misuse]`, `[hrtf-switch][in-use]` and `[legacy][threads]` under ThreadSanitizer (Plan 05-05; evidence in `05-08-SUMMARY.md`).
   - Acceptance: `setProfile()` from a UI timer during audio processing does not race on
     `easyHandle` or `loaded`.
 
@@ -270,7 +273,8 @@ Breaches of locked rule DR-1. Two of the 2026-08-09 items survived audit, one wi
     `if (objNum < 1 || objNum > MAX_SOURCES) return;` on every `/adm/obj/` and `/osd/obj/` path.
     No out-of-bounds write exists. The 2026-08-09 requirement was written from a stale map.
 
-- [ ] **RTSF-05**: The whole audio path is verified lock-free and realtime-safe
+- [x] **RTSF-05**: The whole audio path is verified lock-free and realtime-safe
+  - **Complete (Phase 5):** proven by `[rt]` (46 cases, canary first), `[rt][rule]`, the `[tsan]` subset and the whole suite under ThreadSanitizer, on macOS (Apple Silicon); Windows and Linux are checked in Phase 6 (Plans 05-01, 05-03, 05-04 and 05-08; evidence in `05-08-SUMMARY.md`).
   - Acceptance: thread sanitizer plus an allocation detector over every function reachable from
     `processBlock`, reporting zero allocations, locks, and races.
 
@@ -327,7 +331,8 @@ Open issues that close with evidence rather than a code change.
   - **SpatialCore#11.** Inspect `AmbisonicsCodec` encode/decode against ACN ordering and SN3D
     normalisation; record the answer in code and docs, or correct it if mixed.
 
-- [ ] **VERIFY-02**: `SharedFFTCache` is safe across concurrent plugin instances
+- [x] **VERIFY-02**: `SharedFFTCache` is safe across concurrent plugin instances
+  - **Complete (Phase 5):** proven by `[multi][isolation]`, `[multi][stress]`, `[fftcache]` and `[ui][multi]`; the cache is documented as a deliberate process-lifetime allocation (Plans 05-06 and 05-07; evidence in `05-08-SUMMARY.md`).
   - **SpatialCore#12.** The spinlock is present and correct; what is unverified is behaviour with
     several instances in one host process.
 
@@ -432,16 +437,16 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Complete (Phase 4) |
 | EXTR-05 | REQ-extract-ui-rendering | 4 | Complete (Phase 4) |
 | DATA-02 | REQ-smllookandfeel-font-binarydata | 4 | Complete (Phase 4) |
-| RTSF-01 | SpatialCore#19 — 2 sites | 5 | Pending |
-| RTSF-02 | SpatialCore#18 | 5 | Pending |
-| RTSF-03 | CONCERNS.md | 5 | Pending |
+| RTSF-01 | SpatialCore#19 — 2 sites | 5 | Complete |
+| RTSF-02 | SpatialCore#18 | 5 | Complete |
+| RTSF-03 | CONCERNS.md | 5 | Complete |
 | ~~RTSF-04~~ | — | — | **Closed, non-finding** |
-| RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Pending |
+| RTSF-05 | REQ-verify-lockfree-realtime-safe | 5 | Complete |
 | BUG-01 | SpatialCore#15 | 3 | Complete |
 | BUG-02 | OpenSpatialDelay#234 | 3 | Complete |
 | BUG-03 | CONCERNS.md | 1 | Complete |
 | VERIFY-01 | SpatialCore#11 | 2 | Complete |
-| VERIFY-02 | SpatialCore#12 | 5 | Pending |
+| VERIFY-02 | SpatialCore#12 | 5 | Complete |
 | CI-01 | SpatialCore#9 | 6 | Pending |
 | INTG-01 | Build gate + v1 metric | 6 | Pending |
 | INTG-02 | SpatialCore#14 residual | 6 | Pending |

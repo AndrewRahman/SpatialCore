@@ -2,10 +2,13 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <SpatialCore/Binaural/BinauralRenderer.h>
 #include "BinauralMetrics.h"
+#include "../Support/RealtimeGuard.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <memory>
 #include <vector>
 
 using namespace spatialcore;
@@ -336,11 +339,11 @@ TEST_CASE ("BinauralRenderer: the 64-sample ITD line is characterised at 44.1 an
 // scratch buffers on the audio thread (a jassertfalse in Debug). The buffers are now sized
 // for the loaded IR in prepare() and setProfile(), which run on the message or loader thread.
 //
-// The allocation itself is not observable from here, so besides the finite, non-silent output
-// this test is judged by the Debug log: a run must print no
+// The finite, non-silent output is checked here, and a run must print no
 // "JUCE Assertion failure in BinauralRenderer.cpp" line (the 03-03 plan's Task 3 verify
-// counts them). The renderSourceBuffers guard and the jassertfalse pattern stay as they are;
-// they are RTSF-01 (Phase 5).
+// counts them). The two guards that used to grow the scratch on the audio thread no longer
+// can: since Phase 5 (RTSF-01) they skip, count and never allocate, and the [rt][scratch]
+// cases at the end of this file prove it.
 // ============================================================================
 
 namespace
@@ -416,5 +419,194 @@ TEST_CASE ("BinauralRenderer: KEMAR's 558-sample IR is prepared off the audio th
         const StereoSignal out = renderMovingSource (renderer, 64);
         CHECK (signalIsFinite (out));
         CHECK (peakMagnitude (out) > 1.0e-3f);
+    }
+}
+
+// ============================================================================
+// RTSF-01 (Phase 5, D-03, D-04): the two scratch-too-small guards never allocate.
+//
+// A scratch smaller than needed is reachable only when a caller renders more than prepare() was
+// given, or (here) through shrinkScratchForTesting(). The guard then skips just that work, keeps
+// the last good sound and counts the event; Debug builds also assert. Each case compares the
+// renderer that took the hit with a twin built identically that never saw the bad call, bit for
+// bit, so "nothing moved" is proven rather than assumed.
+//
+// A Debug assert allocates (JUCE logs through a juce::String), and in a Debug tree libmysofa
+// printf()s on every HRIR lookup, so the allocation and lock checks run in Release only; the
+// counter and the output checks run in every build. skipUnlessRealtimeTrap() sits in the Release
+// branch after those checks, so an unavailable trap skips instead of reading as a false zero.
+// ============================================================================
+
+namespace
+{
+    constexpr int kScratchBlock = 64;
+    constexpr int kScratchBlocks = 20;
+
+    // KEMAR (558-sample IR at 48 kHz) loaded, source 0 pointed at az 30. The scratch is pinned to
+    // exactly 558 floats, capacity included: vector growth in setProfile() leaves spare capacity,
+    // which would hide an audio-thread resize from the trap.
+    std::unique_ptr<BinauralRenderer> makeKemarRenderer()
+    {
+        auto renderer = std::make_unique<BinauralRenderer>();
+        renderer->prepare (kRate, kScratchBlock);
+        REQUIRE (loadProfileIntoRenderer (*renderer, 5, kRate));
+        REQUIRE (renderer->hrtfDatabase.getIRLength() == 558);
+        renderer->shrinkScratchForTesting (558);
+        renderer->updateSourceHRIR (0, rad (30.0f), 0.0f);
+        return renderer;
+    }
+
+    bool sameBits (const StereoSignal& a, const StereoSignal& b)
+    {
+        return a.left.size() == b.left.size() && a.right.size() == b.right.size()
+            && std::memcmp (a.left.data(), b.left.data(), sizeof (float) * a.left.size()) == 0
+            && std::memcmp (a.right.data(), b.right.data(), sizeof (float) * a.right.size()) == 0;
+    }
+
+    // Twenty normal blocks through source 0, the same noise every time it is called.
+    StereoSignal renderNormalBlocks (BinauralRenderer& renderer)
+    {
+        const std::vector<float> input = whiteNoise (static_cast<size_t> (kScratchBlocks * kScratchBlock), 77, 0.25f);
+        return renderSlot0 (renderer, input, kScratchBlock);
+    }
+
+    // Calls `call` with, in a Release tree, the trap armed around it only. The counts are those of
+    // that call alone (all zero in a Debug tree, where they are not checked).
+    template <typename Fn>
+    RealtimeCounts trapped (Fn&& call)
+    {
+        RealtimeCounts counts;
+#if ! JUCE_DEBUG
+        resetRealtimeCounts();
+        {
+            const ScopedRealtimeTrap trap;
+            call();
+        }
+        counts = realtimeCounts();
+#else
+        call();
+#endif
+        return counts;
+    }
+
+    void checkNothingAllocated ([[maybe_unused]] const RealtimeCounts& counts)
+    {
+#if ! JUCE_DEBUG
+        skipUnlessRealtimeTrap();
+        CAPTURE (counts.allocs, counts.frees, counts.locks);
+        CHECK (counts.allocs == 0);
+        CHECK (counts.frees == 0);
+        CHECK (counts.locks == 0);
+#endif
+    }
+}
+
+TEST_CASE ("BinauralRenderer: renderSourceBuffers with a scratch that is too small skips, counts and keeps the last good sound",
+           "[renderer][rt][scratch]")
+{
+    auto hit = makeKemarRenderer();
+    auto twin = makeKemarRenderer();
+
+    // 600 samples against a 558-float scratch.
+    constexpr int kTooLong = 600;
+    const std::vector<float> input = whiteNoise (static_cast<size_t> (kTooLong), 5, 0.25f);
+    std::vector<float> outL (static_cast<size_t> (kTooLong), 7.0f), outR (static_cast<size_t> (kTooLong), 7.0f);
+    bool enabled[MAX_SOURCES] = {};
+    enabled[0] = true;
+    const float* bufs[MAX_SOURCES];
+    for (auto& b : bufs)
+        b = input.data();
+
+    CHECK (hit->getScratchTooSmallCount() == 0);
+
+    const RealtimeCounts counts = trapped ([&]
+    {
+        hit->renderSourceBuffers (bufs, enabled, MAX_SOURCES, kTooLong, outL.data(), outR.data());
+    });
+
+    // Skipped: the zeroed output, no convolver advanced, counted once.
+    CHECK (hit->getScratchTooSmallCount() == 1);
+    CHECK (std::all_of (outL.begin(), outL.end(), [] (float v) { return v == 0.0f; }));
+    CHECK (std::all_of (outR.begin(), outR.end(), [] (float v) { return v == 0.0f; }));
+
+    // Keep the last good sound: the next normal blocks equal a renderer that never saw the call.
+    const StereoSignal fromHit = renderNormalBlocks (*hit);
+    const StereoSignal fromTwin = renderNormalBlocks (*twin);
+    CHECK (peakMagnitude (fromTwin) > 1.0e-3f);
+    CHECK (sameBits (fromHit, fromTwin));
+    CHECK (hit->getScratchTooSmallCount() == 1);
+    CHECK (twin->getScratchTooSmallCount() == 0);
+
+    checkNothingAllocated (counts);
+}
+
+TEST_CASE ("BinauralRenderer: updateSourceHRIR with a scratch that is too small skips, counts and keeps the previous HRIR",
+           "[renderer][rt][scratch]")
+{
+    auto hit = makeKemarRenderer();
+    auto twin = makeKemarRenderer();
+
+    // 100 floats is still enough for a 64-sample block, so rendering is unaffected.
+    hit->shrinkScratchForTesting (100);
+
+    const RealtimeCounts counts = trapped ([&] { hit->updateSourceHRIR (0, rad (-60.0f), 0.0f); });
+
+    CHECK (hit->getScratchTooSmallCount() == 1);
+
+    // The source kept the az 30 HRIR the twin still holds.
+    const StereoSignal fromHit = renderNormalBlocks (*hit);
+    const StereoSignal fromTwin = renderNormalBlocks (*twin);
+    CHECK (peakMagnitude (fromTwin) > 1.0e-3f);
+    CHECK (sameBits (fromHit, fromTwin));
+    CHECK (hit->getScratchTooSmallCount() == 1);
+    CHECK (twin->getScratchTooSmallCount() == 0);
+
+    checkNothingAllocated (counts);
+}
+
+TEST_CASE ("BinauralRenderer: the scratch guards count nothing at the boundary and exactly once one sample short",
+           "[renderer][rt][scratch]")
+{
+    SECTION ("updateSourceHRIR: a scratch exactly as long as the IR fits, one sample short is skipped")
+    {
+        auto moved = makeKemarRenderer();
+        auto twin = makeKemarRenderer();
+
+        moved->shrinkScratchForTesting (557);
+        moved->updateSourceHRIR (0, rad (-60.0f), 0.0f);
+        CHECK (moved->getScratchTooSmallCount() == 1);
+
+        moved->shrinkScratchForTesting (558);
+        moved->updateSourceHRIR (0, rad (-60.0f), 0.0f);   // fits now: loads the new HRIR
+        CHECK (moved->getScratchTooSmallCount() == 1);
+
+        // The new direction took effect, so the sound differs from the twin that stayed at az 30.
+        const StereoSignal fromMoved = renderNormalBlocks (*moved);
+        const StereoSignal fromTwin = renderNormalBlocks (*twin);
+        CHECK (signalIsFinite (fromMoved));
+        CHECK (! sameBits (fromMoved, fromTwin));
+    }
+
+    SECTION ("renderSourceBuffers: exactly the scratch length fits, one sample more is skipped, empty counts nothing")
+    {
+        auto renderer = makeKemarRenderer();
+        constexpr int kFits = 558;
+        const std::vector<float> input = whiteNoise (static_cast<size_t> (kFits + 1), 9, 0.25f);
+        std::vector<float> outL (static_cast<size_t> (kFits + 1), 0.0f), outR (static_cast<size_t> (kFits + 1), 0.0f);
+        bool enabled[MAX_SOURCES] = {};
+        enabled[0] = true;
+        const float* bufs[MAX_SOURCES];
+        for (auto& b : bufs)
+            b = input.data();
+
+        renderer->renderSourceBuffers (bufs, enabled, MAX_SOURCES, kFits, outL.data(), outR.data());
+        CHECK (renderer->getScratchTooSmallCount() == 0);
+        CHECK (signalIsFinite ({ outL, outR }));
+
+        renderer->renderSourceBuffers (bufs, enabled, MAX_SOURCES, 0, outL.data(), outR.data());
+        CHECK (renderer->getScratchTooSmallCount() == 0);
+
+        renderer->renderSourceBuffers (bufs, enabled, MAX_SOURCES, kFits + 1, outL.data(), outR.data());
+        CHECK (renderer->getScratchTooSmallCount() == 1);
     }
 }
