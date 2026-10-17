@@ -150,12 +150,36 @@ public:
 > with the flag false you still supply them yourself.
 > See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
+### Set these flags
+
+For a new plugin, or one migrating onto `RenderEngine`, this is the whole set. On every block's `RenderBlockContext`:
+
+```cpp
+ctx.sampleRate             = currentSampleRate;
+ctx.engineComputesGains    = true;   // gains for every path, from the object positions
+ctx.engineDerivesDispatch  = true;   // format, binaural/stereo/Ambisonics flags and order, from the engine's own layout
+ctx.engineSelectsHRTF      = true;   // the engine picks Simple or HRTF itself, and blends them during a switch
+ctx.engineFadesFormatSwitch = true;  // a format switch fades out and in instead of clicking
+```
+
+Then, outside the audio thread, call `engine.setHRTFProfile (n)` to change the HRTF profile and `engine.setAlgorithmIndex (kAlgorithmIndex...)` to change the speaker algorithm. On the audio thread, read `engine.getBlockLayout()` after `renderBlock()` to choose the output channel map. What each one buys you:
+
+- `engineComputesGains`: you do not compute or supply any gain array (`objChannelGains`, `objGains`, and on the stereo variants `objGainL`, `objGainR` and `stereoMode`).
+- `engineDerivesDispatch`: the dispatch fields and the layout come from one snapshot per block, so a format switch landing mid-block cannot tear them apart (SC-16).
+- `engineSelectsHRTF` with `setHRTFProfile`: a profile switch, including Simple to HRTF and back, is click-free (D-15).
+- `engineFadesFormatSwitch`: an output-format switch is click-free (SC-20).
+- `getBlockLayout()`: the channel map you choose is the one of the layout the block really rendered, so it stays paired with the samples (SC-17).
+
+**Choose one mode for gains.** Either (A) the engine computes them (`engineComputesGains = true`, recommended), or (B) you supply them yourself on every block, for every active object, in the array of the path you render: `objChannelGains` for discrete surround, `objGains` for the Simple binaural path, and `objGainL`, `objGainR` and `stereoMode` for the stereo variants. Every flag above defaults to `false`, so a plugin that sets none of them renders exactly as it did before.
+
+**If you choose (B),** a block on which every active object's gains on the rendered path are exactly zero is counted by `engine.getUnsuppliedGainsBlockCount()`, and the first one asserts in a Debug build. In Release it is only counted and plays what you supplied, which is silence: the engine never fills gains in for you. The direct-binaural HRTF path, the Ambisonics formats and a block with no active object are never counted. Assert in your plugin's own tests that the count is 0 after you render your real configurations; that is how the mistake behind SpatialCore#14 (gains neither computed nor supplied, so silence) gets caught.
+
 ### Wiring OSC, trajectories and the map into RenderEngine
 
 `examples/demo/DemoComponent.cpp` is the worked example: ADM-OSC in and out, trajectories and the spatial map all driving `RenderEngine`. Build it with `-DSPATIALCORE_BUILD_EXAMPLES=ON` (see the README), and run `SpatialCoreDemo --selftest` to see all three routes reach the renderer. The rules it follows:
 
 - **Control stays on the message thread.** OSC input, the trajectory timer and map drags all run there. The consumer merges OSC updates that carry NaN for an axis they did not send (it keeps the stored value for that axis), then copies each object's position into per-object `std::atomic` values. The audio thread only loads those atomics and calls `renderBlock`. It never reads `ADMOSCReceiver`, `TrajectoryEngine` or the map. The `TrajectoryEngine` getters (`getFinalAz`, `getFinalEl`, `getFinalDist`, `isActive`) are lock-free atomics and safe to call from any thread, but the flow above stays the recommended one: read them on the message thread and copy the values into your own per-object atomics.
-- **Let the engine compute gains and dispatch.** Set `engineComputesGains` and `engineDerivesDispatch` on the `RenderBlockContext`.
+- **Let the engine compute gains and dispatch.** Set the flags in "Set these flags" above.
 - **Answer position queries.** Override `ADMOSCReceiver::Listener::admPositionQueried` and call `ADMOSCSender::queueReply` from your own state. The reply goes to the sender's configured destination, not to the device that asked, and a reply still queued when you call `connect` or `disconnect` is dropped, so it never reaches a new destination. Tick the sender from a timer of 30 Hz or more; it keeps its own 30 Hz clock.
 - **Range-limit parameter values.** `admObjectParamReceived` and `admGlobalParamReceived` deliver finite values, but only x, y and z are clamped. `/doppler`, `/pitch`, `/speed` and every `/osd/global/*` value are unbounded, so clamp them to your parameter's range before use.
 - **Set `reverse` yourself.** `TrajectoryEngine::getState` always reports `TrajectoryState::reverse` as false. Set it from your own per-object flag on the state before you pass it to `SpatialMapComponent::setTrajectoryState`, as the demo does.
