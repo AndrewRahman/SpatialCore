@@ -18,6 +18,7 @@ add_executable(SpatialCoreTests
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp
     Core/CountsTests.cpp
+    Core/IssueReferenceTests.cpp
     Core/VBAPTripletSelectionTests.cpp
     Binaural/SadieD2KU100Tests.cpp
     Binaural/CipicSubject003Tests.cpp
@@ -56,6 +57,7 @@ target_link_libraries(SpatialCoreTests
 # delivers its messages (Phase 4, Plan 04-01).
 target_compile_definitions(SpatialCoreTests PRIVATE
     SPATIALCORE_HRTF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../HRTF"
+    SPATIALCORE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/.."
     JUCE_UNIT_TESTS=1
     JUCE_MODAL_LOOPS_PERMITTED=1
 )
