@@ -18,6 +18,7 @@ add_executable(SpatialCoreTests
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp
     Core/CountsTests.cpp
+    Core/UmbrellaTests.cpp
     Core/VBAPTripletSelectionTests.cpp
     Binaural/SadieD2KU100Tests.cpp
     Binaural/CipicSubject003Tests.cpp
@@ -87,6 +88,7 @@ add_executable(SpatialCoreUITests
     UI/SpatialMapComponentTests.cpp
     UI/FontProvenanceTests.cpp
     UI/MultiMapTests.cpp
+    UI/UmbrellaUITests.cpp
 )
 
 target_link_libraries(SpatialCoreUITests

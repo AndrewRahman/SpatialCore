@@ -1,8 +1,11 @@
 #pragma once
 
-// Umbrella include -- DSP modules only. UI headers are deliberately NOT
-// included here: link SpatialCoreUI and include <SpatialCore/UI/*.h>
-// directly (for example SpatialMapComponent.h and SMLLookAndFeel.h).
+// Umbrella include for the DSP library (target SpatialCore): every public
+// header except the UI ones. For the spatial map, the SML look-and-feel and
+// the widgets, link SpatialCoreUI and include <SpatialCore/SpatialCoreUI.h>.
+// The two umbrellas are kept apart on purpose, so a DSP-only consumer never
+// pulls in JUCE GUI headers (D-02). tests/Core/UmbrellaTests.cpp keeps both
+// complete.
 
 // Core
 #include <SpatialCore/Core/Types.h>
@@ -40,10 +43,12 @@
 // OSC
 #include <SpatialCore/OSC/ADMOSCReceiver.h>
 #include <SpatialCore/OSC/ADMOSCSender.h>
+#include <SpatialCore/OSC/ADMPositionQuery.h>
+#include <SpatialCore/OSC/OSCPortValidation.h>
 
 // Trajectory
 #include <SpatialCore/Trajectory/TrajectoryEngine.h>
 #include <SpatialCore/Trajectory/DopplerVelocity.h>
 
-// Engine (Phase 8 Plan 08-06, CORE-01 — the per-object rendering engine facade)
+// Engine (the consumer-facing render facade)
 #include <SpatialCore/Engine/RenderEngine.h>
