@@ -119,16 +119,37 @@ jobs:
 
       - name: Debug SpatialCoreTests
         # The exit status is the verdict. A Debug run prints expected JUCE assertion lines and a
-        # leaked-object note at exit and still exits 0.
+        # leaked-object note at exit and still exits 0. It also prints libmysofa's verbose parser
+        # trace (hundreds of thousands of lines): through the runner's log pipe that output stalls
+        # the test process and starves the wall-clock rate tests, so it goes to a file and only the
+        # verdict and any failure blocks are printed.
         timeout-minutes: 90
         run: |
           set -euo pipefail
-          ./build/tests/SpatialCoreTests
+          log="$RUNNER_TEMP/debug-core.log"
+          status=0
+          ./build/tests/SpatialCoreTests > "$log" 2>&1 || status=$?
+          echo "exit status: $status ($(wc -l < "$log" | tr -d ' ') log lines)"
+          grep -E '^(All tests passed|test cases:|assertions:)' "$log" || true
+          if [ "$status" -ne 0 ]; then
+            grep -n -B8 -A14 'FAILED:' "$log" | head -400 || true
+            tail -40 "$log"
+            exit "$status"
+          fi
 
       - name: Debug SpatialCoreUITests
         run: |
           set -euo pipefail
-          ./build/tests/SpatialCoreUITests
+          log="$RUNNER_TEMP/debug-ui.log"
+          status=0
+          ./build/tests/SpatialCoreUITests > "$log" 2>&1 || status=$?
+          echo "exit status: $status ($(wc -l < "$log" | tr -d ' ') log lines)"
+          grep -E '^(All tests passed|test cases:|assertions:)' "$log" || true
+          if [ "$status" -ne 0 ]; then
+            grep -n -B8 -A14 'FAILED:' "$log" | head -400 || true
+            tail -40 "$log"
+            exit "$status"
+          fi
 
       - name: Configure Release (reusing the downloaded sources)
         run: |
