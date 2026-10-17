@@ -65,9 +65,11 @@ new format is heard one block later and a switch costs a two-block dip (about 21
 samples / 48 kHz); several `setOutputFormat()` calls between two blocks give one fade-out and
 one fade-in, of the last format. The first block after `prepare()` never fades, and
 `getBlockLayout()` reports the layout the block actually rendered (the held one during the
-fade-out block). Only the channels the block's path writes are faded. It rests on the
-reader-side `TripleBufferIndex::hasFresh()` peek (one relaxed load); wait-free, no allocation,
-lock or logging. It is opt-in, so a consumer that does not set it renders byte-for-byte as
+fade-out block). Only the channels the block's path writes are faded. One
+reader-side `TripleBufferIndex::hasFresh()` load per block decides the block, and a publish
+landing after that load is faded in by the following blocks rather than acquired unfaded
+(SC-20 publish-after-check race, OSP Phase 3 review WR-04); wait-free, no allocation, lock or
+logging. It is opt-in, so a consumer that does not set it renders byte-for-byte as
 before. A consumer that wants the fade should also avoid republishing the format that is
 already active (each publish costs a dip).
 
