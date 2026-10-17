@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-10-17T16:32:57.034Z"
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-10-17T20:13:20.895Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
-state_head: 206420e764ad56af61f36b5bff4296c5978c14e7
+state_head: d3bb84cec205a3b4e25fa3910a539cfc9c47cab4
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 46
+  completed_plans: 47
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 06 execution started
 
@@ -124,6 +124,7 @@ Progress: [███████░░░] 67%
 | Phase 06 P02 | 20 min | 3 tasks | 5 files |
 | Phase 06 P03 | 17 min | 3 tasks | 3 files |
 | Phase 06 P04 | 19 min | 2 tasks | 6 files |
+| Phase 06 P05 | 3h 40m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-03: new [osd50]/[osd89] cases REQUIRE the KEMAR load instead of skipping, matching neighbouring cases
 - [Phase 06]: 06-04: harness is a template copied into a throwaway repo around a real GitHub submodule, never a committed submodule or part of SpatialCore's build
 - [Phase 06]: 06-04: harness sound check tests finiteness on exponent bits so it stays honest under -ffast-math (OSD-like mode)
+- [Phase 06]: 06-05: Debug test output goes to a file, not the runner log pipe, and wall-clock tests pace by absolute deadline (macos-26 16 ms sleep takes about 75 ms)
+- [Phase 06]: 06-05: ctest on macos-26 (CMake 4.4.3) prints "100% tests passed out of N"; later plans grep for "100% tests passed(, 0 tests failed)? out of [1-9]"
 
 ### Pending Todos
 
@@ -245,7 +248,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-17T16:32:56.773Z
-Stopped at: Completed 06-04-PLAN.md
+Last session: 2026-10-17T20:13:15.818Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
