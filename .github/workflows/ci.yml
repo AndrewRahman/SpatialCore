@@ -1,71 +1,173 @@
 name: SpatialCore CI
 
+# What runs when:
+#   Every push to any branch and every pull request to main: macos-gate, the same gate as the
+#   local one (README "Local test gate"): Debug build with both test executables run, Release
+#   build with ctest from the build root, the ui: listing check, then the consumer harness
+#   (a real git submodule of this repository at the commit under test) and its sound check.
+#   Nightly and on a manual run: realtime-nightly (README "Realtime-safety check", steps 1-5).
+#   Linux, Windows and coverage jobs are added to this file by later Phase 6 plans.
+#
+# Security posture: the token is read-only, the only trigger that runs outside code is
+# pull_request, no secret is used, every action is first-party and pinned to a commit SHA, and
+# values from workflow expressions reach scripts only through env entries.
+
 on:
   push:
-    branches: [main, spatialcore-v2-extraction]
+    branches: ['**']
   pull_request:
-    branches: [main, spatialcore-v2-extraction]
-  workflow_dispatch:  # Manual trigger
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      realtime:
+        description: Also run the realtime-safety check (ThreadSanitizer and the allocation trap)
+        type: boolean
+        default: true
+  schedule:
+    # An off-minute: scheduled runs at the top of the hour are delayed or dropped.
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tests/Support/Watchdog.h multiplies its time limits by this integer. The runner has 3 cores,
+  # so the timing-sensitive cases get four times the local allowance.
+  SPATIALCORE_TEST_TIMEOUT_SCALE: "4"
 
 jobs:
-  build-and-test:
-    name: Build + Test (standalone, JUCE 9.0.0 fallback)
-    runs-on: ubuntu-latest
+  macos-gate:
+    name: macos-gate
+    runs-on: macos-26
+    if: github.event_name != 'schedule'
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lfs: true  # 5 HRTF SOFA files are LFS-tracked (~58 MB)
+          lfs: false  # the HRTF files come from the cache below, then git lfs pull
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1"
 
-      - name: Verify LFS objects resolved to real bytes (not pointer text)
-        # Guards against the 2026-04 LFS-pointer-in-binary incident class one
-        # layer deeper (standalone SpatialCore checkout, before any consumer
-        # submodule is involved). A pointer file is a few hundred bytes of
-        # text; a real SOFA file is hundreds of KB to tens of MB.
+      - name: Restore HRTF LFS objects
+        # With lfs: false the .sofa files are pointer text carrying each object's hash, so the
+        # key changes only when an HRTF file changes and a hit makes git lfs pull download nothing.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs
+          key: lfs-${{ runner.os }}-${{ hashFiles('HRTF/*.sofa') }}
+
+      - name: Pull HRTF data
         run: |
-          set -e
+          set -euo pipefail
+          git lfs install --local
+          git lfs pull
+
+      - name: Verify HRTF data is real content
+        # A pointer file or a truncated download would otherwise reach the build. A real SOFA file
+        # is an HDF5 file (signature 89 48 44 46) of hundreds of KB to tens of MB.
+        run: |
+          set -euo pipefail
+          count=0
           for f in HRTF/*.sofa; do
-            if grep -q "version https://git-lfs.github.com/spec/v1" "$f"; then
-              echo "FATAL: $f is an LFS pointer, not real SOFA bytes" >&2
+            count=$((count + 1))
+            sig=$(od -An -tx1 -N4 "$f" | tr -d ' \n')
+            if [ "$sig" != "89484446" ]; then
+              echo "FATAL: $f does not start with the HDF5 signature (got '$sig')" >&2
               exit 1
             fi
-            size=$(stat -c%s "$f")
+            size=$(wc -c < "$f" | tr -d ' ')
             if [ "$size" -lt 100000 ]; then
-              echo "FATAL: $f is suspiciously small ($size bytes) — expected real SOFA data" >&2
+              echo "FATAL: $f is suspiciously small ($size bytes), expected real SOFA data" >&2
               exit 1
             fi
           done
+          if [ "$count" -ne 5 ]; then
+            echo "FATAL: expected 5 HRTF files, found $count" >&2
+            exit 1
+          fi
           echo "All 5 SOFA files resolved to real LFS content."
 
-      - name: Install system dependencies
+      - name: Toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libjack-jackd2-dev \
-            ladspa-sdk libcurl4-openssl-dev libfreetype6-dev libx11-dev \
-            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
-            libxrandr-dev libxrender-dev libwebkit2gtk-4.1-dev \
-            libglu1-mesa-dev mesa-common-dev zlib1g-dev
+          set -euo pipefail
+          sw_vers
+          xcodebuild -version
+          clang --version
+          cmake --version
 
-      - name: Configure CMake
-        # No consumer JUCE present in standalone CI — SpatialCore's own
-        # FetchContent fallback pins JUCE 9.0.0 (SC-6/D-01: the old policy
-        # of never testing against a different JUCE version than what OSD
-        # ships is retired; OpenSpatialDelay tracks its own JUCE pin
-        # separately, in its own repository).
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev
+      - name: Configure Debug
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          juce_version=$(git -C build/_deps/juce-src describe --tags)
+          echo "JUCE checkout: $juce_version"
+          if [ "$juce_version" != "9.0.0" ]; then
+            echo "FATAL: JUCE is at '$juce_version', expected 9.0.0" >&2
+            exit 1
+          fi
 
-      - name: Build SpatialCore + SpatialCoreTests
-        run: cmake --build build --config Release -j$(nproc)
+      - name: Build Debug (every target)
+        run: |
+          set -euo pipefail
+          cmake --build build -j "$(sysctl -n hw.ncpu)"
 
-      - name: Build SpatialCoreUI (GUI-linked target)
-        # Standalone compile coverage for the shared UI library so the next
-        # consumer (OSP) inherits a green cross-platform build signal before
-        # it ever links SpatialCoreUI itself (Phase 9 Plan 07, D-06).
-        run: cmake --build build --config Release --target SpatialCoreUI -j$(nproc)
+      - name: Debug SpatialCoreTests
+        # The exit status is the verdict. A Debug run prints expected JUCE assertion lines and a
+        # leaked-object note at exit and still exits 0.
+        timeout-minutes: 90
+        run: |
+          set -euo pipefail
+          ./build/tests/SpatialCoreTests
 
-      - name: Run SpatialCore test suite
-        # The suite is empty of new tests until plan 08-02+ adds them; a
-        # build-only + zero-tests-pass run is acceptable at this stage.
-        working-directory: build
-        run: ctest --output-on-failure
+      - name: Debug SpatialCoreUITests
+        run: |
+          set -euo pipefail
+          ./build/tests/SpatialCoreUITests
+
+      - name: Configure Release (reusing the downloaded sources)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+            -DFETCHCONTENT_SOURCE_DIR_JUCE="$PWD/build/_deps/juce-src" \
+            -DFETCHCONTENT_SOURCE_DIR_CATCH2="$PWD/build/_deps/catch2-src" \
+            -DFETCHCONTENT_SOURCE_DIR_MYSOFA="$PWD/build/_deps/mysofa-src"
+
+      - name: Build Release (every target)
+        run: |
+          set -euo pipefail
+          cmake --build build-release -j "$(sysctl -n hw.ncpu)"
+
+      - name: Release ctest (from the build root)
+        # --no-tests=error turns "discovered zero tests" into a failure instead of a green run.
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-release --no-tests=error --output-on-failure -j "$(sysctl -n hw.ncpu)"
+
+      - name: Check the UI tests are in the run
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-release -N > "$RUNNER_TEMP/ctest-list.txt"
+          ui_count=$(grep -c 'ui:' "$RUNNER_TEMP/ctest-list.txt" || true)
+          echo "ui: tests listed: $ui_count"
+          if [ "$ui_count" -le 0 ]; then
+            echo "FATAL: no ui: tests are listed, SpatialCoreUITests is not in the run" >&2
+            exit 1
+          fi
+
+      - name: Consumer harness and sound check
+        timeout-minutes: 60
+        env:
+          SHA_UNDER_TEST: ${{ github.event.pull_request.head.sha || github.sha }}
+          HARNESS_WORK_DIR: ${{ runner.temp }}/harness
+        run: |
+          set -euo pipefail
+          examples/harness/scripts/build-consumer.sh "$SHA_UNDER_TEST" -- \
+            -DFETCHCONTENT_SOURCE_DIR_JUCE="$PWD/build/_deps/juce-src" \
+            -DFETCHCONTENT_SOURCE_DIR_MYSOFA="$PWD/build/_deps/mysofa-src"
