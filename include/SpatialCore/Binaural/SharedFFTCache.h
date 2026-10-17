@@ -24,7 +24,7 @@ namespace spatialcore
 // so no lock is taken; SharedFFTCacheTests.cpp and MultiInstanceTests.cpp check the sharing
 // under ThreadSanitizer.
 //
-// Provenance: OpenSpatialDelay PR #142 added it for Spatial-Media-Lab/OpenSpatialDelay#131 (eight
+// Provenance: Spatial-Media-Lab/OpenSpatialDelay#142 (PR) added it for Spatial-Media-Lab/OpenSpatialDelay#131 (eight
 // instances crashed in CoreGraphics), on the hypothesis that vDSP shares twiddle-factor memory
 // across set-ups of one order and frees it under a reader when the last set-up goes. It sits
 // beside the per-renderer HRTFDatabase that fixed Spatial-Media-Lab/OpenSpatialDelay#96 (shared

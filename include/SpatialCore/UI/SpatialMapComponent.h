@@ -143,7 +143,7 @@ private:
     // The three faces are parsed once and shared by every live map (IN-05), not once per instance;
     // they are released when the last map is destroyed. The constructor asserts none is null, because
     // a null typeface would make FontOptions fall back to the default look-and-feel, which is exactly
-    // what D-06 exists to prevent. The `[ui][multi]` tests (OSD#131) prove the sharing with sixteen
+    // what D-06 exists to prevent. The `[ui][multi]` tests (Spatial-Media-Lab/OpenSpatialDelay#131) prove the sharing with sixteen
     // live maps and fail if this goes back to a per-instance face set.
     struct MonoFaces
     {

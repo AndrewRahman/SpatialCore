@@ -8,7 +8,7 @@ namespace spatialcore
 
 namespace
 {
-    // Counts MonoFaces constructions for the OSD#131 regression test (TEST-ONLY read).
+    // Counts MonoFaces constructions for the Spatial-Media-Lab/OpenSpatialDelay#131 regression test (TEST-ONLY read).
     std::atomic<int> monoFacesConstructionCount { 0 };
 
     // Colours matching OSD's Colours_OSD namespace (Source/PluginEditor.cpp)

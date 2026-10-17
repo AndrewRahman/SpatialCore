@@ -14,7 +14,7 @@ using namespace spatialcore::test;
 // ============================================================================
 // SharedFFTCache (Phase 5, VERIFY-02, D-08). The cache is process-global: one juce::dsp::FFT per
 // order, created on first request and kept for the life of the process. It came from OpenSpatialDelay
-// PR #142 for Spatial-Media-Lab/OpenSpatialDelay#131 and had no unit test of its own until now.
+// Spatial-Media-Lab/OpenSpatialDelay#142 (PR) for Spatial-Media-Lab/OpenSpatialDelay#131 and had no unit test of its own until now.
 //
 // Because the cache is process-global, a case that runs after another in the same executable sees
 // the orders the earlier one created. The concurrent case therefore uses orders 14 and 15, which no

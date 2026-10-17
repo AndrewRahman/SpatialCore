@@ -22,7 +22,7 @@ using namespace spatialcore::test;
 //     data is shared between instances. The first case below pins it as a deterministic
 //     invariant: an engine's output must not change because another engine beside it switches
 //     profiles (RESEARCH F7).
-//   - Spatial-Media-Lab/OpenSpatialDelay#131 (its fix, OpenSpatialDelay PR #142, is the process
+//   - Spatial-Media-Lab/OpenSpatialDelay#131 (its fix, Spatial-Media-Lab/OpenSpatialDelay#142 (PR), is the process
 //     global FFT cache): see SharedFFTCacheTests.cpp, and the eight-engine case at the end of this
 //     file.
 //
@@ -206,7 +206,7 @@ namespace
     }
 }
 
-TEST_CASE ("Multi-instance: an engine renders bit-identically whether or not a second engine switches profiles beside it (OSD#96)",
+TEST_CASE ("Multi-instance: an engine renders bit-identically whether or not a second engine switches profiles beside it (Spatial-Media-Lab/OpenSpatialDelay#96)",
            "[multi][isolation][tsan]")
 {
     auto state = std::make_shared<IsolationState>();
