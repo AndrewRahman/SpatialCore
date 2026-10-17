@@ -420,6 +420,23 @@ public:
     // and renders.
     int getWriterViewOnRenderThreadCount() const noexcept;
 
+#if JUCE_UNIT_TESTS
+    //--------------------------------------------------------------------------
+    // Test-only entry point (mirrors ADMOSCReceiver::testProcessOSCMessage).
+    // Installs a function that renderBlock() calls once per
+    // engineFadesFormatSwitch block, at the point where that block's single
+    // fresh-bit load found nothing fresh, so a test can publish a layout
+    // exactly inside the former SC-20 publish-after-check window. The members
+    // are plain (not atomic): set it only while no renderBlock() is in flight
+    // (tests set it from the rendering thread between blocks). nullptr clears.
+    //--------------------------------------------------------------------------
+    void setLayoutPeekHookForTesting (void (*hook) (void*), void* context) noexcept
+    {
+        layoutPeekHook_ = hook;
+        layoutPeekHookContext_ = context;
+    }
+#endif
+
     //--------------------------------------------------------------------------
     // Escape hatches (D-02 — leaf classes stay public). Consumers that need
     // direct access to the underlying renderer/HRTF database (e.g. for
@@ -741,6 +758,20 @@ private:
     bool fadeInPending_ = false;
     bool renderedSincePrepare_ = false;
     bool snapInterpolation_ = false;
+    // Test seam for the SC-20 publish-after-check race (OSP Phase 3 review WR-04).
+    // Render thread only; null in every consumer. renderBlock() calls the hook
+    // once per fade-on block, at the point where that block's single fresh-bit
+    // load found nothing fresh, so a test can publish exactly inside the former
+    // race window. Present in every build type and never #if'd (like
+    // inSetOutputFormat_), so the class layout does not depend on
+    // JUCE_UNIT_TESTS. A compile-time seam is not possible: RenderEngine.cpp is
+    // compiled once into the shared SpatialCore static library that both the
+    // plugin and SpatialCoreTests link, and JUCE_UNIT_TESTS is a PRIVATE define
+    // of the test target only. Cost: one plain pointer load and a not-taken
+    // branch per block, on the fade-on hold path only; no atomic, allocation,
+    // lock or logging.
+    void (*layoutPeekHook_) (void*) = nullptr;
+    void* layoutPeekHookContext_ = nullptr;
     // Debug detector for the single-writer contract (WR-09): set while a
     // setOutputFormat() call is in flight so an overlapping second writer
     // trips a jassert. Present in every build type (never #if'd) so the class
