@@ -304,7 +304,7 @@ all four closed there, in code SpatialCore now owns — plus `#234`, which is st
 **Milestone boundary**: v1 closes when OpenSpatialDelay itself ships on SpatialCore. That work
 lives in the OpenSpatialDelay repository and has deliberately no SpatialCore phase — see PROJECT.md
 External Dependencies.
-**Plans**: 5/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
+**Plans**: 6/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -323,7 +323,7 @@ Plans:
 - [x] 06-05-PLAN.md — CI: macos-gate runs the local gate and the harness on GitHub (green on JUCE 9.0.0); realtime-nightly runs README's realtime-safety check (D-09, D-10, D-12) *(wave 5)*
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 06-06-PLAN.md — CI: Linux runs the suite, Windows builds every target; the fallback-FFT question answered from JUCE's source (D-08) *(wave 6)*
+- [x] 06-06-PLAN.md — CI: Linux runs the suite, Windows builds every target; the fallback-FFT question answered from JUCE's source (D-08) *(wave 6)*
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 06-07-PLAN.md — Coverage: SPATIALCORE_ENABLE_COVERAGE, per-area engine and separate UI numbers, CI job summary and artifact inside GitHub; the user picks the target (D-13, D-15, D-16) *(wave 7)*
@@ -348,7 +348,7 @@ Plans:
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
 | 5. Realtime Safety Hardening | 8/8 | Complete    | 2026-10-17 |
-| 6. Consumer Readiness & CI | 5/10 | In Progress | - |
+| 6. Consumer Readiness & CI | 6/10 | In Progress | - |
 
 ## Coverage
 

@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-10-17T20:13:20.895Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-10-17T21:59:33.951Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
-state_head: d3bb84cec205a3b4e25fa3910a539cfc9c47cab4
+state_head: 422c30845e97a910891f91e3e12368f6272b99e2
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 47
+  completed_plans: 48
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 06 execution started
 
@@ -125,6 +125,7 @@ Progress: [███████░░░] 67%
 | Phase 06 P03 | 17 min | 3 tasks | 3 files |
 | Phase 06 P04 | 19 min | 2 tasks | 6 files |
 | Phase 06 P05 | 3h 40m | 2 tasks | 2 files |
+| Phase 06 P06 | 1h 44m | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -206,6 +207,10 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-04: harness sound check tests finiteness on exponent bits so it stays honest under -ffast-math (OSD-like mode)
 - [Phase 06]: 06-05: Debug test output goes to a file, not the runner log pipe, and wall-clock tests pace by absolute deadline (macos-26 16 ms sleep takes about 75 ms)
 - [Phase 06]: 06-05: ctest on macos-26 (CMake 4.4.3) prints "100% tests passed out of N"; later plans grep for "100% tests passed(, 0 tests failed)? out of [1-9]"
+- [Phase 06]: 06-06: Linux passed its first CI run (416 of 416, 44 skipped because the allocation trap is macOS-only); no Linux platform failure and no golden or tolerance moved — Evidence run 39070985243; the [rt] and INTG-02 cases skip rather than pass with zero counts
+- [Phase 06]: 06-06: Windows needs zlib supplied by the consumer: CI installs zlib:x64-windows-static-md with vcpkg and names zs.lib to FindZLIB; all five HRTF profiles embed with MSVC 19.51 (SPATIALCORE_EMBED_ALL_HRTF stays ON) — libmysofa v1.3.5's MSVC branch only runs nuget install zlib, which finds no package; 06-09 documents it beside the zlib (system) lines
+- [Phase 06]: 06-06: JUCE 9.0.0 FFTFallback::perform takes a SpinLock (juce_FFT.cpp:115, priority -1 at :92); with no FFTW/MKL/IPP flag set Linux and Windows builds use it, so instances sharing one FFT per order contend on the audio thread; vDSP on macOS takes no lock — Answer to Phase 5 D-13 for Plan 06-09 to write into SharedFFTCache.h and CLAUDE.md
+- [Phase 06]: 06-06: MSVC 19.51 test-source fixes are NOMINMAX in FreeUdpPort.h and static constexpr for three no-capture lambdas; the wall-clock sender case discards attempts where its own caller paused (gap of 40 ms or more) instead of widening a bound — No library source changed; Release ctest 416 of 416 and the final push run green on three platforms
 
 ### Pending Todos
 
@@ -248,7 +253,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-17T20:13:15.818Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-10-17T21:59:25.732Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
