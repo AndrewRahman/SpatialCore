@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Phase 6 context gathered
-last_updated: "2026-10-17T12:12:51.239Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-10-17T13:26:02.856Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
-state_head: b1ca4a452f6534b35f070c9de10d0bd7607b3b16
+state_head: f46685d2f8ac715888708eff4077ca6febab1bc6
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 42
+  completed_plans: 43
 milestone_name: milestone
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 1 of 10
-Status: Executing Phase 06
+Plan: 2 of 10
+Status: Ready to execute
 Last activity: 2026-10-17 — Phase 06 execution started
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -120,6 +120,7 @@ Progress: [███████░░░] 67%
 | Phase 05 P06 | 16 min | 2 tasks | 6 files |
 | Phase 05 P07 | 20 min | 2 tasks | 4 files |
 | Phase 05 P08 | 63 min | 3 tasks | 8 files |
+| Phase 06 P01 | 69 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 05]: 05-07: SpatialMapComponent face sharing proven by a construction counter and face identity (test-only read-only accessors); per-instance faces fail the sixteen-map test (delta 16, 15 differing identities)
 - [Phase 05]: 05-08: the realtime-safety check (rt trap, build-tsan subset, UI suite and whole suite under ThreadSanitizer) is a separate phase-end and pre-release check beside the unchanged everyday gate; proof scope is macOS (Apple Silicon), Windows and Linux in Phase 6 (D-01, D-13)
 - [Phase 05]: 05-08: Phase 5 requirements RTSF-01, RTSF-02, RTSF-03, RTSF-05 and VERIFY-02 ticked only after the VERIFICATION evidence section was written and the documented check passed (whole suite under ThreadSanitizer: 386 cases, exit 0, 0 warnings, 1938 s)
+- [Phase 06]: SPATIALCORE_BUILD_TESTS defaults to PROJECT_IS_TOP_LEVEL (consumer gets no test targets unless it sets it ON); top-level enable_testing() writes the root CTestTestfile.cmake so root ctest finds the suite — INTG-01 no surprise targets; CI-01 root cause (BASE root ctest found 0 tests)
+- [Phase 06]: ctest --no-tests=error -N exits 0 with zero tests; CI must run ctest --no-tests=error without -N and check the ui: listing count — Observed at BASE in plan 06-01; only the real run exits 8
 
 ### Pending Todos
 
@@ -233,7 +236,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-17T09:22:37.802Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-consumer-readiness-ci/06-CONTEXT.md
+Last session: 2026-10-17T13:26:02.640Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
 Next command: `/gsd-discuss-phase 4`
