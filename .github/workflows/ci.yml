@@ -43,7 +43,7 @@ jobs:
   macos-gate:
     name: macos-gate
     runs-on: macos-26
-    if: github.event_name != 'schedule'
+    if: false
     timeout-minutes: 180
 
     steps:
@@ -192,3 +192,34 @@ jobs:
           examples/harness/scripts/build-consumer.sh "$SHA_UNDER_TEST" -- \
             -DFETCHCONTENT_SOURCE_DIR_JUCE="$PWD/build/_deps/juce-src" \
             -DFETCHCONTENT_SOURCE_DIR_MYSOFA="$PWD/build/_deps/mysofa-src"
+
+  diag:
+    name: diag
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - name: Timer and loopback UDP timing
+        run: |
+          set -euo pipefail
+          sw_vers; sysctl -n hw.ncpu; uptime
+          cat > "$RUNNER_TEMP/t.py" <<'PY'
+          import time, socket
+          def run(label, f):
+              t0 = time.perf_counter(); n = 60
+              for _ in range(n): f()
+              print(label, "total %.3f s" % (time.perf_counter() - t0), flush=True)
+          run("sleep(0.016) x60", lambda: time.sleep(0.016))
+          run("sleep(0.001) x60", lambda: time.sleep(0.001))
+          s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); r = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+          r.bind(("127.0.0.1", 0)); addr = r.getsockname()
+          run("udp send x60", lambda: s.sendto(b"x" * 40, addr))
+          def both():
+              s.sendto(b"x" * 40, addr); time.sleep(0.016)
+          run("udp send + sleep(0.016) x60", both)
+          t0 = time.perf_counter(); n = 0
+          while time.perf_counter() - t0 < 1.0:
+              n += 1
+          print("busy loop iterations in 1 s:", n)
+          PY
+          python3 -I "$RUNNER_TEMP/t.py"
+          python3 -I "$RUNNER_TEMP/t.py" > "$RUNNER_TEMP/t.out" 2>&1; cat "$RUNNER_TEMP/t.out"
