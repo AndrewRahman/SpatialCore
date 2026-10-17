@@ -630,7 +630,9 @@ TEST_CASE ("BinauralRenderer: the scratch guards count nothing at the boundary a
 TEST_CASE ("BinauralRenderer: OSD#89 near the pole a large azimuth change under 1 degree of arc keeps the HRIR",
            "[binaural][renderer][osd89]")
 {
-    constexpr int kBlock = 256;
+    // static: makeAt below has no capture list, and MSVC (19.51) rejects a local constexpr used in it
+    // (C3493) that GCC and Clang accept; a static local needs no capture and has the same value.
+    static constexpr int kBlock = 256;
     constexpr size_t kSettle = 4096;
     constexpr size_t kCompare = 8192;
 

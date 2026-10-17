@@ -289,7 +289,9 @@ TEST_CASE ("BUG-02: a moving source is as smooth at 32, 64 and 128-sample blocks
 TEST_CASE ("PartitionedConvolver: transition timing is sample-based and unchanged at 512",
            "[convolver][transition]")
 {
-    constexpr size_t kNumSamples = 16384;
+    // static: makeInput below has no capture list, and MSVC (19.51) rejects a local constexpr used in it
+    // (C3493) that GCC and Clang accept; a static local needs no capture and has the same value.
+    static constexpr size_t kNumSamples = 16384;
     constexpr size_t kSwitchAt = 4096;            // a multiple of 32 and of 512
     constexpr double kHalfPi = 1.57079632679489661923;
 

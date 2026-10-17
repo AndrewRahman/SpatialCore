@@ -392,9 +392,17 @@ jobs:
           fi
 
       - name: Build Release (SpatialCore, SpatialCoreUI and both test executables, no test run)
+        # One cmake call per target, so a compile error in one target does not hide the errors of
+        # the targets after it; the step fails when any of the four failed.
         run: |
           set -euo pipefail
-          cmake --build build --config Release --target SpatialCore SpatialCoreUI SpatialCoreTests SpatialCoreUITests --parallel
+          status=0
+          for target in SpatialCore SpatialCoreUI SpatialCoreTests SpatialCoreUITests; do
+            echo "::group::Build $target"
+            cmake --build build --config Release --target "$target" --parallel || status=1
+            echo "::endgroup::"
+          done
+          exit "$status"
 
   # The schedule fires only from the default branch, so the nightly starts once this file is on
   # main. The same job is also part of the phase-end and pre-release check that is run by hand,

@@ -14,6 +14,12 @@
 // port. The tests accept that small residual risk.
 
 #if defined(_WIN32)
+ // winsock2.h pulls in windows.h, whose min and max macros break JUCE headers (juce_FloatVectorOperations.h
+ // declares member functions called min and max) in a test file that includes this header before JUCE.
+ // NOMINMAX has to be defined before the first windows.h; it is the same definition JUCE would make.
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
  #include <winsock2.h>
  #include <ws2tcpip.h>
 #else
