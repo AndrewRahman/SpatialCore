@@ -312,7 +312,7 @@ TEST_CASE ("ADMOSCReceiver: All MAX_SOURCES objects addressable", "[osc][edge]")
 
     for (int i = 1; i <= MAX_SOURCES; ++i)
     {
-        float targetAz = static_cast<float> (i * 15);
+        float targetAz = static_cast<float> (i * 5);   // stays inside +/-180 for every i up to MAX_SOURCES
         sendOSC (*receiver, "/osd/obj/" + juce::String (i) + "/azim", { targetAz });
         CHECK (listener.lastPositionObjectIndex == i - 1);
         CHECK_THAT (listener.lastAz, WithinAbs (targetAz, 0.5f));
@@ -530,7 +530,7 @@ TEST_CASE ("ADM-OSC query: a no-argument message to any other property or object
     sendOSC (*receiver, "/osd/obj/1/enabled", {});
     sendOSC (*receiver, "/osd/obj/1/doppler", {});
     sendOSC (*receiver, "/adm/obj/1/x", {});
-    sendOSC (*receiver, "/adm/obj/13/aed", {});      // object 13 does not exist
+    sendOSC (*receiver, "/adm/obj/" + juce::String (MAX_SOURCES + 1) + "/aed", {});      // above the object ceiling: does not exist
     sendOSC (*receiver, "/osd/global/drywet", {});
 
     CHECK (listener.queryCallCount == 0);
