@@ -304,7 +304,7 @@ all four closed there, in code SpatialCore now owns — plus `#234`, which is st
 **Milestone boundary**: v1 closes when OpenSpatialDelay itself ships on SpatialCore. That work
 lives in the OpenSpatialDelay repository and has deliberately no SpatialCore phase — see PROJECT.md
 External Dependencies.
-**Plans**: 2/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
+**Plans**: 3/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -314,7 +314,7 @@ Plans:
 - [x] 06-02-PLAN.md — INTG-02: getUnsuppliedGainsBlockCount() counts the #14 mistake on every gain-reading path, Debug asserts once, Release counts only; trap-proven; the guide's "Set these flags" block (D-05, D-06, D-07) *(wave 2)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 06-03-PLAN.md — Regression tests for OSD#50 and OSD#89, and fresh red runs for #96, #131 and #234 against their old behaviour (D-17) *(wave 3)*
+- [x] 06-03-PLAN.md — Regression tests for OSD#50 and OSD#89, and fresh red runs for #96, #131 and #234 against their old behaviour (D-17) *(wave 3)*
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 06-04-PLAN.md — Consumer harness: a throwaway repo submodules SpatialCore from GitHub at the pushed commit, builds plugin and check in Release, all opt-in features, every format sounds; OSD-like variant (D-01, D-03, D-04) *(wave 4)*
@@ -348,7 +348,7 @@ Plans:
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
 | 5. Realtime Safety Hardening | 8/8 | Complete    | 2026-10-17 |
-| 6. Consumer Readiness & CI | 2/10 | In Progress | - |
+| 6. Consumer Readiness & CI | 3/10 | In Progress | - |
 
 ## Coverage
 

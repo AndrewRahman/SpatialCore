@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-10-17T15:52:02.569Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-10-17T16:10:28.306Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
-state_head: 0308d8a4b69c310fb89cea5491da2fb2ea36b0ca
+state_head: d2d605922ea91694dd6bcc021ca5a1667bdc3a05
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 44
+  completed_plans: 45
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 06 execution started
 
@@ -122,6 +122,7 @@ Progress: [███████░░░] 67%
 | Phase 05 P08 | 63 min | 3 tasks | 8 files |
 | Phase 06 P01 | 69 min | 2 tasks | 6 files |
 | Phase 06 P02 | 20 min | 3 tasks | 5 files |
+| Phase 06 P03 | 17 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -197,6 +198,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: ctest --no-tests=error -N exits 0 with zero tests; CI must run ctest --no-tests=error without -N and check the ui: listing count — Observed at BASE in plan 06-01; only the real run exits 8
 - [Phase 06]: INTG-02 detector counts a block only when engineComputesGains is false, the rendered path reads consumer gains, an object is active and every active object's gains on that path are exactly 0; it counts and (Debug) asserts, never computes gains for the consumer
 - [Phase 06]: On discrete surround a misuse block is silent on the speaker channels only: the LFE channel is generated from the mono sum, not from per-speaker gains
+- [Phase 06]: 06-03: re-ran the #96, #131 and #234 mutations red at this HEAD rather than citing old records (D-17)
+- [Phase 06]: 06-03: new [osd50]/[osd89] cases REQUIRE the KEMAR load instead of skipping, matching neighbouring cases
 
 ### Pending Todos
 
@@ -239,7 +242,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-17T15:52:02.344Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-10-17T16:10:28.100Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
 Next command: `/gsd-discuss-phase 4`
