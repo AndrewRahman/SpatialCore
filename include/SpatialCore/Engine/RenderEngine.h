@@ -209,7 +209,9 @@ struct RenderBlockContext
     // first sample is exactly 0). The new format is therefore heard one block
     // later and a switch costs a two-block dip. Several setOutputFormat() calls
     // between two blocks still give one fade-out and one fade-in, of the last
-    // format. The first block after prepare() never fades, and getBlockLayout()
+    // format. A setOutputFormat() that lands while a block is choosing its
+    // layout is taken up by the next block and fades the same way; it is never
+    // heard unfaded. The first block after prepare() never fades, and getBlockLayout()
     // always reports the layout the block actually rendered (the held one during
     // the fade-out block). Only the channels the block's path writes are faded;
     // wait-free, no allocation, lock or logging. Defaults false so every existing
@@ -579,9 +581,11 @@ private:
 
     //--------------------------------------------------------------------------
     // SC-16: the one place a block obtains its layout. renderBlock() calls
-    // this exactly once and passes the same snapshot to the dispatch
-    // derivation, the SC-13 gain computation and the discrete-surround
-    // speaker routing; no render path reads the active-layout state again.
+    // this at most once per block (with engineFadesFormatSwitch, a block that
+    // holds its layout or fades it out renders the reader's own slot without
+    // acquiring) and passes the same snapshot to the dispatch derivation, the
+    // SC-13 gain computation and the discrete-surround speaker routing; no
+    // render path reads the active-layout state again.
     //--------------------------------------------------------------------------
     const LayoutState& acquireBlockLayout();
 
