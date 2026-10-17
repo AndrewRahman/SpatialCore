@@ -471,6 +471,14 @@ worth a line in your own release notes:
 - `RenderEngine::getPrepareRendererIndex()` and `swapActiveRenderer()` are now out of line (defined in
   `RenderEngine.cpp`), which changes the class layout: rebuild everything that includes `RenderEngine.h`
   together with SpatialCore, as a submodule build does anyway.
+- `MAX_SOURCES` is 32 (SC-1, AndrewRahman/SpatialCore#3). `RenderSources`, `RenderBlockContext` and the engine's
+  per-object state grew with it, so every consumer rebuilds. The per-sample render loops visit all 32 slots
+  (each null-checked, so unused slots cost a branch, not a render). `DopplerVelocity::kMaxObjects` and
+  `TrajectoryEngine::kMaxObjects` are now defined as `MAX_SOURCES` (the ceilings were unified, not kept
+  independent), so a doppler and trajectory slot exists for every object slot. `MAX_SPEAKERS` is unchanged. The
+  project version stays 0.5.0 under the pre-1.0 rule: SC-1 is a consumer ticket, not a SpatialCore milestone phase.
+  `SpatialMapComponent::objectColours` still has 12 colours (AndrewRahman/SpatialCore#31, SC-21), so a consumer that
+  draws more than 12 objects must supply its own palette until that is fixed.
 
 ## What to Keep vs Replace
 
