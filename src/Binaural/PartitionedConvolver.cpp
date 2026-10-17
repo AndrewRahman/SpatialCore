@@ -126,7 +126,7 @@ void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* 
     // accumulate a full prepared-size block, so it stays glitch-free and
     // latency-neutral for numSamples < blockSize and for variable numSamples.
     //
-    // This per-call overlap-add is ONE HALF of the OSD#234 small-block fix. The other half
+    // This per-call overlap-add is ONE HALF of the Spatial-Media-Lab/OpenSpatialDelay#234 small-block fix. The other half
     // is in process(): the IR warm-up and crossfade are timed in samples, not calls
     // (BUG-02, Phase 3), so a moving source no longer steps harder at 32-128 samples than at
     // 512. Both halves are covered by [convolver][blocksize] (this function against a
@@ -228,7 +228,7 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
             ++stateBlockCount;
             stateSampleCount += numSamples;
 
-            // BUG-02 (OSD#234 small-block residual): warm-up is timed in samples. The new
+            // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): warm-up is timed in samples. The new
             // slot must have convolved at least irLen samples (its overlap accumulator then
             // holds the full IR tail) as well as kWarmupBlocks calls before it is faded in.
             if (stateBlockCount >= kWarmupBlocks && stateSampleCount >= irLen)

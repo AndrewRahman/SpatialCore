@@ -336,7 +336,7 @@ TEST_CASE ("resetAll(): clears all objects to inactive with default position", "
 // Reverse for all 13 shapes (Phase 4, EXTR-04, ROADMAP criterion 3; D-13 / D-19).
 //
 // Ten shapes retrace the forward path when reversed. Bounce and Line keep their deliberate
-// OSD#100 reverse and are pinned here as exceptions to that rule (D-19): changing either would
+// Spatial-Media-Lab/OpenSpatialDelay#100 reverse and are pinned here as exceptions to that rule (D-19): changing either would
 // change what OpenSpatialDelay users hear. Random is checked only for movement and range.
 // ============================================================================
 
@@ -396,7 +396,7 @@ TEST_CASE ("Trajectory reverse: ten shapes retrace the forward path", "[trajecto
     }
 }
 
-TEST_CASE ("Trajectory reverse: Line reverse is a half-period shift (OSD#100)", "[trajectory][reverse]")
+TEST_CASE ("Trajectory reverse: Line reverse is a half-period shift (Spatial-Media-Lab/OpenSpatialDelay#100)", "[trajectory][reverse]")
 {
     // Line is cos (2 pi phase), an even function, so the generic phase flip would change
     // nothing. computeTrajectory shifts it half a period instead (D-19: deliberate, kept).
@@ -418,7 +418,7 @@ TEST_CASE ("Trajectory reverse: Line reverse is a half-period shift (OSD#100)", 
     }
 }
 
-TEST_CASE ("Trajectory reverse: Bounce reverse mirrors the azimuth offset (OSD#100)", "[trajectory][reverse]")
+TEST_CASE ("Trajectory reverse: Bounce reverse mirrors the azimuth offset (Spatial-Media-Lab/OpenSpatialDelay#100)", "[trajectory][reverse]")
 {
     // Bounce deliberately negates the azimuth offset in reverse so the az/el relationship
     // mirrors diagonally (OpenSpatialDelay#100). Intentional exception to D-13 (D-19): kept.

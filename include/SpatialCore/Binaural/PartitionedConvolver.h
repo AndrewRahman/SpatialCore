@@ -26,7 +26,7 @@ public:
         overlap-save boundary discontinuities that caused audible pops during
         HRTF transitions (issue Spatial-Media-Lab/OpenSpatialDelay#50).
 
-        BUG-02 (OSD#234 small-block residual): the transition is timed in samples,
+        BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): the transition is timed in samples,
         not calls.  The inactive slot warms up for at least kWarmupBlocks calls and
         at least irLen samples, then the fade lasts
         max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples, with
@@ -76,7 +76,7 @@ private:
     // latency-neutral for any numSamples in [1, blockSize] because it never
     // waits across calls to accumulate a full block before producing output.
     //
-    // That per-call overlap-add is one half of the OSD#234 small-block fix; the
+    // That per-call overlap-add is one half of the Spatial-Media-Lab/OpenSpatialDelay#234 small-block fix; the
     // other half is the sample-based warm-up and crossfade above (BUG-02, Phase 3).
     // Both are covered by [convolver][blocksize], [bug02][moving] and
     // [bug02][steady]. Spatial-Media-Lab/OpenSpatialDelay#234 stays open for OSD's
@@ -94,7 +94,7 @@ private:
     enum class State { Idle, Warmup, Crossfading };
     State state = State::Idle;
 
-    // BUG-02 (OSD#234 small-block residual): both timings are in samples with a floor.
+    // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): both timings are in samples with a floor.
     //   Warmup:      lasts at least kWarmupBlocks calls AND at least irLen samples, so the
     //                inactive slot's overlap accumulator holds the whole IR tail before it
     //                is faded in.
