@@ -106,3 +106,8 @@ CONTEXT.md D-04 and RESEARCH.md Open Question 1 (closed).
 | Gaps found | 1 |
 | Resolved | 1 |
 | Escalated | 0 |
+
+Note: the gap was BUG-03's missing guard. Phases 3 to 5 had written 16 OpenSpatialDelay references in short form
+(`OSD#N`, bare `PR #142`): 8 found before merging Phase 5 (commit `f589828`), 8 more that arrived with the Phase 5
+merge. All 16 now read `Spatial-Media-Lab/OpenSpatialDelay#N` (96, 100, 131, 142 and 234 confirmed with `gh`), and
+`[bug03]` passes on the merged tree.

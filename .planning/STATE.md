@@ -7,7 +7,7 @@ status: planning
 stopped_at: Phase 05 complete; v1.0.0 milestone re-audit gaps_found (Phase 6 not started)
 last_updated: "2026-10-17T10:00:00.000Z"
 last_activity: 2026-10-17
-last_activity_desc: Phase 4 Nyquist validated (19/19 rows green); milestone re-audit 21/25, gaps are Phase 6's four requirements
+last_activity_desc: Phase 1 Nyquist validated (BUG-03 guard test added); Phase 4 validated earlier; milestone re-audit 21/25, gaps are Phase 6's four requirements
 state_head: a9dfd1c63634f476ab7ee621fea4c7916519059a
 progress:
   total_phases: 6
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 Phase: 06 (Consumer Readiness & CI) — NOT STARTED
 Plan: none yet
 Status: Phase 05 complete (verification passed, UAT 2/2, validation and security verified 2026-10-17). Next: /gsd-discuss-phase 6
-Last activity: 2026-10-17 — Phase 4 Nyquist validated (0 gaps, 19/19 rows green, `04-VALIDATION.md` now validated). Earlier the same day: v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
+Last activity: 2026-10-17 — Phase 1 Nyquist validated (1 gap: BUG-03 had no guard and had drifted; 16 short-form issue references qualified, new `[bug03]` test; `01-VALIDATION.md` now validated). Earlier: Phase 4 Nyquist validated (0 gaps, 19/19 rows green, `04-VALIDATION.md` now validated). Earlier the same day: v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
