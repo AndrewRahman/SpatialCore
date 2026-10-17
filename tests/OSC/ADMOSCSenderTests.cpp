@@ -6,6 +6,7 @@
 #include "../Support/FreeUdpPort.h"
 #include "../Support/RecordingCapture.h"
 #include <juce_osc/juce_osc.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -269,35 +270,73 @@ TEST_CASE ("ADMOSCSender: the five-argument tick on the wall clock sends about 3
     const float el = 0.0f, dist = 0.5f;
     const bool enabled = true;
 
-    // About one second of 60 Hz wall-clock calls. A loaded machine stretches the
-    // sleeps, so the rate is judged against the elapsed time actually measured.
-    // The calls are paced against absolute deadlines and the wait is a spin, not a
-    // sleep: a hosted macOS CI runner stretches a 16 ms sleep to about 75 ms, which
-    // would make the caller slower than the 30 Hz clock under test (a tick sends at
-    // most one message per call) and the case would judge the runner's timer, not
-    // the sender.
-    const auto start = std::chrono::steady_clock::now();
-    auto lastCall = start;
-    for (int i = 0; i < 60; ++i)
+    // About one second of 60 Hz wall-clock calls. The calls are paced against absolute deadlines
+    // and the wait is a spin, not a sleep: a hosted macOS CI runner stretches a 16 ms sleep to
+    // about 75 ms, which would make the caller slower than the 30 Hz clock under test (a tick
+    // sends at most one message per call) and the case would judge the runner's timer, not the
+    // sender.
+    //
+    // A pause of the CALLER (the runner descheduling this thread for 100 ms or more) is not the
+    // sender's doing: the sender never catches up after a stall (D-08c), so the messages of the
+    // missed slots are gone for good, while the deadline pacing then fires the late calls back to
+    // back and hides the pause from `elapsed`. The longest gap between two calls is therefore
+    // measured; an attempt with a gap of 40 ms or more (a 16 ms cadence missed by more than one
+    // call) says nothing about the sender and is repeated, up to five times. The first
+    // undisturbed attempt is judged by the original bounds, unchanged. (CI run 39069330986: 24
+    // messages from a run whose caller was paused; the bound of 25 then failed on the runner.)
+    struct Attempt
     {
-        az += 1.0f;
-        sender.tick (&az, &el, &dist, &enabled, 1);
-        lastCall = std::chrono::steady_clock::now();
-        const auto deadline = start + (i + 1) * std::chrono::milliseconds (16);
-        while (std::chrono::steady_clock::now() < deadline)
-            std::this_thread::yield();
-    }
-    const double elapsed = std::chrono::duration<double> (lastCall - start).count();
+        int total = 0;
+        double elapsed = 0.0;
+        double maxGapSeconds = 0.0;
+    };
 
-    const int total = capture.settle();
-    INFO ("messages from 60 wall-clock calls: " << total << " over " << elapsed << " s");
-    CHECK (elapsed >= 0.9);
-    CHECK ((double) total >= 30.0 * elapsed - 5.0);
-    CHECK ((double) total <= 30.0 * elapsed + 5.0);
-    if (elapsed < 1.1)
+    auto runAttempt = [&]() -> Attempt
     {
-        CHECK (total >= 25);
-        CHECK (total <= 35);
+        // settle() returns the running total once everything sent so far is recorded, so an
+        // earlier attempt's messages are subtracted and this one counts only its own.
+        const int before = capture.settle();
+
+        Attempt a;
+        const auto start = std::chrono::steady_clock::now();
+        auto lastCall = start;
+        bool first = true;
+        for (int i = 0; i < 60; ++i)
+        {
+            az += 1.0f;
+            sender.tick (&az, &el, &dist, &enabled, 1);
+            const auto called = std::chrono::steady_clock::now();
+            if (! first)
+                a.maxGapSeconds = std::max (a.maxGapSeconds, std::chrono::duration<double> (called - lastCall).count());
+            first = false;
+            lastCall = called;
+            const auto deadline = start + (i + 1) * std::chrono::milliseconds (16);
+            while (std::chrono::steady_clock::now() < deadline)
+                std::this_thread::yield();
+        }
+        a.elapsed = std::chrono::duration<double> (lastCall - start).count();
+        a.total = capture.settle() - before;
+        return a;
+    };
+
+    Attempt a;
+    bool undisturbed = false;
+    for (int attempt = 0; attempt < 5 && ! undisturbed; ++attempt)
+    {
+        a = runAttempt();
+        undisturbed = a.maxGapSeconds < 0.040;
+    }
+
+    INFO ("messages from 60 wall-clock calls: " << a.total << " over " << a.elapsed
+          << " s, longest gap between calls " << a.maxGapSeconds << " s");
+    REQUIRE (undisturbed);   // five paused attempts in a row would mean the runner, not the sender
+    CHECK (a.elapsed >= 0.9);
+    CHECK ((double) a.total >= 30.0 * a.elapsed - 5.0);
+    CHECK ((double) a.total <= 30.0 * a.elapsed + 5.0);
+    if (a.elapsed < 1.1)
+    {
+        CHECK (a.total >= 25);
+        CHECK (a.total <= 35);
     }
 
     receiver.removeListener (&capture);
