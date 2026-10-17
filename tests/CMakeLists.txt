@@ -38,6 +38,7 @@ add_executable(SpatialCoreTests
     Engine/ControlRouteTests.cpp
     Engine/RealtimeSafetyTests.cpp
     Engine/MultiInstanceTests.cpp
+    Engine/UnsuppliedGainsTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests

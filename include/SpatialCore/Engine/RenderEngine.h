@@ -435,6 +435,8 @@ public:
     // handled. A zero-length block returns at once and is not counted. Any thread, lock-free.
     int getOversizedBlockCount() const noexcept;
 
+    int getUnsuppliedGainsBlockCount() const noexcept;
+
     //--------------------------------------------------------------------------
     // Escape hatches (D-02 -- leaf classes stay public). The LEGACY HRTF route, kept for
     // OpenSpatialDelay's current calls until the next major version (RTSF-03, D-09). The safe
@@ -863,6 +865,8 @@ private:
     void noteLegacyRouteCall() const noexcept;
     // D-11: renderBlock() calls longer than preparedMaxBlock_ (relaxed, lock-free).
     std::atomic<int> oversizedBlockCount_ { 0 };
+    // INTG-02: blocks that rendered a gain-reading path on zero consumer gains (relaxed, lock-free).
+    std::atomic<int> unsuppliedGainsBlockCount_ { 0 };
     // A non-lock-free atomic would put a lock on the audio thread.
     static_assert (std::atomic<std::size_t>::is_always_lock_free,
                    "RenderEngine thread bookkeeping requires lock-free std::atomic<size_t>");

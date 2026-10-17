@@ -1914,6 +1914,11 @@ int RenderEngine::getOversizedBlockCount() const noexcept
     return oversizedBlockCount_.load (std::memory_order_relaxed);
 }
 
+int RenderEngine::getUnsuppliedGainsBlockCount() const noexcept
+{
+    return unsuppliedGainsBlockCount_.load (std::memory_order_relaxed);
+}
+
 std::size_t RenderEngine::currentThreadHash() noexcept
 {
     const std::size_t h = std::hash<std::thread::id> {} (std::this_thread::get_id());
