@@ -40,14 +40,31 @@ created: "2026-10-17"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| (filled by planner) | — | — | INTG-01 | — | Consumer build of the SHA under test, both targets, Release | integration script | `examples/harness/scripts/build-consumer.sh "$(git rev-parse HEAD)"` | ❌ W0 | ⬜ pending |
-| (filled by planner) | — | — | INTG-01 | — | Umbrella headers include every public header | unit | `./build-release/tests/SpatialCoreTests "[umbrella]"` | ❌ W0 | ⬜ pending |
-| (filled by planner) | — | — | INTG-02 | — | Unsupplied gains detected and counted, no false positive on HRTF/Ambisonics | unit | `./build-release/tests/SpatialCoreTests "[intg02]"` | ❌ W0 | ⬜ pending |
-| (filled by planner) | — | — | INTG-02 | — | Detector allocates and locks nothing | trap | `./build-release/tests/SpatialCoreTests "[rt]"` | ✅ | ⬜ pending |
-| (filled by planner) | — | — | CI-01 | — | Root ctest finds 403 tests; macOS CI green | local + CI | `ctest --test-dir build-x -N`; `gh run list -R AndrewRahman/SpatialCore --workflow ci.yml --limit 1` | ❌ W0 | ⬜ pending |
-| (filled by planner) | — | — | TEST-01 | — | Coverage report with per-area numbers | script | `python3 -I scripts/coverage-report.py core-summary.json "$PWD"` | ❌ W0 | ⬜ pending |
-| (filled by planner) | — | — | TEST-01 | — | OSD#50 / #89 regressions red against old behaviour | unit + mutation | `./build-release/tests/SpatialCoreTests "[osd50],[osd89]"` | ❌ W0 | ⬜ pending |
-| (filled by planner) | — | — | TEST-01 | — | OSD#96, #131, #234 tests exist with recorded red evidence | existing | `./build-release/tests/SpatialCoreTests "[multi][isolation],[bug02]"` | ✅ | ⬜ pending |
+| 06-01-T1 | 06-01 | 1 | CI-01, INTG-01 | T-06-01, T-06-02 | Root ctest finds every test (BASE found 0); a consumer gets no test targets by default | local build | `ctest --test-dir build-release --no-tests=error --output-on-failure` and the `/tmp/sc-p6-consumed` target listing | ✅ | ⬜ pending |
+| 06-01-T2 | 06-01 | 1 | INTG-01 | — | Both umbrellas complete, each compiles first in its own TU | unit (source scan + TU) | `./build-release/tests/SpatialCoreTests "[umbrella]"` and `./build-release/tests/SpatialCoreUITests "[umbrella]"` | ❌ W0 (created by the task) | ⬜ pending |
+| 06-02-T1 | 06-02 | 2 | INTG-02 | T-06-04, T-06-05 | Unsupplied gains counted; nothing fills them | unit (red first) | `./build-release/tests/SpatialCoreTests "[intg02]"` | ❌ W0 | ⬜ pending |
+| 06-02-T2 | 06-02 | 2 | INTG-02 | T-06-03 | No false positive on HRTF, Ambisonics, the engineSelectsHRTF fill; misuse path allocation- and lock-free | unit + trap | `./build-release/tests/SpatialCoreTests "[intg02]"`, `"[rt][intg02]"`, `"[rt]"` | ❌ W0 | ⬜ pending |
+| 06-02-T3 | 06-02 | 2 | INTG-02 | — | Guide states the flag set and the gains mode (D-07) | doc grep | `grep -c '^### Set these flags' docs/integration-guide.md` | ✅ | ⬜ pending |
+| 06-03-T1 | 06-03 | 3 | TEST-01 | T-06-06, T-06-07 | OSD#50 test red against the hard swap | unit + mutation | `./build-release/tests/SpatialCoreTests "[osd50]"` | ❌ W0 | ⬜ pending |
+| 06-03-T2 | 06-03 | 3 | TEST-01 | T-06-06, T-06-07 | OSD#89 onset and pole tests red against each old behaviour | unit + mutation | `./build-release/tests/SpatialCoreTests "[osd89]"` | ❌ W0 | ⬜ pending |
+| 06-03-T3 | 06-03 | 3 | TEST-01 | T-06-06, T-06-07 | OSD#96, #131, #234 tests red again at HEAD; no mutation left | mutation + full gate | `"[multi][isolation]"`, `SpatialCoreUITests "[ui][multi]"`, `"[fftcache]"`, `"[bug02],[convolver][transition]"`; `git diff --quiet -- src include` | ✅ | ⬜ pending |
+| 06-04-T1 | 06-04 | 4 | INTG-01 | T-06-08, T-06-09, T-06-11 | Consumer built from a GitHub submodule at the pushed commit; bad inputs refused | integration script | `examples/harness/scripts/build-consumer.sh "$(git rev-parse HEAD)"`; refusals exit 2, 2, 3 | ❌ W0 | ⬜ pending |
+| 06-04-T2 | 06-04 | 4 | INTG-01 | — | Every format and algorithm sounds; editor paints; OSD-like build passes | integration script | same script; `HARNESS_OSD_LIKE=1` run | ❌ W0 | ⬜ pending |
+| 06-05-T1 | 06-05 | 5 | CI-01 | T-06-12 to T-06-17 | macOS gate green on GitHub with JUCE 9.0.0, ctest 100%, harness PASS | CI run | `gh run view <id> -R AndrewRahman/SpatialCore --json jobs` (macos-gate success) | ❌ W0 | ⬜ pending |
+| 06-05-T2 | 06-05 | 5 | CI-01 | — | realtime-nightly green on dispatch, 0 ThreadSanitizer warnings | CI run | `gh run view <id> ... realtime-nightly` success | ❌ W0 | ⬜ pending |
+| 06-06-T1 | 06-06 | 6 | CI-01 | T-06-18, T-06-19 | Linux runs the suite, green, no continue-on-error | CI run | `gh run view <id> ... linux-tests` success | ❌ W0 | ⬜ pending |
+| 06-06-T2 | 06-06 | 6 | CI-01 | T-06-18 | Windows builds every target, green, no test run | CI run | `gh run view <id> ... windows-build` success | ❌ W0 | ⬜ pending |
+| 06-07-T1 | 06-07 | 7 | TEST-01 | T-06-21 | Per-area engine number and separate UI number; no source missing | script | `python3 -I scripts/coverage-report.py --self-test`; `scripts/coverage.sh build-cov` | ❌ W0 | ⬜ pending |
+| 06-07-T2 | 06-07 | 7 | TEST-01 | T-06-20 | Coverage on the job summary and as an artifact, inside GitHub only | CI run | `gh run download <id> -n coverage-report` | ❌ W0 | ⬜ pending |
+| 06-07-T3 | 06-07 | 7 | TEST-01 | — | User picks the target (OQ-4) | checkpoint | manual (see below) | — | ⬜ pending |
+| 06-08-T1 | 06-08 | 8 | TEST-01 | T-06-23 | CI enforces the chosen target | CI run | coverage job success with "Target: ... - PASS" | ❌ W0 | ⬜ pending |
+| 06-08-T2 | 06-08 | 8 | TEST-01 | T-06-22 | Gate fails 0.01 point below, passes exactly at the target | script | `python3 -I scripts/coverage-report.py ... --targets /tmp/sc-p6-08-above.json` exits 1 | ✅ | ⬜ pending |
+| 06-09-T1 | 06-09 | 9 | INTG-01, CI-01, TEST-01 | T-06-24 | README matches the CI and its harness command runs as written | script + doc grep | `examples/harness/scripts/build-consumer.sh "$(git rev-parse HEAD)"`; stale-phrase grep | ✅ | ⬜ pending |
+| 06-09-T2 | 06-09 | 9 | INTG-01, INTG-02, CI-01 | T-06-24 | Context docs state what shipped; header comment only | doc grep + unit | `./build-release/tests/SpatialCoreTests "[fftcache],[umbrella]"` | ✅ | ⬜ pending |
+| 06-09-T3 | 06-09 | 9 | all four | — | Requirement amendments (D-02, D-08, D-16), OQ-4 closed | doc grep | `grep -q "SpatialCoreUI.h" .planning/REQUIREMENTS.md` | ✅ | ⬜ pending |
+| 06-10-T1 | 06-10 | 10 | all four | — | Phase-end gate and realtime-safety check pass as written | full gate + TSan | README "Local test gate" and "Realtime-safety check" steps 1-5 | ✅ | ⬜ pending |
+| 06-10-T2 | 06-10 | 10 | CI-01 | T-06-25 | User decides merge and protection (D-11) | checkpoint | manual (see below) | — | ⬜ pending |
+| 06-10-T3 | 06-10 | 10 | all four | T-06-25, T-06-26, T-06-27 | Choice applied exactly; protection read back; ticks after evidence | API read-back + doc grep | `gh api repos/AndrewRahman/SpatialCore/branches/main/protection` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -55,10 +72,10 @@ created: "2026-10-17"
 
 ## Wave 0 Requirements
 
-- [ ] `enable_testing()` at the top level of `CMakeLists.txt` (and the `SPATIALCORE_BUILD_TESTS` default decision)
-- [ ] `tests/Engine/UnsuppliedGainsTests.cpp`, `tests/Core/UmbrellaTests.cpp`, `[osd50]` / `[osd89]` cases — added to `tests/CMakeLists.txt`
-- [ ] `examples/harness/**` and `scripts/coverage-report.py`
-- [ ] `.gitignore`: `build-cov/`
+- [ ] `enable_testing()` at the top level of `CMakeLists.txt` and the `SPATIALCORE_BUILD_TESTS` default (06-01-T1)
+- [ ] `tests/Core/UmbrellaTests.cpp`, `tests/UI/UmbrellaUITests.cpp` (06-01-T2); `tests/Engine/UnsuppliedGainsTests.cpp` (06-02-T1); `[osd50]` / `[osd89]` cases (06-03-T1, T2) — each new file added to `tests/CMakeLists.txt`
+- [ ] `examples/harness/**` (06-04-T1) and `scripts/coverage.sh`, `scripts/coverage-report.py` (06-07-T1)
+- [ ] `.gitignore`: `build-cov/` (06-07-T1)
 
 No new framework install.
 
@@ -68,8 +85,8 @@ No new framework install.
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Coverage target chosen | TEST-01 (OQ-4) | User judgment on the measured number | Planned checkpoint after the first coverage run |
-| Branch protection mode | CI-01 (D-11) | GitHub repo setting, owner decision | Planned checkpoint |
+| Coverage target chosen | TEST-01 (OQ-4) | User judgment on the measured number | 06-07-T3 checkpoint:decision (blocking-human), after the first CI coverage run |
+| Merge to main and branch protection mode | CI-01 (D-10, D-11) | GitHub repo setting and publishing to main, owner decision | 06-10-T2 checkpoint:decision (blocking-human), after the phase-end evidence |
 
 ---
 
