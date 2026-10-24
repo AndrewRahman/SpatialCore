@@ -4,7 +4,7 @@
 - **Library:** SpatialCore — the shared spatial audio rendering engine for the Spatial Media Library
 - **Organization:** Spatial Media Lab (spatialmedialab.org)
 - **What it does:** Takes audio objects with 3D positions and renders them to any output format (binaural, stereo, surround, Ambisonics) via 8 spatialization algorithms
-- **License:** GPL-3.0 + commercial (dual license)
+- **License:** GPL-3.0 (open source, not sold, no commercial licence)
 - **GitHub:** `https://github.com/AndrewRahman/SpatialCore` — the development remote, and the URL to clone or submodule today. `Spatial-Media-Lab/SpatialCore` is the post-proof destination and **does not resolve yet** (DR-18); do not substitute it. See `docs/integration-guide.md` "Remote topology".
 
 ## Origin

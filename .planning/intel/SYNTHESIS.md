@@ -26,7 +26,7 @@ UNKNOWN / low-confidence classifications: none.
 
 - Locked (7): DR-1 no allocation in processBlock; DR-2 no interface change without major bump; DR-3 backward compatibility; DR-4 full test suite before tagging; DR-5 HRTF profiles embedded as BinaryData; DR-6 semantic versioning; DR-7 SpatializationAlgorithm interface frozen.
   Source of all seven: `docs/development-roadmap.md` ("Critical Design Rules" / "Key Interface (Frozen)"), restated in `CLAUDE.md`. No ADR file backs them.
-- Proposed (10): DR-8 static library, 7 modules, fixed source layout; DR-9 submodule + CMake subdirectory integration; DR-10 JUCE 8 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1; DR-11 `spatialcore` namespace; DR-12 dual GPL-3.0 + commercial license; DR-13 publish under Spatial-Media-Lab with squashed history; DR-14 extraction sequenced after OpenSpatialDelay v1.0; DR-15 no BinaryData inside SpatialCore, consumers supply HRTF data; DR-16 UI decoupled from any concrete processor; DR-17 68% framework / 32% plugin DSP split.
+- Proposed (10): DR-8 static library, 7 modules, fixed source layout; DR-9 submodule + CMake subdirectory integration; DR-10 JUCE 8 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1; DR-11 `spatialcore` namespace; DR-12 GPL-3.0-only license; DR-13 publish under Spatial-Media-Lab with squashed history; DR-14 extraction sequenced after OpenSpatialDelay v1.0; DR-15 no BinaryData inside SpatialCore, consumers supply HRTF data; DR-16 UI decoupled from any concrete processor; DR-17 68% framework / 32% plugin DSP split.
 - DR-5 (locked) and DR-15 (SPEC) disagree on HRTF data ownership — raised as a WARNING.
 
 ## Requirements (23) — `intel/requirements.md`

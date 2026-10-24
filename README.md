@@ -196,9 +196,7 @@ The consumer builds whatever commit its submodule pointer references — editing
 
 ## License
 
-Dual-licensed:
-- **[GPL-3.0](LICENSE)** — free for open-source use
-- **Commercial License** — available from [Spatial Media Lab](https://spatialmedialab.org)
+Licensed under **[GPL-3.0](LICENSE)**. SpatialCore is open source and is not sold; there is no commercial licence.
 
 HRTF data from third-party sources under their respective licenses (MIT, Apache 2.0, CC BY, Public Domain).
 

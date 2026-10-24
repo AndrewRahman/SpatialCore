@@ -479,7 +479,7 @@ gate list, alongside:
 | ID | Requirement |
 |----|-------------|
 | REQ-create-org-repo | Create `github.com/Spatial-Media-Lab/SpatialCore` with squashed history |
-| REQ-set-dual-license | Land the GPL-3.0 + commercial dual license |
+| REQ-set-dual-license | Land the GPL-3.0 license (GPL-3.0 only; no commercial licence) |
 | REQ-tag-v1-0-0 | Tag v1.0.0 (gated by DR-4: full test suite passes first) |
 | REQ-osd-repoint-submodule-to-org | Point OSD's submodule at the public org repo (external) |
 
