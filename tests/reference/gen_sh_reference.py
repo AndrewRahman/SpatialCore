@@ -19,6 +19,9 @@ from scipy.special import factorial, lpmv, sph_harm_y
 
 AZ_DEG, EL_DEG = 64.0, 10.0
 
+# Back-half directions (999.5, #32), printed only with --back-half (the default header output is unchanged).
+BACK_HALF = [(135, 0), (-135, 0), (170, 0), (-170, 0), (180, 0), (-100, -25), (120, 40)]
+
 
 def check(cond, msg):
     if not cond:
@@ -44,7 +47,27 @@ def fmt(v, decimals):
     return f"{v:.{decimals}f}f"
 
 
+def back_half():
+    """Print one C++ table per BACK_HALF direction (paste into tests/IO/AmbisonicsCodecTests.cpp)."""
+    for az_d, el_d in BACK_HALF:
+        az, el = math.radians(az_d), math.radians(el_d)
+        ref = [float(sn3d(c, az, el)) for c in range(49)]
+        alt = [float(sn3d_route2(c, az, el)) for c in range(49)]
+        diff = max(abs(a - b) for a, b in zip(ref, alt))
+        check(diff < 1e-12, f"two scipy routes disagree by {diff:.3e} at az {az_d} el {el_d}")
+        name = f"kRef_az{az_d}_el{el_d}".replace("-", "m")
+        print(f"// az {az_d}, el {el_d}")
+        print(f"constexpr float {name}[49] = {{")
+        for c in range(49):
+            print(f"    {fmt(ref[c], 9)},  // ACN {c}")
+        print("};")
+        print()
+
+
 def main():
+    if "--back-half" in sys.argv[1:]:
+        back_half()
+        return
     az, el = math.radians(AZ_DEG), math.radians(EL_DEG)
     ref = [float(sn3d(c, az, el)) for c in range(49)]
     alt = [float(sn3d_route2(c, az, el)) for c in range(49)]
