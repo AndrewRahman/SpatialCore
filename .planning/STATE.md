@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-07-PLAN.md
-last_updated: "2026-10-24T14:14:18.536Z"
+stopped_at: Completed 06-08-PLAN.md (CI confirmation deferred to the single push after 06-09)
+last_updated: "2026-10-24T14:16:33.785Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
-state_head: 5d78589997519cbf0090dceba92b123edefeea11
+state_head: 674614cbead8bb684f8c28273ff87007f4541fc7
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 49
+  completed_plans: 50
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 7 of 10
+Plan: 8 of 10
 Status: Ready to execute
 Last activity: 2026-10-17 — Phase 06 execution started
 
@@ -127,6 +127,7 @@ Progress: [███████░░░] 67%
 | Phase 06 P05 | 3h 40m | 2 tasks | 2 files |
 | Phase 06 P06 | 1h 44m | 2 tasks | 6 files |
 | Phase 06 P07 | n/a (paused at checkpoint) | 3 tasks | 5 files |
+| Phase 06 P08 | 1 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -213,6 +214,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-06: JUCE 9.0.0 FFTFallback::perform takes a SpinLock (juce_FFT.cpp:115, priority -1 at :92); with no FFTW/MKL/IPP flag set Linux and Windows builds use it, so instances sharing one FFT per order contend on the audio thread; vDSP on macOS takes no lock — Answer to Phase 5 D-13 for Plan 06-09 to write into SharedFFTCache.h and CLAUDE.md
 - [Phase 06]: 06-06: MSVC 19.51 test-source fixes are NOMINMAX in FreeUdpPort.h and static constexpr for three no-capture lambdas; the wall-clock sender case discards attempts where its own caller paused (gap of 40 ms or more) instead of widening a bound — No library source changed; Release ctest 416 of 416 and the final push run green on three platforms
 - [Phase 06]: 06-07: user chose coverage target `hold` on 2026-10-24 — engine line coverage target 93% (measured 94.19% on CI run 39074814315, 93.97–94.00% locally), UI measured and shown (25.89%) but NOT a rule; Plan 06-08 enforces 93% — OQ-4 answered at the 06-07 blocking checkpoint
+- [Phase 06]: 06-08: engine coverage target committed as 93 exactly as the user gave it (not floor(94.19)=94); UI report-only, no ui_line_percent
 
 ### Pending Todos
 
@@ -255,7 +257,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-24T14:14:18.297Z
-Stopped at: Completed 06-07-PLAN.md
-Resume file: .planning/phases/06-consumer-readiness-ci/.continue-here.md
+Last session: 2026-10-24T14:16:33.521Z
+Stopped at: Completed 06-08-PLAN.md (CI confirmation deferred to the single push after 06-09)
+Resume file: None
 Next command: `/gsd-execute-phase 06`
