@@ -87,6 +87,12 @@ void BinauralRenderer::setProfile (int profileIndex)
     // so updateSourceHRIR() never has to grow them on the audio thread.
     ensureScratchCapacity();
 
+    // Mirror lengths: computed here (not in prepare) because this is where the
+    // per-source convolvers are prepared at currentSampleRate, so both state
+    // machines always count identical sample totals (Spatial-Media-Lab/OpenSpatialDelay#234, D-06).
+    itdXfadeSamples       = hrirTransitionMsToSamples (currentSampleRate, kHRIRCrossfadeMs);
+    itdWarmupFloorSamples = hrirTransitionMsToSamples (currentSampleRate, kHRIRWarmupMinMs);
+
     // =========================================================================
     // Compute cross-profile normalization gain.
     // Sample a few reference directions to measure this profile's energy level.
@@ -130,8 +136,8 @@ void BinauralRenderer::setProfile (int profileIndex)
     // =========================================================================
     for (int i = 0; i < MAX_SOURCES; ++i)
     {
-        sourceConvL[i].prepare (currentBlockSize, irLen);
-        sourceConvR[i].prepare (currentBlockSize, irLen);
+        sourceConvL[i].prepare (currentBlockSize, irLen, currentSampleRate);
+        sourceConvR[i].prepare (currentBlockSize, irLen, currentSampleRate);
         sourceConvReady[i] = false;   // Force HRIR reload on next processBlock
         cachedSourceAz[i] = -999.0f;  // Invalidate cached positions
         cachedSourceEl[i] = -999.0f;
@@ -141,6 +147,16 @@ void BinauralRenderer::setProfile (int profileIndex)
         currentITDR[i] = 0.0f;
         targetITDL[i] = 0.0f;
         targetITDR[i] = 0.0f;
+        itdPhase[i] = ITDPhase::Idle;
+        itdPhaseRemaining[i] = 0;
+        itdStepL[i] = 0.0f;
+        itdStepR[i] = 0.0f;
+        itdRampTargetL[i] = 0.0f;
+        itdRampTargetR[i] = 0.0f;
+        itdPendingL[i] = 0.0f;
+        itdPendingR[i] = 0.0f;
+        itdHasPending[i] = false;
+        sourceConvHasIR[i] = false;   // prepare leaves no IR: next setIR is a direct load
         itdWritePos[i] = 0;
         std::memset (itdBufferL[i], 0, sizeof (itdBufferL[i]));
         std::memset (itdBufferR[i], 0, sizeof (itdBufferR[i]));
@@ -204,6 +220,10 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
     if (! scratchFits (static_cast<size_t> (storedIRLength)))
         return;
 
+    // State before this call, for the ITD mirror below.
+    const bool wasReady  = sourceConvReady[sourceIndex];
+    const bool convHadIR = sourceConvHasIR[sourceIndex];
+
     // Query HRTF at exact source direction (realtime-safe: KD-tree lookup, no malloc)
     float delayL = 0.0f, delayR = 0.0f;
     std::vector<float>& tmpL = convTmpL;  // Reuse work buffer (safe: not in render path here)
@@ -214,6 +234,11 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
         hrtfDatabase.getAlignedHRIR (azRad, elRad, tmpL.data(), tmpR.data(), delayL, delayR);
     else
         hrtfDatabase.getInterpolatedHRIR (azRad, elRad, tmpL.data(), tmpR.data(), delayL, delayR);
+
+    // Custom SOFA input is untrusted (Spatial-Media-Lab/OpenSpatialDelay#218): a negative or huge delay must never
+    // alias in the ITD ring (Spatial-Media-Lab/OpenSpatialDelay#234, D-13).
+    delayL = juce::jlimit (0.0f, static_cast<float> (kMaxITDSamples), delayL);
+    delayR = juce::jlimit (0.0f, static_cast<float> (kMaxITDSamples), delayR);
 
     // Apply cross-profile normalization
     for (int n = 0; n < storedIRLength; ++n)
@@ -226,12 +251,53 @@ void BinauralRenderer::updateSourceHRIR (int sourceIndex, float azRad, float elR
     sourceConvL[sourceIndex].setIR (tmpL.data(), storedIRLength);
     sourceConvR[sourceIndex].setIR (tmpR.data(), storedIRLength);
 
-    // Store ITD target for smooth per-sample interpolation in renderSourceBuffers
+    // ITD mirror of the convolver transition just requested (D-06).
     if (itdActive)
     {
+        // (i) phase mirror
+        if (convHadIR)
+        {
+            // The setIR above was a crossfade (or went to the convolver's pendingIR).
+            if (itdPhase[sourceIndex] == ITDPhase::Idle)
+            {
+                itdPhase[sourceIndex] = ITDPhase::Warmup;
+                itdPhaseRemaining[sourceIndex] = std::max (storedIRLength, itdWarmupFloorSamples);
+                itdRampTargetL[sourceIndex] = delayL;
+                itdRampTargetR[sourceIndex] = delayR;
+            }
+            else
+            {
+                // Mid-transition: latest wins, applied after the in-flight one ends.
+                itdPendingL[sourceIndex] = delayL;
+                itdPendingR[sourceIndex] = delayR;
+                itdHasPending[sourceIndex] = true;
+            }
+        }
+        else
+        {
+            // Direct load: no transition.
+            itdPhase[sourceIndex] = ITDPhase::Idle;
+            itdHasPending[sourceIndex] = false;
+        }
+
+        // (ii) value snap on the first HRIR since prepare / clear / reset:
+        // nothing audible to slew from, so any mirrored transition is a no-op ramp.
+        if (! wasReady)
+        {
+            currentITDL[sourceIndex] = delayL;
+            currentITDR[sourceIndex] = delayR;
+            itdRampTargetL[sourceIndex] = delayL;
+            itdRampTargetR[sourceIndex] = delayR;
+            itdPendingL[sourceIndex] = delayL;
+            itdPendingR[sourceIndex] = delayR;
+        }
+
+        // (iii) latest lookup (unchanged meaning, [issue89])
         targetITDL[sourceIndex] = delayL;
         targetITDR[sourceIndex] = delayR;
     }
+
+    sourceConvHasIR[sourceIndex] = true;   // mirrors the convolver, not the ITD
 
     cachedSourceAz[sourceIndex] = azRad;
     cachedSourceEl[sourceIndex] = elRad;
@@ -290,19 +356,47 @@ void BinauralRenderer::renderSourceBuffers (const float* const* sourceBufs,
         // Apply ITD as fractional-sample delay if using aligned HRIRs.
         if (itdActive)
         {
-            float itdL0 = currentITDL[src];
-            float itdR0 = currentITDR[src];
-            float itdL1 = targetITDL[src];
-            float itdR1 = targetITDR[src];
-            float invN = (numSamples > 1) ? 1.0f / static_cast<float> (numSamples - 1) : 1.0f;
+            ITDPhase phase = itdPhase[src];
+            int   remaining = itdPhaseRemaining[src];
+            float curL = currentITDL[src];
+            float curR = currentITDR[src];
+            float stepLocalL = itdStepL[src];
+            float stepLocalR = itdStepR[src];
+            const float rampTgtL = itdRampTargetL[src];
+            const float rampTgtR = itdRampTargetR[src];
 
             int wp = itdWritePos[src];
 
             for (int s = 0; s < numSamples; ++s)
             {
-                float frac = static_cast<float> (s) * invN;
-                float delL = itdL0 + frac * (itdL1 - itdL0);
-                float delR = itdR0 + frac * (itdR1 - itdR0);
+                // Mirror of the PartitionedConvolver Warmup/Crossfading machine.
+                if (phase == ITDPhase::Warmup)
+                {
+                    // Hold. The sample that ends warmup is still warmup; the first
+                    // ramp step lands on the next sample (convolver gain index 1).
+                    if (--remaining <= 0)
+                    {
+                        phase = ITDPhase::Ramp;
+                        remaining = itdXfadeSamples;
+                        const float inv = 1.0f / static_cast<float> (itdXfadeSamples);
+                        stepLocalL = (rampTgtL - curL) * inv;
+                        stepLocalR = (rampTgtR - curR) * inv;
+                    }
+                }
+                else if (phase == ITDPhase::Ramp)
+                {
+                    curL += stepLocalL;
+                    curR += stepLocalR;
+                    if (--remaining <= 0)
+                    {
+                        curL = rampTgtL;   // exact at ramp end (convolver gain index C)
+                        curR = rampTgtR;
+                        phase = ITDPhase::Idle;
+                    }
+                }
+
+                const float delL = curL;
+                const float delR = curR;
 
                 // Write to circular ITD delay buffer
                 itdBufferL[src][wp] = convTmpL[static_cast<size_t> (s)];
@@ -327,9 +421,31 @@ void BinauralRenderer::renderSourceBuffers (const float* const* sourceBufs,
                 wp = (wp + 1) & (kITDBufferSize - 1);
             }
 
+            // A retarget that arrived mid-transition starts exactly as the convolver
+            // applies its pendingIR: at the end of the process call that completed
+            // the crossfade, so the next warmup counts from the next call.
+            // Accepted deviation: when a host block exceeds the prepared block size,
+            // PartitionedConvolver::process splits it (WR-02) and can start a
+            // coalesced transition at a chunk boundary inside the host block, while
+            // this mirror starts it at the next host block - less than one prepared
+            // block of offset, only on that prepare-contract-violation path
+            // (RenderEngine already jassertfalse's on oversized blocks). Not tested.
+            if (phase == ITDPhase::Idle && itdHasPending[src])
+            {
+                phase = ITDPhase::Warmup;
+                remaining = std::max (storedIRLength, itdWarmupFloorSamples);
+                itdRampTargetL[src] = itdPendingL[src];
+                itdRampTargetR[src] = itdPendingR[src];
+                itdHasPending[src] = false;
+            }
+
+            itdPhase[src] = phase;
+            itdPhaseRemaining[src] = remaining;
+            itdStepL[src] = stepLocalL;
+            itdStepR[src] = stepLocalR;
+            currentITDL[src] = curL;
+            currentITDR[src] = curR;
             itdWritePos[src] = wp;
-            currentITDL[src] = itdL1;
-            currentITDR[src] = itdR1;
         }
         else
         {
@@ -354,6 +470,16 @@ void BinauralRenderer::reset()
         currentITDR[i] = 0.0f;
         targetITDL[i] = 0.0f;
         targetITDR[i] = 0.0f;
+        itdPhase[i] = ITDPhase::Idle;
+        itdPhaseRemaining[i] = 0;
+        itdStepL[i] = 0.0f;
+        itdStepR[i] = 0.0f;
+        itdRampTargetL[i] = 0.0f;
+        itdRampTargetR[i] = 0.0f;
+        itdPendingL[i] = 0.0f;
+        itdPendingR[i] = 0.0f;
+        itdHasPending[i] = false;
+        // sourceConvHasIR stays: PartitionedConvolver::reset keeps its IRs, so the next setIR still crossfades
         itdWritePos[i] = 0;
         std::memset (itdBufferL[i], 0, sizeof (itdBufferL[i]));
         std::memset (itdBufferR[i], 0, sizeof (itdBufferR[i]));
@@ -375,6 +501,16 @@ void BinauralRenderer::invalidateSources()
         currentITDR[i] = 0.0f;
         targetITDL[i] = 0.0f;
         targetITDR[i] = 0.0f;
+        itdPhase[i] = ITDPhase::Idle;
+        itdPhaseRemaining[i] = 0;
+        itdStepL[i] = 0.0f;
+        itdStepR[i] = 0.0f;
+        itdRampTargetL[i] = 0.0f;
+        itdRampTargetR[i] = 0.0f;
+        itdPendingL[i] = 0.0f;
+        itdPendingR[i] = 0.0f;
+        itdHasPending[i] = false;
+        sourceConvHasIR[i] = false;   // clearAll zeroes the IRs: next setIR is a direct load
         itdWritePos[i] = 0;
         std::memset (itdBufferL[i], 0, sizeof (itdBufferL[i]));
         std::memset (itdBufferR[i], 0, sizeof (itdBufferR[i]));

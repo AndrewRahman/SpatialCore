@@ -210,13 +210,16 @@ TEST_CASE ("BinauralRenderer: reset() and invalidateSources() clear the ITD stat
 }
 
 // ----------------------------------------------------------------------------
-// D-16: characterise the 64-sample ITD line, do not change it.
+// The ITD line, characterised at 44.1 and 48 kHz (D-16, superseded by
+// Spatial-Media-Lab/OpenSpatialDelay#234 D-13 and WR-01, AndrewRahman/SpatialCore#25).
 //
-// BinauralRenderer keeps a 64-sample ITD delay line (kITDBufferSize) and masks the read
-// index with & 63, but HRTFDatabase::getAlignedHRIR returns the ABSOLUTE onset delay, which
-// reaches 123 samples for SADIE at 48 kHz. The rendered delay is therefore
-// (floor (delay) mod 64) plus the fraction, not the raw delay. That is the sound OpenSpatialDelay
-// ships; Phase 3 pins it so any later change is a deliberate, visible decision.
+// Phase 3 pinned the 64-sample line, which wrapped the ABSOLUTE onset delays (SADIE up to
+// 123 samples at 48 kHz) modulo 64. the Spatial-Media-Lab/OpenSpatialDelay#234 work, decided and A/B-tested there (O211,
+// O212), fixed both halves of SpatialCore#25's intended fix: the ring is kITDBufferSize = 512
+// with delays clamped to kMaxITDSamples (D-13), and getAlignedHRIR reports each ear's onset
+// SHIFT (onset - minOnset: 0 for the leading ear, the ITD for the other) instead of the
+// absolute onset (WR-01), so minOnset is no longer applied twice. The table pins the new
+// timing: the delays are the shifts, and the rendered per-ear onset equals the raw HRIR onset.
 // ----------------------------------------------------------------------------
 namespace
 {
@@ -229,34 +232,34 @@ namespace
         int onsetL, onsetR;     // rendered per-ear onset, samples
     };
 
-    // captured from this tree on 2026-10-04 at commit 7453d93, libmysofa v1.3.2 (the pin moved to v1.3.5 in c1c2e42; every value below is unchanged under v1.3.5, re-verified when this note was added); D-16 pins today's 64-sample ITD line; a change here is a change to shipped timing and needs a decision. Tracked by AndrewRahman/SpatialCore#25
+    // captured 2026-10-18 on SpatialCore osd-234-on-main (the Spatial-Media-Lab/OpenSpatialDelay#234 512-sample ring + WR-01 onset shift), libmysofa v1.3.5; a change here is a change to shipped timing and needs a decision
     constexpr ItdCase kItdTable[] = {
-        { 1, 44100.0, 0.0f, 0.0f, 75.000f, 79.000f, 86, 90 },
-        { 1, 44100.0, 90.0f, 0.0f, 71.000f, 93.000f, 78, 100 },
-        { 1, 44100.0, -90.0f, 0.0f, 91.000f, 74.000f, 101, 84 },
-        { 1, 44100.0, 180.0f, 0.0f, 75.000f, 76.000f, 86, 87 },
-        { 1, 44100.0, 45.0f, 30.0f, 78.000f, 83.000f, 92, 97 },
-        { 1, 48000.0, 0.0f, 0.0f, 82.000f, 86.000f, 100, 104 },
-        { 1, 48000.0, 90.0f, 0.0f, 72.000f, 102.000f, 80, 110 },
-        { 1, 48000.0, -90.0f, 0.0f, 66.000f, 82.000f, 68, 84 },
-        { 1, 48000.0, 180.0f, 0.0f, 86.000f, 87.000f, 108, 109 },
-        { 1, 48000.0, 45.0f, 30.0f, 83.000f, 91.000f, 102, 110 },
-        { 5, 44100.0, 0.0f, 0.0f, 38.000f, 38.000f, 76, 76 },
-        { 5, 44100.0, 90.0f, 0.0f, 29.000f, 56.000f, 58, 85 },
-        { 5, 44100.0, -90.0f, 0.0f, 56.000f, 29.000f, 85, 58 },
-        { 5, 44100.0, 180.0f, 0.0f, 40.000f, 40.000f, 80, 80 },
-        { 5, 44100.0, 45.0f, 30.0f, 31.000f, 45.000f, 62, 76 },
-        { 5, 48000.0, 0.0f, 0.0f, 41.000f, 41.000f, 82, 82 },
-        { 5, 48000.0, 90.0f, 0.0f, 31.000f, 61.000f, 62, 92 },
-        { 5, 48000.0, -90.0f, 0.0f, 61.000f, 31.000f, 92, 62 },
-        { 5, 48000.0, 180.0f, 0.0f, 43.000f, 43.000f, 86, 86 },
-        { 5, 48000.0, 45.0f, 30.0f, 34.000f, 49.000f, 68, 83 },
+        { 1, 44100.0, 0.0f, 0.0f, 0.000f, 4.000f, 75, 79 },
+        { 1, 44100.0, 90.0f, 0.0f, 0.000f, 22.000f, 71, 93 },
+        { 1, 44100.0, -90.0f, 0.0f, 17.000f, 0.000f, 91, 74 },
+        { 1, 44100.0, 180.0f, 0.0f, 0.000f, 1.000f, 75, 76 },
+        { 1, 44100.0, 45.0f, 30.0f, 0.000f, 5.000f, 78, 83 },
+        { 1, 48000.0, 0.0f, 0.0f, 0.000f, 4.000f, 82, 86 },
+        { 1, 48000.0, 90.0f, 0.0f, 0.000f, 30.000f, 72, 102 },
+        { 1, 48000.0, -90.0f, 0.0f, 0.000f, 16.000f, 66, 82 },
+        { 1, 48000.0, 180.0f, 0.0f, 0.000f, 1.000f, 86, 87 },
+        { 1, 48000.0, 45.0f, 30.0f, 0.000f, 8.000f, 83, 91 },
+        { 5, 44100.0, 0.0f, 0.0f, 0.000f, 0.000f, 38, 38 },
+        { 5, 44100.0, 90.0f, 0.0f, 0.000f, 27.000f, 29, 56 },
+        { 5, 44100.0, -90.0f, 0.0f, 27.000f, 0.000f, 56, 29 },
+        { 5, 44100.0, 180.0f, 0.0f, 0.000f, 0.000f, 40, 40 },
+        { 5, 44100.0, 45.0f, 30.0f, 0.000f, 14.000f, 31, 45 },
+        { 5, 48000.0, 0.0f, 0.0f, 0.000f, 0.000f, 41, 41 },
+        { 5, 48000.0, 90.0f, 0.0f, 0.000f, 30.000f, 31, 61 },
+        { 5, 48000.0, -90.0f, 0.0f, 30.000f, 0.000f, 61, 31 },
+        { 5, 48000.0, 180.0f, 0.0f, 0.000f, 0.000f, 43, 43 },
+        { 5, 48000.0, 45.0f, 30.0f, 0.000f, 15.000f, 34, 49 },
     };
 
     constexpr float kItdDirections[5][2] = { { 0.0f, 0.0f }, { 90.0f, 0.0f }, { -90.0f, 0.0f }, { 180.0f, 0.0f }, { 45.0f, 30.0f } };
 }
 
-TEST_CASE ("BinauralRenderer: the 64-sample ITD line is characterised at 44.1 and 48 kHz (D-16)",
+TEST_CASE ("BinauralRenderer: the 512-sample ITD line carries the onset shift at 44.1 and 48 kHz (D-16, D-13, WR-01)",
            "[renderer][itd-characterisation]")
 {
     constexpr int kCapture = 512;
@@ -297,16 +300,27 @@ TEST_CASE ("BinauralRenderer: the 64-sample ITD line is characterised at 44.1 an
                 const int alignedOnsetL = onsetOf (alignedL.data(), static_cast<int> (alignedL.size()));
                 const int alignedOnsetR = onsetOf (alignedR.data(), static_cast<int> (alignedR.size()));
 
+                std::vector<float> rawL (alignedL.size()), rawR (alignedL.size());
+                float rawDL = 0.0f, rawDR = 0.0f;
+                renderer.hrtfDatabase.getInterpolatedHRIR (az, el, rawL.data(), rawR.data(), rawDL, rawDR);
+                const int rawOnsetL = onsetOf (rawL.data(), static_cast<int> (rawL.size()));
+                const int rawOnsetR = onsetOf (rawR.data(), static_cast<int> (rawR.size()));
+
                 char line[256];
                 std::snprintf (line, sizeof (line), "{ %d, %.1f, %.1ff, %.1ff, %.3ff, %.3ff, %d, %d },",
                                profile, rate, dir[0], dir[1], delayL, delayR, onsetL, onsetR);
                 WARN (line);
 
-                const int wrapL = static_cast<int> (std::floor (delayL)) % 64;
-                const int wrapR = static_cast<int> (std::floor (delayR)) % 64;
                 INFO ("profile " << profile << " rate " << rate << " az " << dir[0] << " el " << dir[1]);
-                CHECK (std::abs (onsetL - (alignedOnsetL + wrapL)) <= 1);
-                CHECK (std::abs (onsetR - (alignedOnsetR + wrapR)) <= 1);
+                // No wrap: the rendered onset is the aligned onset plus the whole delay ...
+                CHECK (std::abs (onsetL - (alignedOnsetL + static_cast<int> (std::floor (delayL)))) <= 1);
+                CHECK (std::abs (onsetR - (alignedOnsetR + static_cast<int> (std::floor (delayR)))) <= 1);
+                // ... the delays are the shift (the leading ear gets none) ...
+                CHECK (std::min (delayL, delayR) == 0.0f);
+                CHECK (std::max (delayL, delayR) <= 510.0f);   // BinauralRenderer::kMaxITDSamples
+                // ... and the rendered onset is the raw HRIR onset, not minOnset twice (WR-01).
+                CHECK (std::abs (onsetL - rawOnsetL) <= 1);
+                CHECK (std::abs (onsetR - rawOnsetR) <= 1);
 
                 if (row < std::size (kItdTable))
                 {
@@ -329,8 +343,10 @@ TEST_CASE ("BinauralRenderer: the 64-sample ITD line is characterised at 44.1 an
     }
 
     CHECK (row == std::size (kItdTable));
-    INFO ("largest SADIE 48 kHz raw delay " << maxSadie48Delay << " samples");
-    CHECK (maxSadie48Delay >= 64.0f);
+    // SADIE's ITD shift stays well inside the ring (it was the absolute onset, up to 123, before).
+    INFO ("largest SADIE 48 kHz delay " << maxSadie48Delay << " samples");
+    CHECK (maxSadie48Delay > 0.0f);
+    CHECK (maxSadie48Delay < 64.0f);
 }
 
 // ============================================================================

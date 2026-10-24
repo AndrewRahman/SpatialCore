@@ -316,12 +316,20 @@ void HRTFDatabase::getAlignedHRIR (float azimuthRad, float elevationRad,
     int shiftR = static_cast<int> (delayR);
 
     // v1.0.11 (issue Spatial-Media-Lab/OpenSpatialDelay#89): If SOFA reports zero delay for both channels,
-    // the ITD is baked into the HRIR waveform (confirmed for MIT KEMAR,
-    // likely CIPIC/HUTUBS/Bernschuetz). Detect onset from the waveform
-    // itself so the dual-slot crossfade blends time-aligned HRIRs.
-    // SADIE II KU100 reports non-zero delays and bypasses this fallback.
-    // NOTE: Check raw float delays, not integer-truncated -- SADIE reports
-    // fractional delays (e.g., 0.3/0.7) that truncate to int 0 but are valid.
+    // the ITD is baked into the HRIR waveform. Detect onset from the waveform
+    // itself so the dual-slot crossfade blends time-aligned HRIRs, and report
+    // each ear's SHIFT relative to the earlier ear (onset - minOnset) as its delay.
+    // The aligned IRs still start at minOnset (the common leading onset stays in
+    // the waveform), so the rendered per-ear onset is minOnset + shift = the raw
+    // onset.  Reporting the absolute onset (O211 and earlier) applied minOnset
+    // twice: a direction-dependent common-mode delay that the ITD slew turned
+    // into pitch bend on both ears (WR-01, 10-REVIEW.md; fixed O212).
+    // All five bundled SOFA files store Data.Delay = 0 (verified 2026-10-10), so
+    // EVERY bundled profile takes this path, MIT KEMAR and SADIE included
+    // (48 kHz per-ear onsets: KEMAR ~31..64, SADIE ~53..124 samples; the
+    // reported shifts are 0 for the earlier ear and up to ~48 for the later one).
+    // Raw float delays are checked, not integer-truncated, so a custom SOFA
+    // with small fractional Data.Delay values still bypasses this fallback.
     if (delayL < 0.001f && delayR < 0.001f)
     {
         int onsetL = detectOnset (irL, irLength, 0.1f);
@@ -329,9 +337,10 @@ void HRTFDatabase::getAlignedHRIR (float azimuthRad, float elevationRad,
         int minOnset = std::min (onsetL, onsetR);
         shiftL = onsetL - minOnset;
         shiftR = onsetR - minOnset;
-        // Report detected ITD for the ITD delay line in renderSourceBuffers()
-        delayL = static_cast<float> (onsetL);
-        delayR = static_cast<float> (onsetR);
+        // Report the onset shift (0 for the leading ear, the ITD for the other)
+        // for the ITD delay line in renderSourceBuffers() -- WR-01.
+        delayL = static_cast<float> (shiftL);
+        delayR = static_cast<float> (shiftR);
     }
 
     // Shift left channel: move samples backward by shiftL
