@@ -153,7 +153,7 @@ TEST_CASE ("PartitionedConvolver: an IR change mid-stream is click-free (Spatial
     constexpr size_t kChangeAt = 8192;            // a multiple of 64 and of 512
     constexpr int kIRLength = 64;
     constexpr int kQuarterPeriod = 27;            // samples: 48000 / 440 / 4 = 27.3
-    constexpr size_t kFadeFloor = 2048;           // the convolver's crossfade floor, in samples
+    constexpr size_t kFadeFloor = 2048;           // settle margin in samples: a safe upper bound on the crossfade (kHRIRCrossfadeMs is 1024 samples at 48 kHz)
 
     const std::vector<float> input = sineWave (kNumSamples, 440.0, kSampleRate, 0.5f);
 

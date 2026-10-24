@@ -158,7 +158,7 @@ can be measured — the earlier "~5%" was never a real measurement. Modules with
 - **Float semantics**: SpatialCore sources must not be compiled with `-ffast-math`, `-ffinite-math-only` or `/fp:fast` — the non-finite guards are `std::isfinite` tests that fast-math folds away. `src/Core/FloatSemanticsGuard.h` makes it a build error (Phase 2, WR-04).
 - **Realtime**: No malloc, locks, or logging in any function reachable from `processBlock`. Algorithms are stateless; all computation state lives in context structs. Layout changes use dual-buffered atomic swap.
 - **Frozen API**: The `SpatializationAlgorithm` interface cannot change without a major version bump. Same for anything else consumers link against.
-- **Scale limits**: `MAX_SOURCES = 12`, `MAX_SPEAKERS = 16`, `MAX_AMBI_ORDER = 6` (49 channels).
+- **Scale limits**: `MAX_SOURCES = 32` (SC-1), `MAX_SPEAKERS = 16`, `MAX_AMBI_ORDER = 6` (49 channels).
 - **Licensing**: GPL-3.0 + commercial dual license.
 - **Backward compatibility**: OpenSpatialDelay must keep working across every SpatialCore change.
 

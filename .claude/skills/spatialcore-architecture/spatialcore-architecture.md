@@ -40,7 +40,7 @@ SpatialCore is a C++ static library extracted from OpenSpatialDelay. It contains
 | Component | What It Does |
 |-----------|-------------|
 | 8 Spatialization Algorithms | ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics (HOA), DirectBinaural (Woodworth) |
-| HRTF Binaural Rendering | HRTFDatabase, PartitionedConvolver, BinauralRenderer (12 per-source convolvers) |
+| HRTF Binaural Rendering | HRTFDatabase, PartitionedConvolver, BinauralRenderer (one convolver per source, up to 32) |
 | HRTF Profiles | 5 SOFA HRTF profiles ship embedded as BinaryData (`SpatialCoreHRTFData`), overridable by a same-named file in the system shared folder; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles; one engine call, `setHRTFProfile`, switches |
 | 23 Output Formats | 1 Binaural + 1 Stereo (5 modes) + 15 Surround (Quad–9.1.6) + 6 Ambisonics (FOA–6OA) |
 | 15 Speaker Layouts | ITU-R BS.775/BS.2051, SMPTE channel ordering |

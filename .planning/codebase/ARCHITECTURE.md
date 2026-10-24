@@ -56,7 +56,7 @@ Two independent, orthogonal subsystems also exist and are NOT wired through Rend
 |-----------|----------------|------|
 | RenderEngine | Consumer-facing render facade; 5-branch format dispatch; owns gain-interpolation, HRTF-renderer double-buffer, output-layout double-buffer, optional gain computation | `include/SpatialCore/Engine/RenderEngine.h`, `src/Engine/RenderEngine.cpp` |
 | SpatializationAlgorithm (+ 8 impls) | Pure-function per-speaker gain computation from a source position + layout context | `include/SpatialCore/Algorithms/SpatializationAlgorithm.h`, `include/SpatialCore/Algorithms/{VBAP,VBIP,KNN,DBAP,MDAP,Ambisonics,DirectBinaural,ConstantPower}Algorithm.h` |
-| BinauralRenderer | Per-source HRTF convolution engine (12 parallel L/R convolver pairs), ITD buffering, low-shelf compensation | `include/SpatialCore/Binaural/BinauralRenderer.h`, `src/Binaural/BinauralRenderer.cpp` |
+| BinauralRenderer | Per-source HRTF convolution engine (one L/R convolver pair per source, MAX_SOURCES = 32), ITD buffering, low-shelf compensation | `include/SpatialCore/Binaural/BinauralRenderer.h`, `src/Binaural/BinauralRenderer.cpp` |
 | HRTFDatabase | SOFA file loading (libmysofa) and HRIR lookup by azimuth/elevation | `include/SpatialCore/Binaural/HRTFDatabase.h`, `src/Binaural/HRTFDatabase.cpp` |
 | PartitionedConvolver | Single-source FFT overlap-save convolution primitive | `include/SpatialCore/Binaural/PartitionedConvolver.h`, `src/Binaural/PartitionedConvolver.cpp` |
 | SharedFFTCache | Process-global FFT plan singleton shared across all convolvers | `include/SpatialCore/Binaural/SharedFFTCache.h` |
@@ -188,13 +188,15 @@ Two independent, orthogonal subsystems also exist and are NOT wired through Rend
 
 ## `MAX_SOURCES` Constant and Sizing
 
-`spatialcore::MAX_SOURCES = 12` is defined once, in `include/SpatialCore/Core/Types.h:8`. `MAX_SPEAKERS = 16` is defined immediately after (`Types.h:9`).
+`spatialcore::MAX_SOURCES = 32` (SC-1; was 12 when this was written) is defined once, in `include/SpatialCore/Core/Types.h`. `MAX_SPEAKERS = 16` is defined immediately after (`Types.h:9`).
 
 **Arrays sized by `MAX_SOURCES`** (verified via `grep -rn "MAX_SOURCES\]"` across `include/SpatialCore`):
 - `Engine/RenderEngine.h`: `RenderSources::{monoBuffers, sourceEnabledBlock, tapFadeGainPerSample, distGainPerSample, objects, objectLive}`; `RenderBlockContext::{objGains, objGainL, objGainR, objChannelGains[][MAX_SPEAKERS]}`; engine-private `sourceAccumBufPtrs`, `prevBinauralGains`, `prevStereoGainL/R`, `prevChannelGains[][MAX_SPEAKERS]`, `prevSHCoeffs[][kMaxAmbiChannels]`, `nfcFilters[][kMaxAmbiOrder]`, `smoothedNfcDistance`, `prevNfcDistance`.
 - `Binaural/BinauralRenderer.h`: `sourceConvL/R`, `cachedSourceAz/El`, `sourceConvReady`, `currentITDL/R`, `targetITDL/R`, `itdBufferL/R[][kITDBufferSize]`, `itdWritePos`, `lfShelfStateL/R[][2]`.
 - `OSC/ADMOSCSender.h`: `prevAz`, `prevEl`, `prevDist`.
 - `UI/SpatialMapComponent.h`: `objectColours[MAX_SOURCES]`.
+
+**Update (SC-1):** `DopplerVelocity::kMaxObjects` is now `= MAX_SOURCES`, so the drift described below no longer exists. Kept as the 2026-08-10 snapshot.
 
 **Independent, non-tracking constant:** `include/SpatialCore/Trajectory/DopplerVelocity.h:17` defines its own `static constexpr int kMaxObjects = 12;`, **not** derived from or referencing `spatialcore::MAX_SOURCES`. It happens to equal 12 today but is a textually separate literal — changing `MAX_SOURCES` in `Types.h` will NOT change `DopplerVelocity::kMaxObjects`, and vice versa. Arrays sized by it: `prevAz_`, `prevEl_`, `prevDist_`, `smoothedVelocity_`, `rawSemitones_`, `smoothedSemitones_`, `prevSmoothedSemitones_`, `intermediateSmoothed_`, `posChanged_` (all `DopplerVelocity.h:51-61`). This is a latent drift risk: bumping `MAX_SOURCES` without also updating `DopplerVelocity::kMaxObjects` would silently create a mismatched per-object array bound between the trajectory/Doppler subsystem and everything else.
 

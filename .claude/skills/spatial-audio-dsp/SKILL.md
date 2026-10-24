@@ -163,7 +163,7 @@ For each enabled source (tap):
   5. Sum all convolver outputs → wet L/R
 ```
 
-12 independent per-source PartitionedConvolvers. HRIR loaded at source's exact 3D direction — no virtual speaker intermediary. This is the highest-quality binaural path.
+One independent PartitionedConvolver per source (MAX_SOURCES = 32, Core/Types.h). HRIR loaded at source's exact 3D direction — no virtual speaker intermediary. This is the highest-quality binaural path.
 
 ### Path B: Simple Woodworth (Binaural output, profile 0)
 
@@ -423,7 +423,7 @@ Individual `/x`, `/y`, `/z` messages update cached Cartesian values (`oscCartesi
 - `--manual` — Single AED message
 - `--orbit` — Continuous azimuth orbit
 - `--sweep` — Elevation sweep -90° to +90°
-- `--multi` — Coordinated spiral of all 12 objects
+- `--multi` — Coordinated spiral of all active objects (up to MAX_SOURCES = 32)
 - `--xyz` — Cartesian position update
 - `--aed` — Combined AED message
 - `--axes` — Individual /x, /y, /z updates
@@ -547,7 +547,6 @@ Post-build auto-install:
 ### 9.3 Windows Build
 
 GitHub Actions CI builds Windows only on a release tag push (`v*`) or a manual run; a branch push starts no build (SpatialCore D-20, 2026-10-24). Uses Visual Studio 17 2022 x64, vcpkg for zlib.
-Download: `bash scripts/download_windows_build.sh` → `build/windows/`
 
 ---
 
@@ -578,7 +577,7 @@ Download: `bash scripts/download_windows_build.sh` → `build/windows/`
 | VBAP 3D triplet search (per source) | ~0.01ms | 30 triplets, matrix multiply |
 | KNN search K=3 (per source) | ~0.005ms | Partial sort + inverse-distance |
 | DBAP gain computation (per source) | ~0.003ms | Euclidean distance + normalize |
-| processBlock total (12 sources) | <5ms @ 512 samples | Lock-free, pre-allocated |
+| processBlock total (12 sources, measured figure) | <5ms @ 512 samples | Lock-free, pre-allocated |
 | HRIR update (position change) | ~0.5ms | KD-tree lookup + IR copy |
 | Soft clipper (per sample) | ~2ns | Branchless polynomial |
 
