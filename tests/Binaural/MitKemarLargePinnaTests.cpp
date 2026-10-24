@@ -39,7 +39,9 @@ namespace
     // O212): getAlignedHRIR reports onset - minOnset, so the leading ear is 0 and the other
     // carries the ITD. Before it they were the absolute onsets 31 / 61; only these two
     // fields moved (energy, peaks and peak indices are unchanged, the aligned waveform is the same).
-    constexpr HRIRFingerprint kGoldenFingerprint { 558, 0.0f, 30.0f, 2.00355748, 0.163567331, 0.515830636f, -0.121116042f, 39, 52 };
+    constexpr HRIRFingerprint kGoldenFingerprint { 558, 0.0f, 33.0f, 2.00355748, 0.163567328, 0.515830636f, -0.121116042f, 39, 49 };
+    // O214 (Spatial-Media-Lab/OpenSpatialDelay#234): onset now from detectOnsetEnergy (smooth energy onset), so the
+    // lagging ear's shift and the aligned right-ear tail changed; rendered onsets are unchanged (lossless).
     constexpr int kGoldenIRLength = 558;
     constexpr int kGoldenNumPositions = 710;
 }
