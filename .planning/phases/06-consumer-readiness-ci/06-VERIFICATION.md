@@ -47,7 +47,7 @@ covered_files:
   - tests/Core/UmbrellaTests.cpp
   - tests/Engine/UnsuppliedGainsTests.cpp
   - tests/UI/UmbrellaUITests.cpp
-covered_digest: "v3:sha256:dde7d296993abdf2686bf56ba0ea5d762b32fb27fab3f1ecc6ff981541a46c42"
+covered_digest: "v3:sha256:10bfb99e560d5aedd0492d9b2040df350562be56dfec0cfe242a7440ff49cee4"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:

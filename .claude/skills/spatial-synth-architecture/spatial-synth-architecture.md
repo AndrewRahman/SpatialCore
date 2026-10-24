@@ -24,7 +24,7 @@ Voice 2 → Object 2 → Position (az=240°, el=0°, dist=0.5)
 Voice 11 → Object 11 → Position (az=330°, el=30°, dist=0.7)
 ```
 
-**Max polyphony = 12** (limited by SpatialCore's 12 object slots).
+**Max polyphony = 32** (limited by SpatialCore's 32 object slots, `MAX_SOURCES`).
 
 ### Advantages
 - Simple, predictable

@@ -445,8 +445,8 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | API-03 | OQ-3, resolved by re-map | 1 | Complete |
 | API-04 | Re-map (23 formats / 15 layouts) | 1 | Complete |
 | API-05 | Re-map (CLAUDE.md inaccuracies) | 1 | Complete |
-| EXTR-01 | REQ-extract-algorithms | 2 | Largely verified by tests |
-| EXTR-03 | REQ-extract-speaker-layouts | 2 | Largely verified by tests |
+| EXTR-01 | REQ-extract-algorithms | 2 | Complete |
+| EXTR-03 | REQ-extract-speaker-layouts | 2 | Complete |
 | EXTR-02 | REQ-extract-binaural-rendering | 3 | Complete |
 | DATA-01 | REQ-embed-hrtf-binarydata | 3 | Complete (lookup chain + embedded default) |
 | EXTR-04 | REQ-extract-adm-osc-and-trajectory | 4 | Complete (Phase 4) |
