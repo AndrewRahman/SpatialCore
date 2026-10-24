@@ -356,6 +356,7 @@ Open issues that close with evidence rather than a code change.
 
 - [x] **CI-01**: SpatialCore is CI-verified against JUCE 9.0.0
   - **Complete (Phase 6):** proven by green macOS CI on JUCE 9.0.0 (runs 39053183247, 39058330902, 39074814315), Linux (run 39070985243) and a Windows build; the realtime check runs on a manual dispatch before a release (D-18). Branch protection is not set (decision 2026-10-24); nothing after 310fb93 has run on GitHub (Plans 06-05, 06-06 and 06-10; evidence in `06-10-SUMMARY.md`).
+  - **Trigger policy (amended 2026-10-24, D-20, user decision):** the CI workflow starts only when a release tag `v*` is pushed or by hand; no branch push or pull request starts a GitHub build. "CI-verified" above therefore means the runs recorded here (pre-merge tree, up to 310fb93) plus the first release-candidate run, which is also the first run on the merged tree (see TEST-01). D-20 supersedes any reading of this requirement as a per-push check.
   - **SpatialCore#9.** SpatialCore's own CI builds on Linux only. The tree is pinned to JUCE 9.0.0
     while CLAUDE.md claims 8 — the mismatch must be settled in CI, not prose.
 
@@ -370,6 +371,7 @@ Open issues that close with evidence rather than a code change.
 
 - [x] **TEST-01**: Coverage tooling exists and the untested modules are covered
   - **Complete (Phase 6):** proven by `scripts/coverage.sh` and `scripts/coverage-report.py` (`--self-test` passes), engine 94.19% and UI 25.89% in CI run 39074814315, the 93% engine target in `scripts/coverage-targets.json` (local 94.00%; its CI enforcement run was cancelled, see `06-10-SUMMARY.md`), and dedicated tests for `PartitionedConvolver.cpp` (96.08%) and `BinauralRenderer.cpp` (100%) (Plans 06-03, 06-07 and 06-08).
+  - **Note (2026-10-24, D-19/D-20):** the 93% engine target has not been measured on the merged tree (after two merges of main, about 330 changed engine lines); the local 94.00% above is the 2026-10-18 pre-merge export. By user decision the measurement is deferred to the first release-candidate CI run (tag `v*`) or one manual `scripts/coverage.sh` run before that.
   - **Reframed.** No coverage tooling is configured anywhere in the build, so no percentage can be
     measured — the old "~5%" figure was invented, and OQ-4 ("set a coverage target") cannot be
     answered until measurement exists.

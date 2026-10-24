@@ -546,7 +546,7 @@ Post-build auto-install:
 
 ### 9.3 Windows Build
 
-GitHub Actions CI on push to `main`. Uses Visual Studio 17 2022 x64, vcpkg for zlib.
+GitHub Actions CI builds Windows only on a release tag push (`v*`) or a manual run; a branch push starts no build (SpatialCore D-20, 2026-10-24). Uses Visual Studio 17 2022 x64, vcpkg for zlib.
 Download: `bash scripts/download_windows_build.sh` → `build/windows/`
 
 ---
