@@ -306,7 +306,7 @@ all four closed there, in code SpatialCore now owns — plus `#234`, which is st
 **Milestone boundary**: v1 closes when OpenSpatialDelay itself ships on SpatialCore. That work
 lives in the OpenSpatialDelay repository and has deliberately no SpatialCore phase — see PROJECT.md
 External Dependencies.
-**Plans**: 8/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
+**Plans**: 9/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -334,7 +334,7 @@ Plans:
 - [x] 06-08-PLAN.md — The chosen coverage target enforced in CI, proven at the boundary (D-14, OQ-4) *(wave 8)*
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 06-09-PLAN.md — Docs truth: CI is the gate, consumer contract, platform reach, the user's requirement amendments, OSD Phase 6 hand-off row *(wave 9)*
+- [x] 06-09-PLAN.md — Docs truth: CI is the gate, consumer contract, platform reach, the user's requirement amendments, OSD Phase 6 hand-off row *(wave 9)*
 
 **Wave 10** *(blocked on Wave 9 completion)*
 - [ ] 06-10-PLAN.md — Phase-end checks as written, evidence, the user's merge and branch-protection decision applied exactly, requirement ticks (D-10, D-11) *(wave 10)*
@@ -350,7 +350,7 @@ Plans:
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
 | 5. Realtime Safety Hardening | 8/8 | Complete    | 2026-10-17 |
-| 6. Consumer Readiness & CI | 8/10 | In Progress | - |
+| 6. Consumer Readiness & CI | 9/10 | In Progress | - |
 
 ## Coverage
 
