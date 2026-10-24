@@ -20,11 +20,11 @@ current_phase: 06
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-05)
+See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
-**Milestone:** v1 — OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions
-**Current focus:** Phase 06 — Consumer Readiness & CI
+**Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0, no git tag)
+**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or backlog 999.x
 
 ## Current Position
 
@@ -267,9 +267,9 @@ Acknowledged at the v1.0.0 milestone close (2026-10-24) through `audit-open ackn
 ## Session Continuity
 
 Last session: 2026-10-24T16:35:22.550Z
-Stopped at: Phase 06 complete — all phases complete
-Resume file: .planning/phases/06-consumer-readiness-ci/.continue-here.md
-Next command: `/gsd-verify-work 6` (then ask the user before pushing main)
+Stopped at: Milestone v1.0.0 complete and archived
+Resume file: None (phase directories archived to .planning/milestones/v1.0.0-phases/)
+Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
 ## Operator Next Steps
 
