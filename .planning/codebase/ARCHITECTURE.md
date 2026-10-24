@@ -130,7 +130,7 @@ Two independent, orthogonal subsystems also exist and are NOT wired through Rend
    - `isStereoVariant` → `renderStereoVariant`
    - `isBinaural && useHRTF` → `renderDirectBinauralHRTF` (routes through `BinauralRenderer`)
    - `isBinaural` → `renderSimpleBinauralWoodworth`
-   - `isAmbiOutput` → `renderAmbisonicsOutput` (uses `AmbisonicsCodec` + NFC-HOA IIR filters)
+   - `isAmbiOutput` → `renderAmbisonicsOutput` (plain AmbiX SN3D: `evalSH` x signal x distance and tap gains, per-block SH interpolation; no filters, no max-rE, SpatialCore#32)
    - else → `renderDiscreteSurround`
 6. Selected path writes RAW WET signal directly into `outChannels` — no dry/wet mix, output gain, limiter, or PDC (explicitly out of scope; consumer applies these after `renderBlock` returns).
 
@@ -146,7 +146,7 @@ Two independent, orthogonal subsystems also exist and are NOT wired through Rend
 2. Consumer calls `swapActiveRenderer()`, which atomically flips `activeRendererIndex` and begins an 8-block crossfade (`kRendererXfadeBlocks`) to avoid a pop (`RenderEngine.h:267-274`, `330-336`).
 
 **State Management:**
-- All engine-owned block-to-block state (gain-interpolation "previous" arrays, NFC-HOA filter state, LFE filter, double-buffered renderer/layout state) lives as private members of `RenderEngine` (`RenderEngine.h:317-390`), not in `RenderSources`/`RenderBlockContext` which are re-supplied fresh every call.
+- All engine-owned block-to-block state (gain-interpolation "previous" arrays including the previous SH coefficients, LFE filter, double-buffered renderer/layout state) lives as private members of `RenderEngine` (`RenderEngine.h:317-390`), not in `RenderSources`/`RenderBlockContext` which are re-supplied fresh every call.
 
 ## Key Abstractions
 

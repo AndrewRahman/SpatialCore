@@ -242,6 +242,20 @@ front), elevation 0 = horizon, positive up. This is the AmbiX convention.
 to true SN3D in Phase 2 (22 constants; AndrewRahman/SpatialCore#11), so a consumer decoding 4OA-6OA
 output with an AmbiX decoder now gets correct levels. Orders 0-3 did not change.
 
+### Ambisonics output stream
+
+The Ambisonics output formats (1st to 6th order) carry plain AmbiX SN3D: each channel is
+`evalSH (acn, az, el)` x the object's signal x the block's distance gain x the tap fade, with the
+SH coefficients interpolated linearly across each block. There is no near-field filter and no
+max-rE weighting on this stream (SpatialCore#32), so the channel ratios to W do not depend on the
+source distance, and a decoder such as IEM's, which applies its own max-rE, applies it once.
+max-rE is used only where SpatialCore decodes itself (`AmbisonicsAlgorithm`, the speaker decode).
+
+Behaviour change for an existing consumer: far sources are no longer boosted at low frequency,
+orders 1 and above are no longer pre-weighted, and the overall W level is unchanged.
+`RenderBlockContext::sampleRate` is no longer read on this path (the field stays for the other
+paths). A consumer that decodes the stream itself applies any weighting on its decode side.
+
 ### Panning behaviour a consumer can observe
 
 - **VBIP is the textbook law** (Pernaux, Boussard & Jot, DAFx-98): the VBAP gains are raised to

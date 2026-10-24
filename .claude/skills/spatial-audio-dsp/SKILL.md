@@ -88,6 +88,8 @@ shCoeffs[acn] = evalSH(acn, az, el) * maxrE[order(acn)]
 ```
 Max-rE weights (Zotter & Frank 2012): `[1.0, cos(π/8), cos(2π/8), cos(3π/8)]`
 
+**Note (SpatialCore#32):** the weighted encoding above is the speaker-decode algorithm (`AmbisonicsAlgorithm`). SpatialCore's Ambisonics *output formats* are plain AmbiX: `evalSH(acn, az, el)` with no max-rE and no near-field filter, because IEM-style decoders apply max-rE themselves.
+
 **Decoding to speakers:** Tikhonov-regularized pseudo-inverse of encoding matrix:
 ```
 E[spk][ch] = evalSH(ch, spk_az, spk_el)   // encoding matrix

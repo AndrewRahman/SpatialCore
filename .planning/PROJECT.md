@@ -228,8 +228,9 @@ normal planning decision.
 | P4-D19 | Bounce and Line reverse keep their OSD#100 behaviour as intentional exceptions to "reverse retraces forward" (D-13) | ✓ Good — Phase 4; pinned by tests |
 | P4-D22 | SAVE PRESET title stays in its original system bold font; the DM Sans Bold change was rejected at review as too small | ✓ Decided 2026-10-05 — documented exemption in `[ui][fonts][spy]` |
 | DR-18 | **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote, not an accident awaiting cleanup. Development stays on the personal remote until the pipeline is proven, for risk containment: `Spatial-Media-Lab/OpenSpatialDelay` is public and in use by real people right now, so migrating it onto an unproven SpatialCore could break a live plugin. Migration is **gated on proof, not on a date** — SpatialCore, OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner land on the organisation together once the process is proven. `docs/integration-guide.md` carries the working remote as the live instruction and labels the organisation URL as the post-proof destination. | ✓ Decided 2026-08-10 — resolves OQ-5 |
+| P999.5-D01 | The Ambisonics output-format stream is plain AmbiX SN3D: `evalSH` x signal x the block's distance gain x tap fade. No near-field shelf and no max-rE on that stream; max-rE stays in SpatialCore's own decode (`AmbisonicsAlgorithm`, `[ambi-pin]`). Per-block SH interpolation kept; public API source-compatible. Why: the shelf was inverted against Daniel 2003 (low-frequency gain r / 1.5, no per-order power) and max-rE was applied a second time by IEM decoders; research in `.planning/quick/261024-mhh-re-check-the-ambisonics-maths-end-to-end/research/`. References SpatialCore#32 (open until openspatialdelay#22 ships and the pre-release speaker check passes) and the closed SpatialCore#21 (the order-change defect of the very filters now removed; its `[sc19]` tests stay as order-change guards). | ✓ Decided 2026-10-24, quick 261024-qlw |
 
 </decisions>
 
 ---
-*Last updated: 2026-10-05 after Phase 4 (Control Surface & UI)*
+*Last updated: 2026-10-24 after quick task 261024-qlw (plain AmbiX Ambisonics output)*

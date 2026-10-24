@@ -191,6 +191,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 05]: 05-07: SpatialMapComponent face sharing proven by a construction counter and face identity (test-only read-only accessors); per-instance faces fail the sixteen-map test (delta 16, 15 differing identities)
 - [Phase 05]: 05-08: the realtime-safety check (rt trap, build-tsan subset, UI suite and whole suite under ThreadSanitizer) is a separate phase-end and pre-release check beside the unchanged everyday gate; proof scope is macOS (Apple Silicon), Windows and Linux in Phase 6 (D-01, D-13)
 - [Phase 05]: 05-08: Phase 5 requirements RTSF-01, RTSF-02, RTSF-03, RTSF-05 and VERIFY-02 ticked only after the VERIFICATION evidence section was written and the documented check passed (whole suite under ThreadSanitizer: 386 cases, exit 0, 0 warnings, 1938 s)
+- [Quick 261024-qlw]: P999.5-D01: the Ambisonics output-format stream is plain AmbiX SN3D (evalSH x signal x distance and tap gains): the near-field shelf (inverted against Daniel 2003) and the encoder-side max-rE (applied twice by IEM decoders) are removed; max-rE stays in AmbisonicsAlgorithm, [ambi-pin] and the codec; per-block SH interpolation and the public API are unchanged (SpatialCore#32 open until openspatialdelay#22 ships; closed SpatialCore#21 guarded by [sc19])
 
 ### Pending Todos
 
