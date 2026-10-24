@@ -158,7 +158,7 @@ can be measured — the earlier "~5%" was never a real measurement. Modules with
 - **Realtime**: No malloc, locks, or logging in any function reachable from `processBlock`. Algorithms are stateless; all computation state lives in context structs. Layout changes use dual-buffered atomic swap.
 - **Frozen API**: The `SpatializationAlgorithm` interface cannot change without a major version bump. Same for anything else consumers link against.
 - **Scale limits**: `MAX_SOURCES = 12`, `MAX_SPEAKERS = 16`, `MAX_AMBI_ORDER = 6` (49 channels).
-- **Licensing**: GPL-3.0 only. Not dual-licensed; no commercial licence.
+- **Licensing**: GPL-3.0. Not dual-licensed; no commercial licence.
 - **Backward compatibility**: OpenSpatialDelay must keep working across every SpatialCore change.
 
 ## Open Questions
@@ -212,7 +212,7 @@ normal planning decision.
 | DR-9 | Consumers integrate via git submodule + CMake `add_subdirectory()` | — Pending — unverified by a real consumer until INTG-01 |
 | DR-10 | JUCE 9.0.0 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good — corrected 2026-08-10; DR-10 originally said JUCE 8, tree is pinned 9.0.0 at `CMakeLists.txt:33` |
 | DR-11 | All library code lives in `namespace spatialcore` (DSP utilities in `spatialcore::DSP`) | ✓ Good |
-| DR-12 | License GPL-3.0 only (not dual-licensed) | — Pending — LICENSE file lands in v3 |
+| DR-12 | License GPL-3.0 (not dual-licensed; no commercial licence) | — Pending — LICENSE file lands in v3 |
 | DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — gated on proof, not on a date. See the "Remote topology" decision row below. |
 | DR-14 | Extraction sequenced after OpenSpatialDelay v1.0 ships | ⚠️ Revisit — the PRD's 2026-03-31 OSD deadline has passed and extraction is well underway; the sequencing assumption no longer holds |
 | DR-15 | SpatialCore ships no BinaryData; consumers supply HRTF data | ✗ **Superseded by DR-5** — closed by user ruling |

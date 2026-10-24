@@ -136,7 +136,7 @@ class SpatializationAlgorithm {
 | Task | Details |
 |---|---|
 | Create org repo | `github.com/Spatial-Media-Lab/SpatialCore` (fresh, squash history) |
-| Set license | GPL-3.0 only |
+| Set license | GPL-3.0 (not dual-licensed) |
 | Tag v1.0.0 | First public release with all modules extracted and tested |
 | Update OpenSpatialDelay | Point submodule to public org repo |
 
