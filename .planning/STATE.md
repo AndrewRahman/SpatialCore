@@ -225,12 +225,12 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **OQ-1** — algorithm count. **CLOSED: 8**, verified from the tree.
 - **OQ-2** — `outputLimiter()`. **CLOSED 2026-08-10: keep the shipped tanh soft ceiling**; amend the SPEC to match. OSD ships v1.0.0 with that curve, so it is the known sound. Hard-clamp mode deferred to v2 as LIMIT-01.
 - **OQ-3** — HRTF profile count. **CLOSED: 5**, verified from the tree.
-- **OQ-4** (Phase 6) — test coverage target. **ANSWERED 2026-10-24: 93% engine line coverage, UI report-only** (user, at the 06-07 checkpoint). Tooling exists since 06-07 (`scripts/coverage.sh`, CI `coverage` job); enforced by 06-08.
+- **OQ-4** (Phase 6) — test coverage target. **CLOSED 2026-10-24: 93% engine line coverage, UI report-only** (user, at the 06-07 checkpoint; CI measured 94.19% engine, 25.89% UI). Tooling since 06-07 (`scripts/coverage.sh`, CI `coverage` job); committed in `scripts/coverage-targets.json` by 06-08; closed in REQUIREMENTS.md and ROADMAP.md by 06-09.
 - **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` publishes a submodule URL that does not resolve.
 - **OQ-6** (Phase 3) — HRTF packaging. **CLOSED 2026-08-10: lookup chain now, embedded default for v1.** Target architecture is the user's — profiles on disk once per machine in a shared folder, all SML plugins reference it; better than embedding chiefly because it enables user-supplied SOFA files. But v1 still embeds all 5, because the shared folder needs a signed installer that does not exist and OSD ships drag-and-drop. Phase 3 builds the resolution chain (shared folder → embedded → loud error) behind `SPATIALCORE_EMBED_ALL_HRTF=ON`; flipping it OFF later is a build flag, not a redesign. Tracked as SUITE-01.
 
 - **[Phase 2] Branch sync before Phase 3: done 2026-10-04.** `origin/main` (the LFE fixes `3a0d912` + `5140c9a` via `4bed89a`, and SC-16 `b9877e1`..`ab60c25`) was merged into `gsd-remap` as `6055109` and pushed as `main`. Debug 208/209 (only HutubsPP2Tests.cpp:47), Release 209/209, OSD 30391cd builds.
-- **[Phase 2] CI "green" is test-vacuous.** CI passed at `879a8fe`, but its ctest step runs from the build root and finds zero tests (no top-level `enable_testing()`); there is also no arm64/FMA leg. Phase gates use `ctest` in `build-release/tests`. Owned by Phase 6.
+- **[Phase 2] CI "green" is test-vacuous.** RESOLVED in Phase 6 (06-01, 06-05): ctest from the build root now finds the tests, `macos-gate` runs the whole suite (416 tests) on an Apple Silicon runner in Release (the arm64 leg), and `linux-tests` runs it on Ubuntu. Original finding: CI passed at `879a8fe`, but its ctest step ran from the build root and found zero tests (no top-level `enable_testing()`).
 - **[Phase 3] `HutubsPP2Tests.cpp:47`** — RESOLVED in Phase 3 (03-02 tolerance fingerprints); Debug and Release 266/266.
 - **[Phase 3] BUG-01** — DirectBinaural elevation and front/back cues are deliberately unasserted in `PanningLawTests.cpp`; Phase 3 adds them.
 - **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
@@ -247,7 +247,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Resolved — Phase 5 (05-06): documented as a deliberate process-lifetime allocation, D-08 | Phase 02 (02-04) |
 | Binaural | HUTUBS PP2 golden checksum fails in Debug only | Resolved — Phase 3 (03-02) | Phase 02 (02-10) |
 | Tests | Other tight test-local tolerances may fail on another compiler/build type (none fails today) | Open | Phase 02 (02-10) |
-| CI | ctest step runs zero tests; no arm64/FMA Release leg | Open — Phase 6 | Phase 02 (02-10) |
+| CI | ctest step runs zero tests; no arm64/FMA Release leg | Resolved — Phase 6 (06-01, 06-05) | Phase 02 (02-10) |
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Resolved — Phase 4 (04-03) | Phase 02 (02-07) |
 | Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Resolved — Phase 5 (05-03): [rt][switch][tracer], [rt][switch][audit] | v1.0.0 audit |

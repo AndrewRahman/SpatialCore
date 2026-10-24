@@ -289,15 +289,17 @@ harness and a green CI run.
 **Requirements**: INTG-01, INTG-02, CI-01, TEST-01
 **Success Criteria** (what must be TRUE):
 
-  1. A minimal harness plugin submodules SpatialCore, links **both** `SpatialCore` and `SpatialCoreUI`, includes only `<SpatialCore/SpatialCore.h>`, resolves HRTF data per the Phase 3 decision, and builds clean in Release on macOS.
+  1. A minimal harness plugin submodules SpatialCore, links **both** `SpatialCore` and `SpatialCoreUI`, includes the two umbrella headers `<SpatialCore/SpatialCore.h>` and `<SpatialCore/SpatialCoreUI.h>` (amended 2026-10-17, D-02), resolves HRTF data per the Phase 3 decision, and builds clean in Release on macOS.
   2. A consumer that does not set `engineComputesGains` either gets computed gains anyway or fails loudly — it does not silently fall back to the pass-through path that SpatialCore#14 was filed for.
   3. A green macOS CI run builds against JUCE 9.0.0 and runs the Catch2 suite. *(SpatialCore#9)*
   4. Coverage instrumentation is wired into CMake and reports a real number, and `PartitionedConvolver.cpp` and `BinauralRenderer.cpp` have dedicated tests.
   5. `Spatial-Media-Lab/OpenSpatialDelay#50`, `#89`, `#96`, `#131`, and `#234` each have a regression test that fails against the old behaviour.
 
-**Open question**: OQ-4 — the coverage target. It could not be set before because no coverage
-tooling exists to measure against; the old "~5% today" figure was never measured. Wire up
-instrumentation first, read the real number, then set the target with the user.
+**Open question (closed 2026-10-24)**: OQ-4 — the coverage target. It could not be set before because no coverage
+tooling exists to measure against; the old "~5% today" figure was never measured. Instrumentation was wired
+up first (Plan 06-07) and read: engine 94.19% of lines and UI 25.89% on CI. The user set the target at
+**93% engine line coverage, UI report-only**; Plan 06-08 enforces it in the CI `coverage` job through
+`scripts/coverage-targets.json`.
 **Citation fix**: the original roadmap cited these as bare `#50, #89, #96, #131`, which resolve to
 nothing in SpatialCore's tracker (highest issue: #17). They are real OpenSpatialDelay issues —
 all four closed there, in code SpatialCore now owns — plus `#234`, which is still open.

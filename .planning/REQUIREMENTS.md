@@ -221,9 +221,13 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     harness that OSD could not actually use.
 
   - Acceptance: a minimal harness adds SpatialCore as a submodule, links **both** targets,
-    includes only `<SpatialCore/SpatialCore.h>`, resolves HRTF data per DATA-01, and builds clean
+    includes `<SpatialCore/SpatialCore.h>` and `<SpatialCore/SpatialCoreUI.h>` (the two umbrella
+    headers; amended 2026-10-17, D-02), resolves HRTF data per DATA-01, and builds clean
     in Release on macOS. From a clean clone, `cmake -B build -DCMAKE_BUILD_TYPE=Release`,
     `cmake --build build --config Release`, and the test binary all succeed.
+  - Amended 2026-10-17 (D-02, D-01): the harness (`examples/harness/`) includes the two umbrella
+    headers instead of only `SpatialCore.h`, because a consumer that links `SpatialCoreUI` needs
+    the UI umbrella, and it builds from a real submodule of the GitHub remote at a pushed commit.
 
 - [ ] **INTG-02**: `engineComputesGains` does not silently no-op for a migrating consumer
   - **New.** SC-13 (issue #14, closed) moved panning-gain computation into `RenderEngine`, but
@@ -353,8 +357,11 @@ Open issues that close with evidence rather than a code change.
     while CLAUDE.md claims 8 — the mismatch must be settled in CI, not prose.
 
   - Acceptance: a green macOS CI run building against JUCE 9.0.0 and running the Catch2 suite.
-  - Scope note: this supersedes the 2026-08-09 "Windows/Linux CI is out of scope" line only for
-    macOS + JUCE 9. Cross-platform matrices remain out of scope.
+  - Scope note (amended 2026-10-17, D-08): macOS is the full gate (the whole suite, the consumer
+    harness, the realtime-safety check nightly). Linux runs the test suite (the allocation trap is
+    macOS-only, so its cases skip there). Windows builds only. Running the suite on Windows is
+    deferred. This replaces the 2026-08-09 wording, which limited the supersession of "Windows/Linux
+    CI is out of scope" to macOS + JUCE 9 and kept cross-platform matrices out of scope.
 
 ### Test Coverage
 
@@ -370,8 +377,10 @@ Open issues that close with evidence rather than a code change.
   - Regression tests required for: `OpenSpatialDelay#50`, `#89`, `#96`, `#131` (all closed there,
     all in code SpatialCore now owns) and `#234` (open — see BUG-02).
 
-  - `src/UI/*.cpp` is excluded by design: UI is in the `SpatialCoreUI` target, which
-    `SpatialCoreTests` does not link. Covering it needs a separate UI test target — post-v1.
+  - UI note (amended, D-16): `src/UI/*.cpp` is not in the `SpatialCoreTests` numbers, because the UI
+    is in the `SpatialCoreUI` target, which `SpatialCoreTests` does not link. UI code is measured
+    separately through `SpatialCoreUITests`, which exists since Phase 4 (it replaces the old
+    "needs a separate UI test target — post-v1" line). The UI figure is reported and is not a rule.
 
 ---
 
@@ -382,7 +391,7 @@ Open issues that close with evidence rather than a code change.
 | OQ-1 | Algorithm count 6 / 7 / 8 | **Closed — 8**, verified from tree |
 | OQ-2 | `outputLimiter` hard clamp vs tanh | **Closed 2026-08-10 — keep tanh.** Hard clamp deferred to v2 as LIMIT-01 |
 | OQ-3 | HRTF profile count 5 vs 6 | **Closed — 5**, verified from tree |
-| OQ-4 | Test coverage target | **Blocked** — no coverage tooling exists to measure against |
+| OQ-4 | Test coverage target | **Closed 2026-10-24 — engine line coverage 93%, UI report-only.** User's choice at the Plan 06-07 checkpoint (option hold); CI measured 94.19% engine (run 39074814315) and 25.89% UI. Enforced by the CI `coverage` job through `scripts/coverage-targets.json` |
 | OQ-6 | HRTF packaging | **Closed 2026-08-10 — build the shared-folder lookup chain, ship v1 embedded, flip via CMake flag when an installer exists.** See DATA-01 |
 
 ---
@@ -450,7 +459,7 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | CI-01 | SpatialCore#9 | 6 | Pending |
 | INTG-01 | Build gate + v1 metric | 6 | Pending |
 | INTG-02 | SpatialCore#14 residual | 6 | Pending |
-| TEST-01 | REQ-test-port-and-coverage | 6 | Reframed; OQ-4 blocked |
+| TEST-01 | REQ-test-port-and-coverage | 6 | Reframed; OQ-4 closed (engine 93%, UI report-only) |
 
 **Coverage:** 25 active v1 requirements, all mapped. 1 closed as non-finding (RTSF-04).
 14 open issues triaged: 4 into v1 requirements, 9 deferred to v2, 1 (#14) closed with residual
@@ -488,12 +497,12 @@ gate list, alongside:
 | Feature | Reason |
 |---------|--------|
 | OpenSpatialDelay repository work (7 × REQ-osd-*) | Lives in another repo. External dependency of v1 |
-| Windows / Linux CI matrices | v1 verifies macOS only. CI-01 covers macOS + JUCE 9 |
-| Custom / vendor-specific speaker layouts | Only the 14 built-in layouts |
+| Running the test suite on Windows | CI builds Windows (no test run) and runs the suite on macOS and Linux (D-08, amended 2026-10-17). A full Windows test run is deferred |
+| Custom / vendor-specific speaker layouts | Only the 15 built-in layouts (the row said 14 from `f0b14f4`, 2026-08-10, a hand count; `NUM_LAYOUT_DEFS == 15` is pinned by a `static_assert` in `SpeakerLayout.h`) |
 | Replacing the JUCE FFT dependency | Disproportionate to v1 |
 | `convertToMinPhase()` integration | Implemented but unused. Considered for HRTF compaction under OQ-6 and rejected — no size problem to solve |
 | Configurable convolver crossfade duration | Hardcoded `kCrossfadeBlocks = 4` works |
-| UI test target for `src/UI/*.cpp` | Needs a separate target linking `SpatialCoreUI`. Post-v1 |
+| UI test target for `src/UI/*.cpp` | **Done** — `SpatialCoreUITests` exists since Phase 4, and the UI is measured separately in coverage (D-16, amended). Kept here only as a record of the old line |
 
 ---
 *Requirements defined: 2026-08-09*
