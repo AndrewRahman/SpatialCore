@@ -63,6 +63,14 @@ target_sources(OpenSpatialYourEffect PRIVATE
 )
 ```
 
+Five notes on this block:
+
+- **SpatialCore's tests stay out of your build.** `SPATIALCORE_BUILD_TESTS` defaults to ON only when SpatialCore is the top-level project. Set `-DSPATIALCORE_BUILD_TESTS=ON` if you want them built inside yours.
+- **If your project fetches libmysofa v1.3.2 itself** (as OpenSpatialDelay does, and SpatialCore then skips its own v1.3.5 fetch because the `mysofa-static` target already exists), configure with `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` under CMake 4. SpatialCore sets that policy only after your own fetch has already run, so it cannot rescue it.
+- **Apply `-ffast-math` only to your own targets,** never globally before `add_subdirectory(SpatialCore)`. SpatialCore's non-finite guards are `std::isfinite` tests that fast-math folds away, so `FloatSemanticsGuard.h` stops the build with an error on purpose.
+- **On Apple, SpatialCore's own `CMakeLists.txt` sets `CMAKE_OSX_ARCHITECTURES` to `arm64` and `CMAKE_OSX_DEPLOYMENT_TARGET` to `12.0` in its own scope** and writes `CMAKE_POLICY_VERSION_MINIMUM` (3.5) into the cache. A consumer that builds a universal binary must expect an arm64-only SpatialCore today (OpenSpatialDelay builds arm64 itself, so it is not affected).
+- **On Windows, supply zlib yourself.** Windows has no system zlib. SpatialCore links `ZLIB::ZLIB` and libmysofa v1.3.5's MSVC branch only runs a `nuget install zlib` that finds no package today. CI's working recipe is the vcpkg package `zlib:x64-windows-static-md`, `ZLIB_INCLUDE_DIR` and `ZLIB_LIBRARY` pointing at the static library (named `zs.lib`, which CMake's FindZLIB does not search), and the include folder on the C compiler's command line (see the `windows-build` job in `.github/workflows/ci.yml`).
+
 ## Step 4: PluginProcessor — Using SpatialCore
 
 Your processor integrates SpatialCore by:
@@ -174,6 +182,8 @@ Then, outside the audio thread, call `engine.setHRTFProfile (n)` to change the H
 
 **If you choose (B),** a block on which every active object's gains on the rendered path are exactly zero is counted by `engine.getUnsuppliedGainsBlockCount()`, and the first one asserts in a Debug build. In Release it is only counted and plays what you supplied, which is silence: the engine never fills gains in for you. The direct-binaural HRTF path, the Ambisonics formats and a block with no active object are never counted. Assert in your plugin's own tests that the count is 0 after you render your real configurations; that is how the mistake behind SpatialCore#14 (gains neither computed nor supplied, so silence) gets caught.
 
+The worked example of this whole set is `examples/harness/src/HarnessPlugin.cpp`, with a short comment on why each call is there. `examples/harness/` builds in CI on every push, from a real submodule of the GitHub remote.
+
 ### Wiring OSC, trajectories and the map into RenderEngine
 
 `examples/demo/DemoComponent.cpp` is the worked example: ADM-OSC in and out, trajectories and the spatial map all driving `RenderEngine`. Build it with `-DSPATIALCORE_BUILD_EXAMPLES=ON` (see the README), and run `SpatialCoreDemo --selftest` to see all three routes reach the renderer. The rules it follows:
@@ -189,8 +199,7 @@ Security: `ADMOSCReceiver::connect (port)` listens on every network interface an
 ## Step 5: PluginEditor — Using SpatialCore UI
 
 ```cpp
-#include <SpatialCore/UI/SpatialMapComponent.h>
-#include <SpatialCore/UI/SMLLookAndFeel.h>
+#include <SpatialCore/SpatialCoreUI.h>   // every UI header in one include (D-02)
 
 class YourEditor : public juce::AudioProcessorEditor {
 public:
@@ -208,6 +217,8 @@ public:
     }
 };
 ```
+
+The individual headers (`<SpatialCore/UI/SpatialMapComponent.h>`, `<SpatialCore/UI/SMLLookAndFeel.h>` and the others) still work if you prefer to include only what you use.
 
 **Share one `SMLLookAndFeel` across editors.** An `SMLLookAndFeel` loads its seven typefaces when it is constructed, so a look-and-feel created per editor repeats that work for every open editor window (the per-instance duplication behind `Spatial-Media-Lab/OpenSpatialDelay#131`). Create one, for example as a member of the processor or in a shared pointer, and have each editor call `setLookAndFeel` with it; clear it in the editor's destructor with `setLookAndFeel (nullptr)` before the editor goes away. The spatial map already shares its own JetBrains Mono face set between all maps, so it needs nothing from you (proved by `[ui][multi]`).
 
@@ -445,8 +456,9 @@ audio path skip calls.
 message-thread only. `getHRTFProfileStatus` is safe from any thread. The audio thread only does atomic
 operations (loads, stores, exchanges) for the profile handoff: no lock, no allocation, no file access.
 The whole render path, `renderBlock` and everything it reaches, neither allocates nor takes a lock
-(proved on macOS, Apple Silicon, by the `[rt]` trap tests and a ThreadSanitizer run; Windows and Linux
-are checked in Phase 6). A host block longer than the size you passed to `prepare()` is rendered in
+(proved on macOS, Apple Silicon, by the `[rt]` trap tests and a ThreadSanitizer run; on Linux the suite
+runs in CI without the allocation trap, Windows is built and not run, and on both JUCE's fallback FFT
+takes a `SpinLock`, see `Binaural/SharedFFTCache.h`; no claim covers a real DAW). A host block longer than the size you passed to `prepare()` is rendered in
 full, in pieces of at most the prepared size, with no Debug assertion; `engine.getOversizedBlockCount()`
 counts such blocks, so you can show the mismatch in your own diagnostics. If a renderer's scratch buffers
 are ever too small for a call (a `prepare()` contract violation), the call is skipped (`renderSourceBuffers` outputs silence for that call and advances no state, `updateSourceHRIR` keeps the
@@ -530,7 +542,7 @@ add_executable(YourPluginTests tests/YourTests.cpp)
 target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
 ```
 
-SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README; CI runs zero tests until Phase 6.
+SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README, and CI runs it on every push and pull request: `macos-gate` (the same gate, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`; `realtime-nightly` runs the realtime-safety check nightly and on demand. Run the local gate before you push. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
 
 ## Preset System
 
