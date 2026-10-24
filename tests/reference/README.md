@@ -6,6 +6,7 @@ print. Each generator uses an oracle that is **independent of the code under tes
 | Generator | Oracle | Header it prints |
 |---|---|---|
 | `gen_sh_reference.py` | scipy `lpmv` (Condon-Shortley phase removed), cross-checked against scipy `sph_harm_y` | `ShReference.h` |
+| `gen_sh_reference.py --back-half-header` | the same two scipy routes, seven back-half directions (SpatialCore#32) | `ShBackHalfReference.h` |
 | `gen_ear_reference.py` | EBU ADM Renderer, PyPI `ear` 2.1.0 (ITU-R BS.2127 reference implementation) | `EarReference.h` |
 | `gen_panning_reference.py` | Published formulas: VBAP (Pulkki 1997), VBIP (Pernaux-Boussard-Jot DAFx-98), DBAP (Lossius et al. ICMC 2009) | `PanningReference.h` |
 | `layouts_from_cpp.py` | — (helper) parses the `layoutDefs` table in `src/IO/SpeakerLayout.cpp`, so the oracles use the real speaker positions | — |
@@ -59,6 +60,7 @@ Run these from the repo root:
 
 ```bash
 .context/venv/bin/python tests/reference/gen_sh_reference.py      > tests/reference/ShReference.h
+.context/venv/bin/python tests/reference/gen_sh_reference.py --back-half-header > tests/reference/ShBackHalfReference.h
 .context/venv/bin/python tests/reference/gen_ear_reference.py     > tests/reference/EarReference.h
 .context/venv/bin/python tests/reference/gen_panning_reference.py > tests/reference/PanningReference.h
 ```
@@ -96,10 +98,11 @@ Before you commit, compile-check the headers: `c++ -std=c++17 -fsyntax-only -x c
 | Header | Test tags |
 |---|---|
 | `ShReference.h` | `[sn3d][golden]` |
+| `ShBackHalfReference.h` | `[sn3d][golden]` (codec), `[plain-ambix]` (engine stream) |
 | `EarReference.h` | `[ear][golden]`, `[ear][golden][band]` |
 | `PanningReference.h` | `[vbip]`, `[panning-law][textbook]` |
 
-Include from a test file one level down: `#include "../reference/ShReference.h"`. All data lives in
+Include from a test file one level down (tests/Engine, tests/IO): `#include "../reference/ShReference.h"`. All data lives in
 `namespace spatialcore_ref`.
 
 ## Caveats
