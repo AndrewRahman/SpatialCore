@@ -1,20 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0.0
-current_phase: 06
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 06 complete — all phases complete
-last_updated: "2026-10-24T17:04:50.725Z"
+last_updated: "2026-10-24T17:19:50.684Z"
 last_activity: 2026-10-24
-last_activity_desc: Phase 06 complete
-state_head: dcc042b918097b052c7abbb6f63a2a178fcef96a
+last_activity_desc: Milestone v1.0.0 completed and archived
+state_head: 6c5ae56eec2c9a7ab55719412415c888b95035ce
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 52
   completed_plans: 52
-  percent: 100
 milestone_name: milestone
+current_phase: 06
 ---
 
 # Project State
@@ -29,27 +28,10 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 ## Current Position
 
-Phase: 06
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-10-24 — Phase 06 complete
-
-**Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
-profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
-pair of 25 formats / 14 layouts was wrong: it originated as a mapper miscount in
-`.planning/codebase/ARCHITECTURE.md:107` and `STRUCTURE.md:119-120` during the 2026-08-10 remap,
-which commit `f0b14f4` copied into REQUIREMENTS.md and ROADMAP.md under a "verified from the tree"
-label it never earned. The same remap commit's `TESTING.md:56` already said "23-format table". The
-tree has read 23/15 since `149d50d` (2026-07-05), and the code ships
-`static constexpr int NUM_OUTPUT_FORMATS = 23;` at `include/SpatialCore/IO/OutputFormatRegistry.h:9`.
-Corrected across CONTEXT/REQUIREMENTS/ROADMAP/codebase-map in `cf265e1`. Treat any `25` or `14` in a
-count context as a defect.
-
-**Branch note:** planning now tracks `gsd-remap` = `origin/spatialcore-v2-extraction` + `origin/main`.
-The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
-described a tree that no longer matched reality. Do not plan against `origin/main` alone.
-
-Progress: [██████████] 100%
+Phase: Milestone v1.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-24 — Milestone v1.0.0 completed and archived
 
 ## Performance Metrics
 
@@ -267,9 +249,28 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 
+Acknowledged at the v1.0.0 milestone close (2026-10-24) through `audit-open acknowledge`; triage per `.planning/milestones/v1.0.0-MILESTONE-AUDIT.md` "Open-artifact triage":
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| deferred_items | 01/deferred-items.md: HUTUBS PP2 golden checksum failure | acknowledged; resolved (04ecf6b) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-04 SharedFFTCache leaked-at-exit false positive | acknowledged; accepted (D-08) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-07 skill section 4 16-speaker virtual array | acknowledged; resolved (fixed 2026-10-24) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-07 skill section 1.3 Delaunay wording | acknowledged; resolved (fixed 2026-10-24) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-07 ADMOSCReceiver.h unused-parameter warnings | acknowledged; resolved | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-10 tight test-local tolerances | acknowledged; accepted (informational) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-10 CI has no arm64 / FMA leg | acknowledged; resolved (macos-gate on macos-26) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-10 HUTUBS PP2 golden fails in Debug only | acknowledged; resolved (04ecf6b) | 2026-10-24 | v1.0.0 |
+| deferred_items | 02/deferred-items.md: 02-10 CI test step runs zero tests | acknowledged; resolved (top-level enable_testing plus --no-tests=error) | 2026-10-24 | v1.0.0 |
+| deferred_items | 06/deferred-items.md: one-off [hrtf-switch][churn] failure | acknowledged; accepted (34 passes since; re-check at first RC) | 2026-10-24 | v1.0.0 |
+
 ## Session Continuity
 
 Last session: 2026-10-24T16:35:22.550Z
 Stopped at: Phase 06 complete — all phases complete
 Resume file: .planning/phases/06-consumer-readiness-ci/.continue-here.md
 Next command: `/gsd-verify-work 6` (then ask the user before pushing main)
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

@@ -30,7 +30,7 @@ decomposed when their milestone opens.
 
 | Milestone | Success metric | Status |
 |-----------|----------------|--------|
-| **v1** | OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions | 🚧 Active — see ROADMAP.md |
+| **v1** | OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions | 🚧 SpatialCore side shipped as milestone v1.0.0 (2026-10-24, archived in `.planning/milestones/`); OSD migration is consumer-repo work and still open |
 | **v2** | A second plugin is built on SpatialCore from scratch, proving the API generalizes | 📋 Future |
 | **v3** | Public release under the Spatial-Media-Lab org with docs and a tagged v1.0 | 📋 Future |
 
@@ -38,49 +38,49 @@ decomposed when their milestone opens.
 
 ### Validated
 
-Full acceptance text in `.planning/REQUIREMENTS.md`; IDs follow that file.
+Shipped in milestone v1.0.0 (all 25, closed 2026-10-24). Full acceptance text in
+`.planning/milestones/v1.0.0-REQUIREMENTS.md`.
 
-- ✓ **API-01** — algorithm count is 8, derived from `AllAlgorithmTypes` and frozen by `static_assert` — Phase 1
-- ✓ **API-02** — `outputLimiter()` is the shipped tanh soft ceiling — Phase 1
-- ✓ **API-03** — HRTF profile count is 5 — Phase 1
-- ✓ **API-04 / API-05 / BUG-03** — 23 formats / 15 layouts match the tree; CLAUDE.md accurate; cross-repo issue references qualified — Phase 1
-- ✓ **EXTR-01** — all 8 algorithms verified against independent oracles (textbook VBAP/VBIP/DBAP, ear 2.1.0); below-horizon VBAP follows ITU-R BS.2127 (EAR); VBIP is textbook DAFx-98; non-finite input never crashes playback — Phase 2
-- ✓ **EXTR-03** — 23 formats resolve, 15 layouts populated, Ambisonics round-trips to order 6 with corrected SN3D at orders 4-6 and one decoder — Phase 2
-- ✓ **VERIFY-01** — Ambisonics convention is AmbiX (ACN, SN3D, no Condon-Shortley phase), stated in code and docs — Phase 2
-- ✓ **EXTR-04** — ADM-OSC (all five address forms over real UDP), the self-clocked 30 Hz sender with query replies, and all 13 trajectory shapes forward and reverse each move a `RenderEngine` object — Phase 4
-- ✓ **EXTR-05** — `SpatialMapComponent` drag, rings and elevation brightness proven in `SpatialCoreUITests` and through `RenderEngine`; demo screenshots approved at review — Phase 4
-- ✓ **DATA-02** — the map loads its own embedded fonts and every embedded font equals its source file; the SAVE PRESET title keeps its original bold font by user ruling (D-22 rejected) — Phase 4
+- ✓ **API-01** — algorithm count is 8, derived from `AllAlgorithmTypes` and frozen by `static_assert` — v1.0.0 (Phase 1)
+- ✓ **API-02** — `outputLimiter()` is the shipped tanh soft ceiling — v1.0.0 (Phase 1)
+- ✓ **API-03** — HRTF profile count is 5 — v1.0.0 (Phase 1)
+- ✓ **API-04 / API-05 / BUG-03** — 23 formats / 15 layouts match the tree; CLAUDE.md accurate; cross-repo issue references qualified — v1.0.0 (Phase 1)
+- ✓ **EXTR-01** — all 8 algorithms verified against independent oracles (textbook VBAP/VBIP/DBAP, ear 2.1.0); below-horizon VBAP follows ITU-R BS.2127 (EAR); VBIP is textbook DAFx-98; non-finite input never crashes playback — v1.0.0 (Phase 2)
+- ✓ **EXTR-03** — 23 formats resolve, 15 layouts populated, Ambisonics round-trips to order 6 with corrected SN3D at orders 4-6 and one decoder — v1.0.0 (Phase 2)
+- ✓ **VERIFY-01** — Ambisonics convention is AmbiX (ACN, SN3D, no Condon-Shortley phase), stated in code and docs — v1.0.0 (Phase 2)
+- ✓ **EXTR-02** — binaural rendering (HRTFDatabase, PartitionedConvolver, BinauralRenderer) measured-correct; sample-based crossfades — v1.0.0 (Phase 3)
+- ✓ **DATA-01** — five SOFA profiles embedded as BinaryData (Git LFS), resolved by shared folder, then embedded copy, then a reported error; one-call `setHRTFProfile` — v1.0.0 (Phase 3)
+- ✓ **BUG-01** — Simple binaural path separates front, rear, up and down through a cue bank; ear-level front half unchanged — v1.0.0 (Phase 3)
+- ✓ **BUG-02** — no artifacts at host blocks below 256 samples (sample-counted warm-up and crossfade) — v1.0.0 (Phase 3)
+- ✓ **EXTR-04** — ADM-OSC (all five address forms over real UDP), the self-clocked 30 Hz sender with query replies, and all 13 trajectory shapes forward and reverse each move a `RenderEngine` object — v1.0.0 (Phase 4)
+- ✓ **EXTR-05** — `SpatialMapComponent` drag, rings and elevation brightness proven in `SpatialCoreUITests` and through `RenderEngine`; demo screenshots approved at review — v1.0.0 (Phase 4)
+- ✓ **DATA-02** — the map loads its own embedded fonts and every embedded font equals its source file; the SAVE PRESET title keeps its original bold font by user ruling (D-22 rejected) — v1.0.0 (Phase 4)
+- ✓ **RTSF-01** — no allocation on the audio thread in Release, proven by the `[rt]` trap — v1.0.0 (Phase 5)
+- ✓ **RTSF-02** — `TrajectoryEngine` final positions are lock-free atomics — v1.0.0 (Phase 5)
+- ✓ **RTSF-03** — `HRTFDatabase` handle access thread-safe on the `setHRTFProfile` route (legacy route is detection-only) — v1.0.0 (Phase 5)
+- ✓ **RTSF-05** — audio path verified lock-free and realtime-safe (macOS Apple Silicon, in-process) — v1.0.0 (Phase 5)
+- ✓ **VERIFY-02** — `SharedFFTCache` safe across concurrent instances, TSan-clean (macOS Apple Silicon) — v1.0.0 (Phase 5)
+- ✓ **INTG-01** — a consumer can submodule, link and build against SpatialCore; throwaway consumer harness — v1.0.0 (Phase 6)
+- ✓ **INTG-02** — `getUnsuppliedGainsBlockCount()` stops `engineComputesGains` from silently no-opping — v1.0.0 (Phase 6)
+- ✓ **CI-01** — CI-verified against JUCE 9.0.0 (macos-gate, Linux tests, Windows build); runs on a `v*` tag or by hand (D-20) — v1.0.0 (Phase 6)
+- ✓ **TEST-01** — coverage tooling and a 93% engine rule in `scripts/coverage-targets.json` (94.19% measured on CI; not yet re-measured on the merged tree) — v1.0.0 (Phase 6)
+
+RTSF-04 was struck 2026-08-10 as a non-finding (`ADMOSCReceiver` already bounds-checks) and is not counted.
+Milestone v1.0.0 is a milestone label; the library stays 0.5.0 until OpenSpatialDelay 2.0.0 ships on it.
 
 ### Active
 
-Milestone v1 scope. Full detail and acceptance in `.planning/REQUIREMENTS.md`.
-
-**Public contract resolution**
-- [ ] **AUDIT-01** — Every module carries a complete/partial/stub verdict backed by an executed probe
-
-**Extraction completion**
-- [ ] **EXTR-02** — Binaural rendering (HRTFDatabase, PartitionedConvolver, BinauralRenderer) complete and verified
-
-**Embedded data**
-- [ ] **DATA-01** — HRTF SOFA profiles embedded as BinaryData, Git LFS tracked
-
-**Realtime safety**
-- [ ] **RTSF-01** — `BinauralRenderer::renderSourceBuffers()` never allocates on the audio thread in release builds
-- [ ] **RTSF-02** — TrajectoryEngine final positions synchronised across timer and audio threads
-- [ ] **RTSF-03** — `HRTFDatabase` access to `easyHandle` made thread-safe
-- [ ] **RTSF-04** — `ADMOSCReceiver` bounds-checks object index against `MAX_SOURCES`
-- [ ] **RTSF-05** — Whole audio path verified lock-free and realtime-safe
-
-**Verification and consumability**
-- [ ] **TEST-01** — OpenSpatialDelay tests ported and coverage raised to an agreed target
-- [ ] **INTG-01** — A consumer plugin can submodule, link, and build against SpatialCore using only the umbrella header
+Next milestone not yet defined. Candidates: bump the SpatialCore pins in OpenSpatialDelay and
+OpenSpatialPanner, or pick up backlog 999.1-999.4 and the v2 items in the closed-out requirements
+archive. At the first release candidate: push a `v*` tag so CI runs, re-measure coverage on the
+merged tree, run the realtime-safety check.
 
 ### Out of Scope
 
 - **Release and org migration (REQ-create-org-repo, REQ-set-dual-license, REQ-tag-v1-0-0)** — belongs to milestone v3, not v1. v1 succeeds when OpenSpatialDelay ships on SpatialCore from the current private remote.
 - **OpenSpatialDelay repository work** — seven requirements live in that repo. Tracked below as external dependencies, deliberately given no SpatialCore phase.
 - **Future plugin suite (OpenSpatialReverb, OpenSpatialGranular, OpenSpatialPanner, OpenSpatialChorus)** — 2027 targets. One of them becomes the v2 milestone.
-- **Windows and Linux CI verification** — cross-platform support is an intent and the build flags exist, but v1 verification is macOS-only. Adding CI matrices before a second consumer exists is premature.
+- **Full Windows and Linux verification** — CI now runs the suite on Linux (allocation-trap cases skip) and builds Windows (tests not run, D-08); the realtime-safety proof is macOS Apple Silicon only.
 - **Custom / vendor-specific speaker layouts** — only the 15 built-in layouts. Generalizing the layout API is a post-v1 API addition.
 - **Replacing the JUCE FFT dependency** — noted as a medium risk in CONCERNS.md; swapping FFT libraries is disproportionate to v1.
 
@@ -152,7 +152,7 @@ can be measured — the earlier "~5%" was never a real measurement. Modules with
 
 ## Constraints
 
-- **Tech stack**: JUCE 9.0.0, C++17, CMake 3.22+, libmysofa v1.3.2 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
+- **Tech stack**: JUCE 9.0.0, C++17, CMake 3.22+, libmysofa v1.3.5 (FetchContent), zlib (system), Catch2 v3.7.1 (FetchContent) — fixed by the SPEC's root CMake contract.
 - **Distribution**: Static library consumed via git submodule + `add_subdirectory(SpatialCore)` + `target_link_libraries(... PRIVATE SpatialCore)`. Consumers include only `<SpatialCore/SpatialCore.h>`.
 - **Platform**: macOS is primary — arm64, deployment target 12.0. Windows (MSVC) and Linux are intended but not verified in v1.
 - **Float semantics**: SpatialCore sources must not be compiled with `-ffast-math`, `-ffinite-math-only` or `/fp:fast` — the non-finite guards are `std::isfinite` tests that fast-math folds away. `src/Core/FloatSemanticsGuard.h` makes it a build error (Phase 2, WR-04).
@@ -210,7 +210,7 @@ normal planning decision.
 | ID | Decision | Outcome |
 |----|----------|---------|
 | DR-8 | Static library, 7 modules (Algorithms, Binaural, IO, OSC, Trajectory, DSP, UI) plus shared `Core/`, fixed `include/` / `src/` / `tests/` layout | ✓ Good — tree matches, with additive extras (`Core/SpatialMath`, `Algorithms/ConstantPower`, `Algorithms/AllAlgorithms.h`, `Binaural/SharedFFTCache.h`) |
-| DR-9 | Consumers integrate via git submodule + CMake `add_subdirectory()` | — Pending — unverified by a real consumer until INTG-01 |
+| DR-9 | Consumers integrate via git submodule + CMake `add_subdirectory()` | ✓ Good — proven by the consumer harness (INTG-01, Phase 6) |
 | DR-10 | JUCE 9.0.0 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good — corrected 2026-08-10; DR-10 originally said JUCE 8, tree is pinned 9.0.0 at `CMakeLists.txt:33` |
 | DR-11 | All library code lives in `namespace spatialcore` (DSP utilities in `spatialcore::DSP`) | ✓ Good |
 | DR-12 | Dual license GPL-3.0 + commercial | — Pending — LICENSE file lands in v3 |
@@ -229,8 +229,14 @@ normal planning decision.
 | P4-D19 | Bounce and Line reverse keep their OSD#100 behaviour as intentional exceptions to "reverse retraces forward" (D-13) | ✓ Good — Phase 4; pinned by tests |
 | P4-D22 | SAVE PRESET title stays in its original system bold font; the DM Sans Bold change was rejected at review as too small | ✓ Decided 2026-10-05 — documented exemption in `[ui][fonts][spy]` |
 | DR-18 | **Remote topology.** `AndrewRahman/SpatialCore` is the deliberate development remote, not an accident awaiting cleanup. Development stays on the personal remote until the pipeline is proven, for risk containment: `Spatial-Media-Lab/OpenSpatialDelay` is public and in use by real people right now, so migrating it onto an unproven SpatialCore could break a live plugin. Migration is **gated on proof, not on a date** — SpatialCore, OpenSpatialDelay-on-SpatialCore, and OpenSpatialPanner land on the organisation together once the process is proven. `docs/integration-guide.md` carries the working remote as the live instruction and labels the organisation URL as the post-proof destination. | ✓ Decided 2026-08-10 — resolves OQ-5 |
+| D-18 | The coverage build and the realtime-safety check (`build-tsan`, `[rt]` trap) run only when preparing a public release; the 20 s `[rt]` trap stays in the everyday Release gate | ✓ Good — decided 2026-10-24 (user) |
+| D-19 | The full Debug run of both executables runs only when preparing a public release; the everyday gate is Release build plus Release `ctest` | ✓ Good — decided 2026-10-24 (user) |
+| D-20 | GitHub builds run only on a `v*` release tag or by hand; a branch push or pull request starts none, so `ci.yml` has had no run since 310fb93 | ✓ Decided 2026-10-24 — first real run waits for the first release candidate |
+| D-VER | Milestone label v1.0.0 is not the library version: SpatialCore stays `0.x` (0.5.0) and becomes `1.0.0` when OpenSpatialDelay 2.0.0 ships on it; no git tag at milestone close | ✓ Decided 2026-10-24 |
+| D-BP | `main` has no branch protection; the local gate is the only check before a push, and a push to `main` waits for the user's go-ahead | ✓ Decided 2026-10-24 |
+| P6-DR9 | DR-9 (git submodule + `add_subdirectory`) proven by `examples/harness/`, a throwaway consumer built from a real submodule at a pushed commit | ✓ Good — Phase 6 (run on a release-tag or manual CI run) |
 
 </decisions>
 
 ---
-*Last updated: 2026-10-05 after Phase 4 (Control Surface & UI)*
+*Last updated: 2026-10-24 after v1.0.0 milestone*

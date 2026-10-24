@@ -21,5 +21,5 @@ current task's changes).
 - **Reproduction:** `./build/tests/SpatialCoreTests "HUTUBS PP2*"` fails
   identically in isolation, confirming it is unrelated to the `[counts]`
   additions.
-- **Status:** deferred — out of scope for phase 01 (documentation truth
+- **Status:** acknowledged
   contract freeze). Needs its own investigation/fix in a future phase.
