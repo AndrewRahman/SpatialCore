@@ -1,35 +1,36 @@
 name: SpatialCore CI
 
 # What runs when:
-#   Every push to any branch and every pull request to main: macos-gate, the same gate as the
+#   On a release tag push or a manual run only (D-20; no build on a branch push or pull request): macos-gate, the same gate as the
 #   local one (README "Local test gate"): Debug build with both test executables run, Release
 #   build with ctest from the build root, the ui: listing check, then the consumer harness
 #   (a real git submodule of this repository at the commit under test) and its sound check.
-#   Every push and pull request also runs linux-tests (Release build of every target, then the
+#   The same run also runs linux-tests (Release build of every target, then the
 #   whole suite through ctest from the build root) and windows-build (MSVC Release build of every
 #   target, no test run: Windows is build-only by decision D-08, running the suite there is deferred).
-#   Every push and pull request also runs coverage (scripts/coverage.sh: an instrumented Debug build,
+#   It also runs coverage (scripts/coverage.sh: an instrumented Debug build,
 #   both test executables, a per-area table on the run's summary page and the full report as the
 #   coverage-report artifact). It fails when the engine figure is below scripts/coverage-targets.json.
-#   On a manual run only (workflow_dispatch with the realtime input on): realtime-nightly (README
+#   On a release tag push, or a manual run with the realtime input ticked: realtime-nightly (README
 #   "Realtime-safety check", steps 1-5). It has no schedule and never runs on its own; run it
 #   before a release tag (user decision 2026-10-24).
 #
-# Security posture: the token is read-only, the only trigger that runs outside code is
-# pull_request, no secret is used, every action is first-party and pinned to a commit SHA, and
+# Security posture: the token is read-only, there is no trigger that runs outside code, no secret is used, every action is first-party and pinned to a commit SHA, and
 # values from workflow expressions reach scripts only through env entries.
 
+# Release builds only (user decision D-20, 2026-10-24): a push to a branch or a pull request never
+# starts a GitHub build. The whole workflow, the realtime-safety check included, runs on its own
+# only when a release tag is pushed: a release candidate (v1.0.0-rc1) or the final release (v1.0.0).
+# It can also be started by hand (Actions, "SpatialCore CI", Run workflow).
 on:
   push:
-    branches: ['**']
-  pull_request:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       realtime:
         description: Also run the realtime-safety check (ThreadSanitizer and the allocation trap)
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -498,7 +499,7 @@ jobs:
   realtime-nightly:
     name: realtime-nightly
     runs-on: macos-26
-    if: github.event_name == 'workflow_dispatch' && inputs.realtime
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.realtime)
     timeout-minutes: 360
 
     steps:
