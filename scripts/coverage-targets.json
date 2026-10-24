@@ -1,0 +1,4 @@
+{
+  "_decision": "2026-10-24, OQ-4, user decision at Plan 06-07: option hold with the engine line-coverage target set to 93% by the user (CI measured 94.19%, local runs 93.97% and 94.00%); the UI figure (25.89% on CI) is shown and is not a rule, so there is no ui_line_percent.",
+  "engine_line_percent": 93
+}
