@@ -6,3 +6,4 @@ JUCE
 .context/
 build-release/
 build-tsan/
+build-cov/

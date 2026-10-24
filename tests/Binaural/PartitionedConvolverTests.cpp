@@ -127,6 +127,96 @@ TEST_CASE ("PartitionedConvolver: an IR set during a transition is deferred, the
 }
 
 // ============================================================================
+// Regression test for Spatial-Media-Lab/OpenSpatialDelay#50: the HRTF transition that clicked
+// when a new IR replaced the playing one. OpenSpatialDelay v1.0.5 fixed it by loading the new IR
+// into the second convolver slot, warming that slot up and crossfading from the old slot to it.
+//
+// The input is a steady 440 Hz sine. IR A passes it unchanged (tap 0); IR B delays it by 27
+// samples, a quarter period at 440 Hz and 48 kHz, so the two outputs differ by up to about 0.57
+// while an equal-power fade between them neither dips nor bumps. A hard swap of the IR into the
+// playing slot jumps straight from one to the other, which is the click. What each check proves:
+//   - through <= 1.5 x steady: no sample step in the change window is larger than the sine's own
+//     steady-state step, so there is no click.
+//   - the minimum 256-sample RMS stays above 0.8 x the steady RMS: the fade does not dip.
+//   - after the fade the output is a direct convolution with IR B (2e-6), and it is not IR A's
+//     output: the change really happened.
+// Both call sizes are checked because the fade length depends on the call size (BUG-02). A hard
+// swap into the playing slot turns the step check red (D-17; the measured ratio of that red run is
+// recorded in the 06-03 SUMMARY).
+// ============================================================================
+
+TEST_CASE ("PartitionedConvolver: an IR change mid-stream is click-free (Spatial-Media-Lab/OpenSpatialDelay#50 dual slots)",
+           "[convolver][osd50]")
+{
+    constexpr double kSampleRate = 48000.0;
+    constexpr size_t kNumSamples = 24576;
+    constexpr size_t kChangeAt = 8192;            // a multiple of 64 and of 512
+    constexpr int kIRLength = 64;
+    constexpr int kQuarterPeriod = 27;            // samples: 48000 / 440 / 4 = 27.3
+    constexpr size_t kFadeFloor = 2048;           // settle margin in samples: a safe upper bound on the crossfade (kHRIRCrossfadeMs is 1024 samples at 48 kHz)
+
+    const std::vector<float> input = sineWave (kNumSamples, 440.0, kSampleRate, 0.5f);
+
+    std::vector<float> irA (static_cast<size_t> (kIRLength), 0.0f);
+    std::vector<float> irB (static_cast<size_t> (kIRLength), 0.0f);
+    irA[0] = 0.8f;
+    irB[static_cast<size_t> (kQuarterPeriod)] = 0.8f;
+
+    const std::vector<double> convA = directConvolve (input, irA);
+    const std::vector<double> convB = directConvolve (input, irB);
+
+    auto run = [&] (size_t callSize)
+    {
+        PartitionedConvolver conv;
+        conv.prepare (static_cast<int> (callSize), kIRLength);
+        conv.setIR (irA.data(), kIRLength);
+
+        std::vector<float> out (kNumSamples, 0.0f);
+        convolveInChunks (conv, input, { static_cast<int> (callSize) }, 0, kChangeAt, &out);
+        conv.setIR (irB.data(), kIRLength);
+        convolveInChunks (conv, input, { static_cast<int> (callSize) }, kChangeAt, kNumSamples, &out);
+
+        const double steady = maxAbsStep (out, 2048, kChangeAt);
+        const double through = maxAbsStep (out, kChangeAt - callSize, kChangeAt + 8192);
+        const double steadyRms = windowRms (out, 2048, kChangeAt);
+        const double lowestRms = minWindowRms (out, kChangeAt, kChangeAt + 8192, 256);
+
+        // The new IR alone from the end of warm-up (one call) plus the fade, with two calls of margin.
+        const size_t settled = kChangeAt + static_cast<size_t> (kIRLength) + kFadeFloor + 2 * callSize;
+        double worstVsB = 0.0;
+        double worstVsA = 0.0;
+        int nonFinite = 0;
+        for (size_t i = 0; i < kNumSamples; ++i)
+        {
+            if (! std::isfinite (out[i]))
+                ++nonFinite;
+            if (i >= settled)
+            {
+                spatialcore_test::accumulateWorstFinite (worstVsB, std::abs (static_cast<double> (out[i]) - convB[i]));
+                worstVsA = std::max (worstVsA, std::abs (static_cast<double> (out[i]) - convA[i]));
+            }
+        }
+
+        CAPTURE (callSize, steady, through, through / steady, steadyRms, lowestRms, lowestRms / steadyRms,
+                 worstVsB, worstVsA);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#50 " << callSize << "-sample calls: steady step " << steady << ", step through the change "
+              << through << " (x" << through / steady << " of steady), min 256-sample RMS " << lowestRms
+              << " (x" << lowestRms / steadyRms << " of steady), worst |diff| vs IR B " << worstVsB
+              << ", max |diff| vs IR A " << worstVsA);
+
+        REQUIRE (steady > 0.0);
+        CHECK (nonFinite == 0);
+        CHECK (through <= 1.5 * steady);
+        CHECK (lowestRms >= 0.8 * steadyRms);
+        CHECK (worstVsB <= 2.0e-6);
+        CHECK (worstVsA > 1.0e-3);   // the output really changed from IR A to IR B
+    };
+
+    SECTION ("64-sample calls")  { run (64); }
+    SECTION ("512-sample calls") { run (512); }
+}
+
+// ============================================================================
 // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234), engine level: a moving source must be as
 // smooth at 32, 64 and 128-sample blocks as at 512. The convolver's overlap-add is correct at
 // every block size ([convolver][blocksize]); what made small blocks step harder was its IR
@@ -261,7 +351,9 @@ namespace
 TEST_CASE ("PartitionedConvolver: transition timing is counted in samples at every call size, with the correlation-compensated law",
            "[convolver][transition]")
 {
-    constexpr size_t kNumSamples = 16384;
+    // static: makeInput below has no capture list, and MSVC (19.51) rejects a local constexpr used in it
+    // (C3493) that GCC and Clang accept; a static local needs no capture and has the same value.
+    static constexpr size_t kNumSamples = 16384;
     constexpr size_t kSwitchAt = 4096;            // a multiple of 32 and of 512
     const int kFade = hrirTransitionMsToSamples (48000.0, kHRIRCrossfadeMs);
     const int kWarmupFloor = hrirTransitionMsToSamples (48000.0, kHRIRWarmupMinMs);

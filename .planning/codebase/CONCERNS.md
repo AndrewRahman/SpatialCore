@@ -66,6 +66,7 @@ Verified by `gh issue view <N> -R Spatial-Media-Lab/OpenSpatialDelay`:
 - GitHub issue: **#16** — "Metres is a display-only label, not a real end-to-end distance unit."
 
 **Doppler `kMaxObjects` hardcoded separately from `MAX_SOURCES` (issue #17):**
+**Resolved by SC-1:** `kMaxObjects` is now `MAX_SOURCES` (32); the text below is the 2026-08-10 snapshot.
 - Files: `include/SpatialCore/Trajectory/DopplerVelocity.h:17` (`static constexpr int kMaxObjects = 12;`) vs `include/SpatialCore/Core/Types.h:8` (`static constexpr int MAX_SOURCES = 12;`)
 - Symptoms: the two constants currently agree (both 12) but are declared completely independently, with `kMaxObjects` sizing seven parallel per-object arrays in `DopplerVelocity.h:51-61`. Raising `MAX_SOURCES` (as proposed by open issue #3, "Raise MAX_SOURCES from 12 to 32") without also updating `kMaxObjects` will silently desync array bounds between the Doppler subsystem and the rest of the engine, risking out-of-bounds reads/writes on the audio thread.
 - GitHub issue: **#17** — "No consumer-usable doppler pitch-shift path — semitone computation has no resampling delay line." (Issue #17's title is about the missing resampling delay line, but its body/scope covers this hardcoded-constant risk; it is also directly relevant to open issue **#3**, which would trigger the desync if merged without a corresponding `DopplerVelocity.h` update.)

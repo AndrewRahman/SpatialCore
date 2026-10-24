@@ -56,7 +56,7 @@ human_verification:
 
 **Phase Goal:** Nothing reachable from `processBlock` allocates, locks, or races, proven in a Release build with tools.
 **Verified:** 2026-10-06T04:04:16Z
-**Status:** human_needed
+**Status:** passed (was human_needed; resolved by 05-UAT.md, see the closing section)
 **Re-verification:** No, initial verification
 
 No ROADMAP success criterion fails. All five hold against the code and against test runs I did myself, not against the SUMMARY claims. The status is `human_needed` because two items cannot be settled by a test: the audibility of a mixed trajectory reading, and a real-DAW multi-instance run, which the phase deliberately did not claim. Six open review warnings are recorded below as WARNING-level; none defeats a must-have.
@@ -182,3 +182,9 @@ Recommended before Phase 6 or the OSD migration, none blocking:
 
 _Verified: 2026-10-06T04:04:16Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Human verification resolved
+
+`05-UAT.md` is status `complete` (2 tests, 2 passed, 0 pending, 0 issues), so this report's status is `passed`. The first item (mixed trajectory reading) was checked there by a rendered-signal click and spectrum comparison. The second item (several plugin instances) was run there in REAPER as a separate UAT test; this report itself never claimed a real-DAW multi-instance run (D-05).

@@ -59,6 +59,23 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
+# --- Source-based coverage (TEST-01, Phase 6) ---
+# Off by default. scripts/coverage.sh and the CI `coverage` job turn it on in a separate build tree
+# (build-cov/) to measure how much of SpatialCore the automated tests run. It instruments
+# SpatialCore's own targets (and the tests under tests/), not libmysofa, which is fetched above.
+# Reports stay inside GitHub: a job summary and a downloadable artifact, never an outside service (D-15).
+option(SPATIALCORE_ENABLE_COVERAGE "Instrument a top-level Clang build for source-based coverage (TEST-01)" OFF)
+if(SPATIALCORE_ENABLE_COVERAGE)
+    if(NOT PROJECT_IS_TOP_LEVEL)
+        message(WARNING "SPATIALCORE_ENABLE_COVERAGE applies only to SpatialCore's own top-level build and is ignored when SpatialCore is consumed with add_subdirectory().")
+    elseif(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "SPATIALCORE_ENABLE_COVERAGE needs Clang or AppleClang (source-based coverage, llvm-cov); the compiler here is ${CMAKE_CXX_COMPILER_ID}.")
+    else()
+        add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+        add_link_options(-fprofile-instr-generate)
+    endif()
+endif()
+
 # --- Embedded HRTF profiles (DATA-01, OQ-6) ---
 # SpatialCore carries the five SOFA profiles as BinaryData, so a consumer that links
 # SpatialCore gets them with no install step, no path and no BinaryData target of its own.
@@ -358,7 +375,17 @@ if(PROJECT_IS_TOP_LEVEL AND SPATIALCORE_BUILD_EXAMPLES)
 endif()
 
 # --- Tests ---
-option(SPATIALCORE_BUILD_TESTS "Build SpatialCore tests" ON)
+# SPATIALCORE_BUILD_TESTS defaults to PROJECT_IS_TOP_LEVEL: a consumer that add_subdirectory()s
+# SpatialCore no longer compiles Catch2, SpatialCoreTests, SpatialCoreUITests and the test-only
+# SpatialCoreRTGuard library, and does not inherit SpatialCore's tests in its own ctest
+# (INTG-01, Phase 6). A consumer that wants them sets the option ON.
+# The top-level enable_testing call writes a CTestTestfile.cmake at the build root, so
+# `ctest --test-dir <tree>` finds the tests that tests/CMakeLists.txt registers (CI-01, D-12);
+# before this, CI's ctest at the build root found none.
+option(SPATIALCORE_BUILD_TESTS "Build SpatialCore's own tests (default: ON in a top-level build, OFF when consumed)" ${PROJECT_IS_TOP_LEVEL})
 if(SPATIALCORE_BUILD_TESTS)
+    if(PROJECT_IS_TOP_LEVEL)
+        enable_testing()
+    endif()
     add_subdirectory(tests)
 endif()

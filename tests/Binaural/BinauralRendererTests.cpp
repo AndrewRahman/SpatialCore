@@ -626,3 +626,96 @@ TEST_CASE ("BinauralRenderer: the scratch guards count nothing at the boundary a
         CHECK (renderer->getScratchTooSmallCount() == 1);
     }
 }
+
+// ============================================================================
+// Regression test for Spatial-Media-Lab/OpenSpatialDelay#89 (OSD v1.0.11): updateSourceHRIR()
+// decides whether a source has moved far enough to need a new HRIR by the great-circle angle
+// between the old and the new direction. The old check compared azimuth and elevation
+// separately, so near the pole a harmless azimuth change (30 degrees of azimuth at elevation 89.5
+// is about 0.26 degrees of arc) reloaded the HRIR and started a needless transition.
+//
+// Two KEMAR renderers play the same noise. One keeps its source; the other is told the source
+// moved 30 degrees in azimuth at elevation 89.5. Under the great-circle rule that is under the
+// 1 degree threshold, so nothing reloads and the outputs stay bit-identical (memcmp). The control
+// moves a source 2 degrees along the horizon, which is over the threshold, so it must change the
+// output: that shows the identical result above is the threshold working and not a renderer that
+// ignores updateSourceHRIR(). Replacing the great-circle rule with independent azimuth and
+// elevation checks turns the pole comparison red (D-17).
+// ============================================================================
+
+TEST_CASE ("BinauralRenderer: Spatial-Media-Lab/OpenSpatialDelay#89 near the pole a large azimuth change under 1 degree of arc keeps the HRIR",
+           "[binaural][renderer][osd89]")
+{
+    // static: makeAt below has no capture list, and MSVC (19.51) rejects a local constexpr used in it
+    // (C3493) that GCC and Clang accept; a static local needs no capture and has the same value.
+    static constexpr int kBlock = 256;
+    constexpr size_t kSettle = 4096;
+    constexpr size_t kCompare = 8192;
+
+    auto makeAt = [] (float azDeg, float elDeg)
+    {
+        auto renderer = std::make_unique<BinauralRenderer>();
+        renderer->prepare (kRate, kBlock);
+        REQUIRE (loadProfileIntoRenderer (*renderer, 5, kRate));
+        renderer->updateSourceHRIR (0, rad (azDeg), rad (elDeg));
+        return renderer;
+    };
+
+    const std::vector<float> settleNoise = whiteNoise (kSettle, 41, 0.25f);
+    const std::vector<float> compareNoise = whiteNoise (kCompare, 42, 0.25f);
+
+    auto maxDifference = [] (const StereoSignal& a, const StereoSignal& b)
+    {
+        double worst = 0.0;
+        for (size_t i = 0; i < a.left.size(); ++i)
+        {
+            worst = std::max (worst, static_cast<double> (std::abs (a.left[i] - b.left[i])));
+            worst = std::max (worst, static_cast<double> (std::abs (a.right[i] - b.right[i])));
+        }
+        return worst;
+    };
+
+    SECTION ("elevation 89.5: a 30 degree azimuth change is under 1 degree of arc and reloads nothing")
+    {
+        auto stayed = makeAt (0.0f, 89.5f);
+        auto moved = makeAt (0.0f, 89.5f);
+
+        const StereoSignal settledA = renderSlot0 (*stayed, settleNoise, kBlock);
+        const StereoSignal settledB = renderSlot0 (*moved, settleNoise, kBlock);
+        REQUIRE (peakMagnitude (settledA) > 1.0e-3f);
+        REQUIRE (std::memcmp (settledA.left.data(), settledB.left.data(), kSettle * sizeof (float)) == 0);
+
+        moved->updateSourceHRIR (0, rad (30.0f), rad (89.5f));   // about 0.26 degrees of arc
+
+        const StereoSignal fromStayed = renderSlot0 (*stayed, compareNoise, kBlock);
+        const StereoSignal fromMoved = renderSlot0 (*moved, compareNoise, kBlock);
+
+        const double worst = maxDifference (fromStayed, fromMoved);
+        CAPTURE (worst);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 pole: max |diff| between the renderer that stayed and the one that moved 30 degrees of azimuth: " << worst);
+        CHECK (signalIsFinite (fromMoved));
+        CHECK (peakMagnitude (fromStayed) > 1.0e-3f);
+        CHECK (std::memcmp (fromStayed.left.data(), fromMoved.left.data(), kCompare * sizeof (float)) == 0);
+        CHECK (std::memcmp (fromStayed.right.data(), fromMoved.right.data(), kCompare * sizeof (float)) == 0);
+    }
+
+    SECTION ("control: a 2 degree move at ear level is over the threshold and changes the output")
+    {
+        auto stayed = makeAt (0.0f, 0.0f);
+        auto moved = makeAt (0.0f, 0.0f);
+
+        (void) renderSlot0 (*stayed, settleNoise, kBlock);
+        (void) renderSlot0 (*moved, settleNoise, kBlock);
+
+        moved->updateSourceHRIR (0, rad (2.0f), 0.0f);           // 2 degrees of arc
+
+        const StereoSignal fromStayed = renderSlot0 (*stayed, compareNoise, kBlock);
+        const StereoSignal fromMoved = renderSlot0 (*moved, compareNoise, kBlock);
+
+        const double worst = maxDifference (fromStayed, fromMoved);
+        CAPTURE (worst);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 control: max |diff| after a 2 degree move at ear level: " << worst);
+        CHECK (signalIsFinite (fromMoved));
+        CHECK (worst > 1.0e-6);
+    }
+}

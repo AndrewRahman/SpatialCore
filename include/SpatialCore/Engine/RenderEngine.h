@@ -437,6 +437,25 @@ public:
     // handled. A zero-length block returns at once and is not counted. Any thread, lock-free.
     int getOversizedBlockCount() const noexcept;
 
+    // Diagnostic (INTG-02, D-05, D-06, SpatialCore#14): how many renderBlock() calls rendered a
+    // path that reads consumer-supplied gains while no gains were supplied. A block is counted
+    // when (1) the consumer's engineComputesGains is false, (2) the block renders a gain-reading
+    // path (the Simple binaural path reads objGains, a stereo variant reads objGainL and
+    // objGainR, discrete surround reads objChannelGains for the layout's speakers), (3) at
+    // least one object is active (live, with a mono and a tap-fade buffer, and a tap fade
+    // above 0 at the first or last sample of the block) and (4) every active object's gains
+    // on that path are exactly zero. A consumer that supplies gains for any object has chosen
+    // the supplied mode, and one deliberately silent object is legitimate, so neither is
+    // counted. Such a block still renders exactly what the consumer supplied (silence): the
+    // engine never computes gains on the consumer's behalf. Every build counts every such
+    // block; a Debug build also asserts on the first one of an engine. The direct-binaural
+    // HRTF path, every Ambisonics format, a binaural block whose engineSelectsHRTF filled
+    // objGains, a block with no active object and a zero-length block are never counted. The
+    // check reads the finished per-block context, so with engineDerivesDispatch it judges the
+    // path the engine actually renders. A consumer's own tests should assert this stays 0.
+    // Any thread, lock-free; the render path allocates, locks and logs nothing for it.
+    int getUnsuppliedGainsBlockCount() const noexcept;
+
 #if JUCE_UNIT_TESTS
     //--------------------------------------------------------------------------
     // Test-only entry point (mirrors ADMOSCReceiver::testProcessOSCMessage).
@@ -650,6 +669,12 @@ private:
                                   float* const* outChannels, int numOutCh);
 
     void activateLayout (OutputFormat format);
+
+    // INTG-02: true when this block renders a gain-reading path on gains the consumer never
+    // supplied (the public unsupplied-gains diagnostic). ctx is the finished per-block context.
+    // Fixed-size loops only: no allocation, lock or logging (DR-1).
+    bool blockHasUnsuppliedGains (const RenderSources& src, const RenderBlockContext& ctx,
+                                   const LayoutState& layout) const noexcept;
 
     //--------------------------------------------------------------------------
     // SC-13: engine-owned gain computation, used only when the consumer sets
@@ -898,6 +923,8 @@ private:
     void noteLegacyRouteCall() const noexcept;
     // D-11: renderBlock() calls longer than preparedMaxBlock_ (relaxed, lock-free).
     std::atomic<int> oversizedBlockCount_ { 0 };
+    // INTG-02: blocks that rendered a gain-reading path on zero consumer gains (relaxed, lock-free).
+    std::atomic<int> unsuppliedGainsBlockCount_ { 0 };
     // A non-lock-free atomic would put a lock on the audio thread.
     static_assert (std::atomic<std::size_t>::is_always_lock_free,
                    "RenderEngine thread bookkeeping requires lock-free std::atomic<size_t>");

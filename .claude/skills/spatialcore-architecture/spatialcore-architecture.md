@@ -40,7 +40,7 @@ SpatialCore is a C++ static library extracted from OpenSpatialDelay. It contains
 | Component | What It Does |
 |-----------|-------------|
 | 8 Spatialization Algorithms | ConstantPower, VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics (HOA), DirectBinaural (Woodworth) |
-| HRTF Binaural Rendering | HRTFDatabase, PartitionedConvolver, BinauralRenderer (12 per-source convolvers) |
+| HRTF Binaural Rendering | HRTFDatabase, PartitionedConvolver, BinauralRenderer (one convolver per source, up to 32) |
 | HRTF Profiles | 5 SOFA HRTF profiles ship embedded as BinaryData (`SpatialCoreHRTFData`), overridable by a same-named file in the system shared folder; `profileIndex` is 0–5, where 0 = Simple (Woodworth) and 1–5 select the SOFA profiles; one engine call, `setHRTFProfile`, switches |
 | 23 Output Formats | 1 Binaural + 1 Stereo (5 modes) + 15 Surround (Quad–9.1.6) + 6 Ambisonics (FOA–6OA) |
 | 15 Speaker Layouts | ITU-R BS.775/BS.2051, SMPTE channel ordering |
@@ -73,13 +73,16 @@ git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 ### CMake
 ```cmake
 add_subdirectory(SpatialCore)
-target_link_libraries(YourPlugin PRIVATE SpatialCore)
+target_link_libraries(YourPlugin PRIVATE SpatialCore SpatialCoreUI)   # drop SpatialCoreUI if you build all UI yourself
 ```
 
 ### Include
 ```cpp
 #include <SpatialCore/SpatialCore.h>
+#include <SpatialCore/SpatialCoreUI.h>   // only when you link SpatialCoreUI
 ```
+
+SpatialCore's own tests are not built in a consumer's build unless it sets `SPATIALCORE_BUILD_TESTS=ON`. `examples/harness/` is the worked reference consumer (built from GitHub in CI).
 
 ## 5 Rendering Paths
 
@@ -136,7 +139,7 @@ SpatialCore uses semantic versioning. Plugins pin to a version via git submodule
 - Layout changes use a **three-slot wait-free handoff** (SC-16): the audio thread acquires its layout once per block and reads it afterwards through `getBlockLayout()`
 - HRTF profile loading is an **engine-owned background loader** via `RenderEngine::setHRTFProfile`, status via `getHRTFProfileStatus` (the audio thread only claims the loaded renderer from an atomic mailbox and crossfades)
 - Position updates are **smoothed** (LinearSmoothedValue, 10ms ramp)
-- Realtime safety is **proved, not assumed** (Phase 5): the `[rt]` trap tests count allocations and locks on `renderBlock` (macOS, Release), `[rt][rule]` freezes the lock inventory, and `build-tsan` runs the `[tsan]` subset and the whole suite with zero ThreadSanitizer warnings. Run it at every phase end and before a tag (README "Realtime-safety check"). Proved on macOS (Apple Silicon); Windows and Linux are checked in Phase 6
+- Realtime safety is **proved, not assumed** (Phase 5): the `[rt]` trap tests count allocations and locks on `renderBlock` (macOS, Release), `[rt][rule]` freezes the lock inventory, and `build-tsan` runs the `[tsan]` subset and the whole suite with zero ThreadSanitizer warnings. Run the ThreadSanitizer part before a tag, not at every phase end (README "Realtime-safety check"; the 20 s `[rt]` trap stays in the everyday gate). Proved on macOS (Apple Silicon) only: on Linux the suite runs in CI but the allocation trap is macOS-only, Windows is built and not run, and on both JUCE's fallback FFT takes a `SpinLock` (`SharedFFTCache.h`). No claim covers a real DAW
 - A host block longer than the prepared size is **rendered in full**, in pieces, and counted (`getOversizedBlockCount()`); `BinauralRenderer` scratch guards skip the call (`renderSourceBuffers` outputs silence for that call and advances no state, `updateSourceHRIR` keeps the previous HRIR) and count (`getScratchTooSmallCount()`); nothing is grown on the audio thread
 - `TrajectoryEngine` final positions are **lock-free `std::atomic<float>`**, readable from any thread; the legacy HRTF route (`swapActiveRenderer` and friends) is message-thread only and its misuse is counted (`getLegacyRouteWrongThreadCount()`, `HRTFDatabase::getMutationWhileInUseCount()`); load again only once `isPrepareRendererFree()` is true (not on `isRendererCrossfadeActive()` alone, which never turns true off the binaural HRTF path); prefer `setHRTFProfile`
 - `SharedFFTCache` keeps one FFT per order for the **life of the process**, deliberately; `SMLLookAndFeel` loads its typefaces per instance, so share one across editors

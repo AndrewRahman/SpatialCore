@@ -82,9 +82,9 @@ Note: no top-level `include/SpatialCore/Engine/` or `Engine/` mention exists in 
 - `tests/CMakeLists.txt`: `SpatialCoreTests` executable, Catch2 FetchContent.
 
 **Core Logic:**
-- `include/SpatialCore/Core/Types.h`: `MAX_SOURCES = 12`, `MAX_SPEAKERS = 16`, `ObjectState`, `BinauralGains`, `LayoutContext`, `BinauralContext`, `kDefaultBinauralProfiles[5]`.
+- `include/SpatialCore/Core/Types.h`: `MAX_SOURCES = 32` (SC-1), `MAX_SPEAKERS = 16`, `ObjectState`, `BinauralGains`, `LayoutContext`, `BinauralContext`, `kDefaultBinauralProfiles[5]`.
 - `include/SpatialCore/Algorithms/SpatializationAlgorithm.h`: frozen abstract interface (D-02) all 8 algorithms implement.
-- `include/SpatialCore/Trajectory/DopplerVelocity.h`: independent `kMaxObjects = 12` constant (does not reference `MAX_SOURCES`).
+- `include/SpatialCore/Trajectory/DopplerVelocity.h`: `kMaxObjects = MAX_SOURCES` (now tracks it).
 
 **Testing:**
 - `tests/Engine/RenderEngineTests.cpp`: facade regression tests (referenced by name in `RenderEngine.h` comments as the byte-for-byte-behavior guardrail for `engineComputesGains`).
