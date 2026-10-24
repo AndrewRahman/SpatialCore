@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "BinauralTestUtilities.h"
 
 #include <algorithm>
@@ -43,7 +44,9 @@ namespace
     // O212): getAlignedHRIR reports onset - minOnset, so the leading ear is 0 and the other
     // carries the ITD. Before it they were the absolute onsets 31 / 61; only these two
     // fields moved (energy, peaks and peak indices are unchanged, the aligned waveform is the same).
-    constexpr HRIRFingerprint kGoldenFingerprint { 558, 0.0f, 30.0f, 2.00355748, 0.163567331, 0.515830636f, -0.121116042f, 39, 52 };
+    constexpr HRIRFingerprint kGoldenFingerprint { 558, 0.0f, 33.0f, 2.00355748, 0.163567328, 0.515830636f, -0.121116042f, 39, 49 };
+    // O214 (Spatial-Media-Lab/OpenSpatialDelay#234): onset now from detectOnsetEnergy (smooth energy onset), so the
+    // lagging ear's shift and the aligned right-ear tail changed; rendered onsets are unchanged (lossless).
     constexpr int kGoldenIRLength = 558;
     constexpr int kGoldenNumPositions = 710;
 }
@@ -131,25 +134,19 @@ TEST_CASE ("MIT KEMAR Large Pinna — ITD pass-through: raw SOFA delay is zero (
 // What the checks prove, at azimuth +90, -90 and +45 degrees at ear level:
 //   - the raw pair really has zero delays and (at +-90) onsets at least 10 samples apart, so the
 //     fallback has real work to do;
-//   - the reported delays differ by exactly the raw onset difference (the delay is the onset);
+//   - the reported delays differ by the raw onset difference to within the 0.5-sample delay rounding (O214, Spatial-Media-Lab/OpenSpatialDelay#234);
 //   - the aligned ears' onsets differ by at most 1 sample.
 // Removing the zero-delay branch turns the second and third checks red (D-17).
 // ============================================================================
 
 namespace
 {
-    // The library's onset rule (HRTFDatabase::detectOnset with its 0.1 fraction): the first sample
-    // whose magnitude is at least 0.1 x the peak. A deliberate copy, so the test states the rule
-    // it expects rather than calling the code under test to check itself.
-    int firstSampleAtTenPercentOfPeak (const std::vector<float>& ir)
+    // The library's onset rule since O214 (Spatial-Media-Lab/OpenSpatialDelay#234): HRTFDatabase::detectOnsetEnergy
+    // (15% of the cumulative energy of a 16-tap low-passed IR; fractional samples). The test calls the
+    // same detector production uses to measure the IRs, so it checks the fallback's bookkeeping.
+    float onsetOf (const std::vector<float>& ir)
     {
-        float peak = 0.0f;
-        for (float v : ir)
-            peak = std::max (peak, std::abs (v));
-        for (size_t i = 0; i < ir.size(); ++i)
-            if (std::abs (ir[i]) >= 0.1f * peak)
-                return static_cast<int> (i);
-        return 0;
+        return HRTFDatabase::detectOnsetEnergy (ir.data(), static_cast<int> (ir.size()));
     }
 }
 
@@ -174,10 +171,10 @@ TEST_CASE ("MIT KEMAR Large Pinna — Spatial-Media-Lab/OpenSpatialDelay#89: zer
         db.getInterpolatedHRIR (az, 0.0f, rawL.data(), rawR.data(), rawDelayL, rawDelayR);
         db.getAlignedHRIR (az, 0.0f, alignedL.data(), alignedR.data(), delayL, delayR);
 
-        const int rawOnsetL = firstSampleAtTenPercentOfPeak (rawL);
-        const int rawOnsetR = firstSampleAtTenPercentOfPeak (rawR);
-        const int alignedOnsetL = firstSampleAtTenPercentOfPeak (alignedL);
-        const int alignedOnsetR = firstSampleAtTenPercentOfPeak (alignedR);
+        const float rawOnsetL = onsetOf (rawL);
+        const float rawOnsetR = onsetOf (rawR);
+        const float alignedOnsetL = onsetOf (alignedL);
+        const float alignedOnsetR = onsetOf (alignedR);
 
         CAPTURE (dir.azDeg, rawDelayL, rawDelayR, rawOnsetL, rawOnsetR, delayL, delayR, alignedOnsetL, alignedOnsetR);
         WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 az " << dir.azDeg << ": raw delays " << rawDelayL << "/" << rawDelayR
@@ -188,13 +185,13 @@ TEST_CASE ("MIT KEMAR Large Pinna — Spatial-Media-Lab/OpenSpatialDelay#89: zer
         CHECK (rawDelayL < 0.001f);
         CHECK (rawDelayR < 0.001f);
         if (dir.farEar)
-            CHECK (std::abs (rawOnsetR - rawOnsetL) >= 10);
+            CHECK (std::abs (rawOnsetR - rawOnsetL) >= 10.0f);
 
         // The fallback: the reported delay of each ear is its waveform onset.
-        CHECK (delayR - delayL == static_cast<float> (rawOnsetR - rawOnsetL));
+        CHECK (delayR - delayL == Catch::Approx (rawOnsetR - rawOnsetL).margin (0.5));
 
         // The aligned ears start together.
-        CHECK (std::abs (alignedOnsetR - alignedOnsetL) <= 1);
+        CHECK (std::abs (alignedOnsetR - alignedOnsetL) <= 1.0f);
     }
 }
 

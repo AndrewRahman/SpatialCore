@@ -162,6 +162,14 @@ public:
         Returns 0 if no clear onset found or if onset > irLength/2. */
     static int detectOnset (const float* ir, int length, float thresholdFraction = 0.1f);
 
+    /** Smooth, fractional onset (in samples) of an IR: the point where the cumulative energy of
+        the boxcar-low-passed IR reaches energyFraction of its total. Continuous in the IR, so
+        neighbouring directions give neighbouring onsets (detectOnset's peak-relative threshold
+        jumps by tens of samples on SADIE; O214, Spatial-Media-Lab/OpenSpatialDelay#234). getAlignedHRIR uses this. Realtime-safe
+        (no allocation). Returns 0 for a silent IR or an onset past length/2. */
+    static float detectOnsetEnergy (const float* ir, int length,
+                                    float energyFraction = 0.15f, int smoothTaps = 16);
+
     /** Apply low-frequency correction to an HRIR in-place (Xie 2009 method).
         Below lfCutoffHz: magnitude is set to the mean of the lfCutoffHz-to-hfCutoffHz
         range, and phase is linearly extrapolated from that range. This restores

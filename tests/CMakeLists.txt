@@ -30,6 +30,7 @@ add_executable(SpatialCoreTests
     Binaural/BinauralCueTests.cpp
     Binaural/PartitionedConvolverTests.cpp
     Binaural/BinauralRendererTests.cpp
+    Binaural/HRTFOnsetContinuityTests.cpp
     Binaural/ProfileLoudnessTests.cpp
     Binaural/HRTFEmbeddedTests.cpp
     Binaural/SharedFFTCacheTests.cpp

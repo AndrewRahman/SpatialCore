@@ -332,13 +332,15 @@ void HRTFDatabase::getAlignedHRIR (float azimuthRad, float elevationRad,
     // with small fractional Data.Delay values still bypasses this fallback.
     if (delayL < 0.001f && delayR < 0.001f)
     {
-        int onsetL = detectOnset (irL, irLength, 0.1f);
-        int onsetR = detectOnset (irR, irLength, 0.1f);
-        int minOnset = std::min (onsetL, onsetR);
-        shiftL = onsetL - minOnset;
-        shiftR = onsetR - minOnset;
-        // Report the onset shift (0 for the leading ear, the ITD for the other)
-        // for the ITD delay line in renderSourceBuffers() -- WR-01.
+        // O214 (Spatial-Media-Lab/OpenSpatialDelay#234): robust energy onset instead of a 10%-of-peak threshold crossing.
+        // detectOnset jumped up to 36 samples between neighbouring SADIE directions (the
+        // peak flips between lobes), which misaligned the crossfaded HRIRs (rho 0.35..0.62)
+        // and made the ITD ramp jump by tens of samples per transition.
+        const float tauL = detectOnsetEnergy (irL, irLength);
+        const float tauR = detectOnsetEnergy (irR, irLength);
+        const float minTau = std::min (tauL, tauR);
+        shiftL = static_cast<int> (std::lround (tauL - minTau));
+        shiftR = static_cast<int> (std::lround (tauR - minTau));
         delayL = static_cast<float> (shiftL);
         delayR = static_cast<float> (shiftR);
     }
@@ -480,6 +482,50 @@ void HRTFDatabase::convertToMinPhase (float* ir, int irLength, int fftOrder, flo
     // Step 9: Copy first irLength samples back (real part only)
     for (int i = 0; i < irLength; ++i)
         ir[i] = cBuf[i].real();
+}
+
+float HRTFDatabase::detectOnsetEnergy (const float* ir, int length, float energyFraction, int smoothTaps)
+{
+    if (ir == nullptr || length <= 0 || smoothTaps < 1)
+        return 0.0f;
+
+    // y[i] = mean of the last smoothTaps samples (causal boxcar, a low-pass that removes the
+    // pinna's high-frequency precursors); energy e[i] = y[i]^2. The onset is where the
+    // cumulative energy first reaches energyFraction of the total, interpolated within the
+    // sample, minus the boxcar's (smoothTaps-1)/2 group delay. Unlike a threshold crossing it
+    // moves continuously with the IR, so neighbouring directions get neighbouring onsets.
+    // No allocation: realtime-safe (called per direction update).
+    auto energySum = [&] (double target, double& crossing) -> double
+    {
+        double run = 0.0, cum = 0.0;
+        crossing = -1.0;
+        for (int i = 0; i < length; ++i)
+        {
+            run += static_cast<double> (ir[i]);
+            if (i >= smoothTaps)
+                run -= static_cast<double> (ir[i - smoothTaps]);
+            const double y = run / smoothTaps;
+            const double e = y * y;
+            if (crossing < 0.0 && target > 0.0 && cum + e >= target)
+                crossing = i + (e > 0.0 ? (target - cum) / e : 0.0);
+            cum += e;
+        }
+        return cum;
+    };
+
+    double unused = 0.0;
+    const double total = energySum (0.0, unused);
+    if (total < 1e-30)
+        return 0.0f;   // silent IR
+
+    double crossing = -1.0;
+    energySum (static_cast<double> (energyFraction) * total, crossing);
+    if (crossing < 0.0)
+        return 0.0f;
+
+    const double tau = std::max (0.0, crossing - 0.5 * (smoothTaps - 1));
+    // Same guard as detectOnset: an onset past halfway means no clear leading edge.
+    return tau > length / 2 ? 0.0f : static_cast<float> (tau);
 }
 
 int HRTFDatabase::detectOnset (const float* ir, int length, float thresholdFraction)
