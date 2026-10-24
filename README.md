@@ -198,7 +198,7 @@ To reuse downloaded sources instead of fetching JUCE and libmysofa again, add a 
 
 `scripts/coverage.sh` builds an instrumented Debug tree (`build-cov/`, git-ignored with `SPATIALCORE_ENABLE_COVERAGE=ON`, Clang or Apple Clang only), runs both test executables and writes the report to `build-cov/coverage/summary.md` (HTML pages under `build-cov/coverage/html/`). It takes about 10 minutes on an Apple Silicon Mac. The engine (`include/` and `src/` outside the UI) and the UI are reported separately.
 
-The measured figures on 2026-10-24 (CI run on `310fb93`): engine 94.19% of lines (3847 of 4084), UI 25.89% (419 of 1618). The target lives in `scripts/coverage-targets.json`: the engine must stay at 93% of lines or more, and the `coverage` CI job fails below it. The UI figure is shown and is not a rule. Reports never leave GitHub: the table is on the run's summary page and the full report is the `coverage-report` artifact.
+The measured figures on 2026-10-17 (CI run 39074814315 on `310fb93`): engine 94.19% of lines (3847 of 4084), UI 25.89% (419 of 1618). The target lives in `scripts/coverage-targets.json`: the engine must stay at 93% of lines or more, and the `coverage` CI job fails below it. The UI figure is shown and is not a rule. Reports never leave GitHub: the table is on the run's summary page and the full report is the `coverage-report` artifact.
 
 ## Versioning
 
