@@ -10,7 +10,7 @@ name: SpatialCore CI
 #   target, no test run: Windows is build-only by decision D-08, running the suite there is deferred).
 #   Every push and pull request also runs coverage (scripts/coverage.sh: an instrumented Debug build,
 #   both test executables, a per-area table on the run's summary page and the full report as the
-#   coverage-report artifact). It is report-only until scripts/coverage-targets.json exists.
+#   coverage-report artifact). It fails when the engine figure is below scripts/coverage-targets.json.
 #   Nightly and on a manual run: realtime-nightly (README "Realtime-safety check", steps 1-5).
 #
 # Security posture: the token is read-only, the only trigger that runs outside code is
@@ -406,9 +406,9 @@ jobs:
           exit "$status"
 
   # Coverage never leaves GitHub (D-15): the table goes to this run's job summary and the files
-  # to a downloadable artifact, with no outside service, account or token. The job is report-only
-  # until scripts/coverage-targets.json exists (Plan 06-08), after which scripts/coverage.sh
-  # passes it to the report script and a figure below the target fails the job (D-14).
+  # to a downloadable artifact, with no outside service, account or token. scripts/coverage.sh
+  # passes scripts/coverage-targets.json (Plan 06-08) to the report script, and an engine figure
+  # below the target fails the job (D-14). The UI figure is reported only.
   coverage:
     name: coverage
     runs-on: macos-26
