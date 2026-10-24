@@ -22,7 +22,7 @@ Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25
 
 ## Backlog
 
-### Phase 999.1: Follow-up — Phase 02 deferred UAT follow-up: Test 7 (BACKLOG)
+### Phase 999.1: Follow-up — Phase 02 deferred UAT follow-up: Test 7 (BACKLOG) (GitHub: AndrewRahman/SpatialCore#39)
 
 **Goal:** Resolve the UAT checkpoint deferred during Phase 02 verification
 **Source phase:** 02
@@ -30,7 +30,7 @@ Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25
 **Follow-ups:**
 - [ ] Test 7: Next listening-review round — in OpenSpatialDelay on 7.1.4, lower a sound from ear height to 30 degrees below at about 60 degrees left; confirm it stays put (no drift toward one speaker, no side flip) (deferred 2026-10-03)
 
-### Phase 999.2: Follow-up — Phase 02 deferred UAT follow-up: Test post-review (BACKLOG)
+### Phase 999.2: Follow-up — Phase 02 deferred UAT follow-up: Test post-review (BACKLOG) (GitHub: AndrewRahman/SpatialCore#40)
 
 **Goal:** Resolve the UAT checkpoint deferred during Phase 02 verification
 **Source phase:** 02
@@ -38,7 +38,7 @@ Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25
 **Follow-ups:**
 - [ ] Test post-review: Listening checks for the 2026-10-04 code-review behaviour changes: (a) on a front-only rig (e.g. speakers at 0 and +-30 only), move a sound behind and below the listener and confirm it is never silent and moves smoothly across the gap (WR-05 gap bridge); (b) a DBAP source fed a broken distance (NaN/Inf) still plays, panned as distance 0.5 (WR-08) (deferred 2026-10-04)
 
-### Phase 999.3: Custom HRTF import + loudness standard (BACKLOG)
+### Phase 999.3: Custom HRTF import + loudness standard (BACKLOG) (GitHub: AndrewRahman/SpatialCore#38)
 
 **Goal:** A user imports their own measured `.sofa` HRTF from the plugin, names it, and keeps using it across sessions at the same perceived level as the built-ins
 **Source phase:** 03
@@ -50,7 +50,7 @@ Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25
 - [ ] Decide shared `SpatialCoreUI` widget vs per-plugin import UI
 - Full decision record: `.planning/milestones/v1.0.0-phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` § Deferred Ideas
 
-### Phase 999.4: Listening check — Simple-mode height and rear cues (BACKLOG)
+### Phase 999.4: Listening check — Simple-mode height and rear cues (BACKLOG) (GitHub: AndrewRahman/SpatialCore#41)
 
 **Goal:** Confirm on headphones that Phase 3's new Simple (Woodworth) cues read as above and behind without sounding unnatural
 **Source phase:** 03

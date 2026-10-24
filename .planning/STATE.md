@@ -26,6 +26,11 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 **Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0, no git tag)
 **Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or backlog 999.x
 
+**Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
+- SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness (999.3), #39 7.1.4 below-horizon listening (999.1), #40 gap bridge + DBAP listening (999.2), #41 Simple-mode listening (999.4)
+- Still open: SpatialCore #22, #31, #32 (Ambisonics rotation, missed by the first audit pass)
+- Consumers: AndrewRahman/openspatialdelay#23 (pin bump to 38bd5f5 + migration), AndrewRahman/OpenSpatialPanner#4 (pin bump from ca8c88b to 38bd5f5)
+
 ## Current Position
 
 Phase: Milestone v1.0.0 complete
