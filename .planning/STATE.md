@@ -5,10 +5,10 @@ current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: planning
 stopped_at: Phase 05 complete; v1.0.0 milestone re-audit gaps_found (Phase 6 not started)
-last_updated: "2026-10-17T10:00:00.000Z"
-last_activity: 2026-10-17
-last_activity_desc: Phase 1 and Phase 2 Nyquist validated (Phase 1: BUG-03 guard test added; Phase 2: 0 gaps); all 5 executed phases compliant; milestone re-audit 21/25, gaps are Phase 6's four requirements
-state_head: a9dfd1c63634f476ab7ee621fea4c7916519059a
+last_updated: "2026-10-24T21:28:45.591Z"
+last_activity: 2026-10-24
+last_activity_desc: "Phase 1 and Phase 2 Nyquist validated (Phase 1: BUG-03 guard test added; Phase 2: 0 gaps); all 5 executed phases compliant; milestone re-audit 21/25, gaps are Phase 6's four requirements"
+state_head: 4855f7136a001f3a4a3433128a575a241e38ad07
 progress:
   total_phases: 6
   completed_phases: 5
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 Phase: 06 (Consumer Readiness & CI) — NOT STARTED
 Plan: none yet
 Status: Phase 05 complete (verification passed, UAT 2/2, validation and security verified 2026-10-17). Next: /gsd-discuss-phase 6
-Last activity: 2026-10-17 — Phase 1 Nyquist validated (1 gap: BUG-03 had no guard and had drifted; 16 short-form issue references qualified, new `[bug03]` test; `01-VALIDATION.md` now validated). Phase 2 Nyquist validated (0 gaps, every row green in Debug and Release, `02-VALIDATION.md` now validated). Phase 4 Nyquist validated (0 gaps, 19/19 rows green, `04-VALIDATION.md` now validated). Earlier the same day: v1.0.0 milestone re-audit: gaps_found, 21/25, the four gaps are Phase 6's (INTG-01, INTG-02, CI-01, TEST-01); see .planning/v1.0.0-MILESTONE-AUDIT.md
+Last activity: 2026-10-24 - Completed quick task 261024-qlw: Make SpatialCore's Ambisonics output plain AmbiX SN3D (SpatialCore#32)
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -216,6 +216,12 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **[Phase 4] Code review warnings** — RESOLVED 2026-10-05 by `/gsd-code-review 04 --fix` (5 review rounds, ledger 18/18 fixed, `04-REVIEW.md` clean). `wrapAzimuth` is bounded; the Windows branches of both `findFreeUdpPort` copies are uncompiled until Phase 6 CI.
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261024-qlw | Make SpatialCore's Ambisonics output plain AmbiX SN3D (SpatialCore#32) | 2026-10-24 | 4855f71 | [261024-qlw-make-spatialcore-s-ambisonics-output-pla](./quick/261024-qlw-make-spatialcore-s-ambisonics-output-pla/) |
 
 ## Deferred Items
 
