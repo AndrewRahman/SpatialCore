@@ -29,6 +29,7 @@
 // Binaural
 #include <SpatialCore/Binaural/SharedFFTCache.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
+#include <SpatialCore/Binaural/TransitionTiming.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
 #include <SpatialCore/Binaural/BinauralRenderer.h>
 #include <SpatialCore/Binaural/HRTFProfile.h>

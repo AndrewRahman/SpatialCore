@@ -2,6 +2,7 @@
 
 #include <SpatialCore/Core/Types.h>
 #include <SpatialCore/Binaural/PartitionedConvolver.h>
+#include <SpatialCore/Binaural/TransitionTiming.h>
 #include <SpatialCore/Binaural/HRTFDatabase.h>
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
@@ -143,29 +144,53 @@ private:
     void ensureScratchCapacity();
 
     // ITD (Inter-aural Time Difference) tracking for smooth HRIR transitions.
-    // When using getAlignedHRIR(), HRIRs are time-aligned (ITD removed).
-    // ITD is applied as a separate fractional-sample delay, smoothly interpolated
-    // between blocks to prevent timing discontinuities.
+    // When using getAlignedHRIR(), the two ears' HRIRs are time-aligned to the
+    // EARLIER ear's onset (the interaural shift is removed; the common leading
+    // onset stays in both waveforms).  The interaural shift is applied here as a
+    // separate per-ear fractional-sample delay (0 for the leading ear), so the
+    // rendered per-ear onset equals the raw HRIR onset (WR-01, O212).
+    //
+    // The applied ITD is a MIRROR of the per-source PartitionedConvolver
+    // transition (Spatial-Media-Lab/OpenSpatialDelay#234, D-06): same warmup max(irLen, kHRIRWarmupMinMs), same
+    // kHRIRCrossfadeMs window, same latest-wins coalescing, counted on the same
+    // samples, so the time offset and the HRIR tone change move together as ONE
+    // transition.  A first load snaps (nothing audible to slew from).  If the
+    // convolver's state machine ever changes, this mirror must change with it
+    // ([itd][slew][align] fails otherwise).
     float currentITDL[MAX_SOURCES] = {};    // Current applied ITD (samples, fractional)
     float currentITDR[MAX_SOURCES] = {};
     float targetITDL[MAX_SOURCES]  = {};    // Target ITD from latest HRIR lookup
     float targetITDR[MAX_SOURCES]  = {};
 
-    // Short delay lines for ITD application.
-    //
-    // KNOWN DEFECT, deliberately deferred (AndrewRahman/SpatialCore#25, review WR-05): the
-    // delays fed to this line are the SOFA delay plus the detected onset from getAlignedHRIR,
-    // so they are mostly a bulk offset, not just the ~0.7 ms (~34 samples at 48 kHz) interaural
-    // difference. The measured SADIE II delays are 66 to 102 samples at 48 kHz (71 to 93 at
-    // 44.1 kHz), and the read pointer masks with (kITDBufferSize - 1), so any delay of 63 or more
-    // wraps modulo 64, and at 88.2 kHz and above it wraps several times. Whether the inter-ear
-    // difference survives the wrap depends on both ears sitting on the same side of a multiple
-    // of 64. That is the sound shipped consumers have today, so the tests pin it
-    // (BinauralRendererTests "the 64-sample ITD line is characterised", D-16) and a change here is
-    // a change to shipped timing that needs a decision. The intended fix: size the line from the
-    // sample rate (a power of two of at least ceil (1.5e-3 * sampleRate) + 2), subtract
-    // min (delayL, delayR) where the delays are derived, and update that table in the same commit.
-    static constexpr int kITDBufferSize = 64;
+    enum class ITDPhase { Idle = 0, Warmup, Ramp };
+    ITDPhase itdPhase[MAX_SOURCES] = {};             // mirrors the convolver Idle / Warmup / Crossfading
+    int   itdPhaseRemaining[MAX_SOURCES] = {};       // samples left in the current Warmup or Ramp
+    float itdStepL[MAX_SOURCES] = {};                // per-sample ramp increment
+    float itdStepR[MAX_SOURCES] = {};
+    float itdRampTargetL[MAX_SOURCES] = {};          // ITD the in-flight transition moves to (targetITD = latest lookup)
+    float itdRampTargetR[MAX_SOURCES] = {};
+    float itdPendingL[MAX_SOURCES] = {};             // latest retarget that arrived mid-transition
+    float itdPendingR[MAX_SOURCES] = {};
+    bool  itdHasPending[MAX_SOURCES] = {};
+    bool  sourceConvHasIR[MAX_SOURCES] = {};         // convolvers hold an IR: next setIR is a crossfade, not a direct load
+    int   itdXfadeSamples = 1024;                    // kHRIRCrossfadeMs at currentSampleRate (set in setProfile)
+    int   itdWarmupFloorSamples = 256;               // kHRIRWarmupMinMs at currentSampleRate (set in setProfile)
+
+    // Short delay lines for ITD application.  All five bundled SOFA files have
+    // Data.Delay = 0, so getAlignedHRIR's onset fallback supplies the delay: the
+    // per-ear onset SHIFT relative to the earlier ear (WR-01, O212), i.e. 0 for
+    // the leading ear and the ITD (up to about +-48 samples at 48 kHz, scaling
+    // with the sample rate) for the other.  Before O212 the absolute onset was
+    // carried (SADIE up to about 124 at 48 kHz), which is why the ring grew from
+    // 64 to 512 in O211 (D-13); 512 now stays as headroom for high sample rates
+    // and custom SOFA files with real Data.Delay values.  Larger delays
+    // (untrusted) are clamped to kMaxITDSamples.  This resolves the wrap that
+    // Phase 3 recorded here as a deferred defect (AndrewRahman/SpatialCore#25,
+    // WR-05, D-16): both halves of its intended fix (a larger ring, delays
+    // relative to min (delayL, delayR)) are in, and BinauralRendererTests pins the
+    // new timing.  Must stay a power of two (mask indexing).
+    static constexpr int kITDBufferSize = 512;
+    static constexpr int kMaxITDSamples = kITDBufferSize - 2;   // 2-tap read needs index + 1 inside the ring
     float itdBufferL[MAX_SOURCES][kITDBufferSize] = {};
     float itdBufferR[MAX_SOURCES][kITDBufferSize] = {};
     int   itdWritePos[MAX_SOURCES] = {};

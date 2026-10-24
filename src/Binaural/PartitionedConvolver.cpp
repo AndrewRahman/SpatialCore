@@ -28,7 +28,7 @@ SharedFFTCache& getSharedFFTCache()
     return instance;
 }
 
-void PartitionedConvolver::prepare (int maxBlockSize, int irLength_)
+void PartitionedConvolver::prepare (int maxBlockSize, int irLength_, double sampleRate)
 {
     irLen = irLength_;
     blockSize = maxBlockSize;
@@ -53,7 +53,10 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_)
         slots[s].irFreqDomain.assign (static_cast<size_t> (fftSize * 2), 0.0f);
         slots[s].fftWorkBuf.resize (static_cast<size_t> (fftSize * 2), 0.0f);
         slots[s].overlapAccum.assign (static_cast<size_t> (fftSize), 0.0f);
+        slots[s].irTime.assign (static_cast<size_t> (fftSize), 0.0f);   // Spatial-Media-Lab/OpenSpatialDelay#234 pulsing: rho source, never resized on the audio thread
+        slots[s].irEnergy = 0.0;
     }
+    crossfadeRho = 0.0f;
 
     // Work buffers for dual-slot output mixing
     slotOutputA.resize (static_cast<size_t> (maxBlockSize), 0.0f);
@@ -64,15 +67,46 @@ void PartitionedConvolver::prepare (int maxBlockSize, int irLength_)
     pendingIRLen = 0;
     hasPendingIR = false;
 
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#234: transition durations are ms-defined and counted in samples.
+    // The crossfade gains are correlation-compensated per transition
+    // (computeCrossfadeGains, Spatial-Media-Lab/OpenSpatialDelay#234 "pulsing"), computed per sample.
+    crossfadeSamples   = hrirTransitionMsToSamples (sampleRate, kHRIRCrossfadeMs);
+    warmupFloorSamples = hrirTransitionMsToSamples (sampleRate, kHRIRWarmupMinMs);
+    warmupSamples      = std::max (irLen, warmupFloorSamples);
+
     reset();
 }
 
 void PartitionedConvolver::loadIRIntoSlot (ConvSlot& slot, const float* ir, int length)
 {
     std::fill (slot.irFreqDomain.begin(), slot.irFreqDomain.end(), 0.0f);
-    for (int i = 0; i < std::min (length, fftSize); ++i)
+    std::fill (slot.irTime.begin(), slot.irTime.end(), 0.0f);
+    double energy = 0.0;
+    const int n = std::min (length, std::min (fftSize, static_cast<int> (slot.irTime.size())));
+    for (int i = 0; i < n; ++i)
+    {
         slot.irFreqDomain[static_cast<size_t> (i)] = ir[i];
+        slot.irTime[static_cast<size_t> (i)] = ir[i];
+        energy += static_cast<double> (ir[i]) * static_cast<double> (ir[i]);
+    }
+    slot.irEnergy = energy;
     fft->performRealOnlyForwardTransform (slot.irFreqDomain.data(), true);
+}
+
+// Spatial-Media-Lab/OpenSpatialDelay#234 "pulsing": normalised zero-lag correlation of two slots' time-domain IRs,
+// clamped to [0, 1] (anti-correlated pairs are treated as uncorrelated) and 0 for
+// a zero-norm IR.  O(irLen), no allocation -- called once per transition start.
+float PartitionedConvolver::computeIRCorrelation (const ConvSlot& a, const ConvSlot& b) noexcept
+{
+    if (a.irEnergy <= 0.0 || b.irEnergy <= 0.0)
+        return 0.0f;
+    const size_t n = std::min (a.irTime.size(), b.irTime.size());
+    double dot = 0.0;
+    for (size_t i = 0; i < n; ++i)
+        dot += static_cast<double> (a.irTime[i]) * static_cast<double> (b.irTime[i]);
+    const double rho = dot / std::sqrt (a.irEnergy * b.irEnergy);
+    if (! (rho > 0.0)) return 0.0f;   // also catches NaN
+    return static_cast<float> (std::min (rho, 1.0));
 }
 
 void PartitionedConvolver::resetSlot (ConvSlot& slot)
@@ -113,8 +147,17 @@ void PartitionedConvolver::setIR (const float* ir, int length)
     resetSlot (slots[static_cast<size_t> (inactiveSlot)]);
     loadIRIntoSlot (slots[static_cast<size_t> (inactiveSlot)], ir, length);
 
+    // Spatial-Media-Lab/OpenSpatialDelay#234 "pulsing": measure how coherent the outgoing and incoming IRs are, so
+    // the crossfade keeps constant power for this pair.  This is also the path a
+    // coalesced pendingIR takes when it becomes the new target (process() calls
+    // setIR after the active slot swap), so rho is always vs the IR being left.
+    crossfadeRho = computeIRCorrelation (slots[static_cast<size_t> (activeSlot)],
+                                         slots[static_cast<size_t> (inactiveSlot)]);
+
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#234: warm for max(IR length, floor) samples -- anchored to the IR
+    // length (the slot needs a full IR of history), never to the host block size.
     state = State::Warmup;
-    stateBlockCount = 0;
+    warmupSamples = std::max (length, warmupFloorSamples);
     stateSampleCount = 0;
 }
 
@@ -127,12 +170,11 @@ void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* 
     // latency-neutral for numSamples < blockSize and for variable numSamples.
     //
     // This per-call overlap-add is ONE HALF of the Spatial-Media-Lab/OpenSpatialDelay#234 small-block fix. The other half
-    // is in process(): the IR warm-up and crossfade are timed in samples, not calls
-    // (BUG-02, Phase 3), so a moving source no longer steps harder at 32-128 samples than at
-    // 512. Both halves are covered by [convolver][blocksize] (this function against a
-    // double-precision direct convolution), [bug02][moving] and [bug02][steady] (through the
-    // engine). Spatial-Media-Lab/OpenSpatialDelay#234 stays open for OSD's own delay line
-    // and pitch shifter, which this library does not contain.
+    // is in process(): the IR warm-up and crossfade are counted in samples from
+    // TransitionTiming.h, never in calls, so a moving source no longer steps harder at 32-128
+    // samples than at 512. Both halves are covered by [convolver][blocksize] (this function
+    // against a double-precision direct convolution), [convolver][transition], and
+    // [bug02][moving] and [bug02][steady] (through the engine).
     jassert (numSamples > 0 && numSamples <= blockSize);
     jassert (numSamples + irLen - 1 <= fftSize);  // linear-conv always fits (numSamples <= blockSize by contract)
 
@@ -178,6 +220,10 @@ void PartitionedConvolver::processSlot (ConvSlot& slot, const float* in, float* 
 
 void PartitionedConvolver::process (const float* in, float* out, int numSamples)
 {
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#234: an empty host call never touches transition state.
+    if (numSamples <= 0)
+        return;
+
     // WR-02: runtime guard against an oversized host block. The Spatial-Media-Lab/OpenSpatialDelay#234 decoupling
     // contract is numSamples <= blockSize (the prepared maxBlockSize); processSlot
     // relies on it — overlapAccum has length fftSize, and the tail memmove of size
@@ -206,9 +252,13 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
         return;
     }
 
-    // v1.0.5: Dual-convolver state machine (issue Spatial-Media-Lab/OpenSpatialDelay#50).
-    // Three states: Idle (single slot), Warmup (both process, output only active),
-    // Crossfading (equal-power cos/sin blend with per-sample gain interpolation).
+    // v1.0.5: Dual-convolver state machine (issue Spatial-Media-Lab/OpenSpatialDelay#50), sample-counted (Spatial-Media-Lab/OpenSpatialDelay#234).
+    // Three states: Idle (single slot), Warmup (both slots process, output only
+    // the active one), Crossfading (exact per-sample correlation-compensated
+    // blend, computeCrossfadeGains with this transition's rho).  Warmup lasts warmupSamples = max(irLen, floor) and the
+    // crossfade lasts crossfadeSamples, both counted in samples, so a state
+    // change may begin or end mid-block and the transition has the same
+    // wall-clock duration at every host buffer size.
     switch (state)
     {
         case State::Idle:
@@ -219,90 +269,66 @@ void PartitionedConvolver::process (const float* in, float* out, int numSamples)
         }
 
         case State::Warmup:
-        {
-            // Both slots process, but output only from active slot.
-            // This lets the inactive slot build up its overlap buffer.
-            processSlot (slots[static_cast<size_t> (activeSlot)], in, out, numSamples);
-            processSlot (slots[static_cast<size_t> (1 - activeSlot)], in, slotOutputB.data(), numSamples);
-
-            ++stateBlockCount;
-            stateSampleCount += numSamples;
-
-            // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): warm-up is timed in samples. The new
-            // slot must have convolved at least irLen samples (its overlap accumulator then
-            // holds the full IR tail) as well as kWarmupBlocks calls before it is faded in.
-            if (stateBlockCount >= kWarmupBlocks && stateSampleCount >= irLen)
-            {
-                state = State::Crossfading;
-
-                // Fade length: fixed once, here, from this call's size, with a sample floor.
-                // Advancing it by elapsed samples keeps progress monotonic when call sizes vary.
-                crossfadeLengthSamples = std::max (kCrossfadeBlocks * numSamples, kMinCrossfadeSamples);
-                stateBlockCount = 0;
-                stateSampleCount = 0;
-
-                // Initialize crossfade gains
-                prevFadeOutGain = 1.0f;
-                prevFadeInGain  = 0.0f;
-            }
-            break;
-        }
-
         case State::Crossfading:
         {
-            // Both slots process into separate buffers
-            processSlot (slots[static_cast<size_t> (activeSlot)], in, slotOutputA.data(), numSamples);
+            // Both slots render into private buffers before mixing, so `out`
+            // may alias `in` without the second slot reading clobbered input.
+            processSlot (slots[static_cast<size_t> (activeSlot)],     in, slotOutputA.data(), numSamples);
             processSlot (slots[static_cast<size_t> (1 - activeSlot)], in, slotOutputB.data(), numSamples);
 
-            ++stateBlockCount;
-            stateSampleCount += numSamples;
+            int i = 0;
 
-            // Compute equal-power crossfade gains for this block's END. Progress is elapsed
-            // samples over the fade length fixed when Warmup ended (BUG-02).
-            float progress = static_cast<float> (stateSampleCount) / static_cast<float> (crossfadeLengthSamples);
-            if (progress > 1.0f) progress = 1.0f;
-
-            constexpr float halfPi = juce::MathConstants<float>::halfPi;
-            fadeOutGain = std::cos (progress * halfPi);   // 1 -> 0
-            fadeInGain  = std::sin (progress * halfPi);   // 0 -> 1
-
-            // Per-sample linear interpolation between previous and current gains
-            float fadeOutInc = (fadeOutGain - prevFadeOutGain) / static_cast<float> (numSamples);
-            float fadeInInc  = (fadeInGain  - prevFadeInGain)  / static_cast<float> (numSamples);
-
-            float gOut = prevFadeOutGain;
-            float gIn  = prevFadeInGain;
-
-            for (int i = 0; i < numSamples; ++i)
+            if (state == State::Warmup)
             {
-                gOut += fadeOutInc;
-                gIn  += fadeInInc;
-                out[i] = slotOutputA[static_cast<size_t> (i)] * gOut
-                       + slotOutputB[static_cast<size_t> (i)] * gIn;
+                // Output only the active slot while the inactive one builds history.
+                const int n = std::min (numSamples, warmupSamples - stateSampleCount);
+                std::memcpy (out, slotOutputA.data(), sizeof (float) * static_cast<size_t> (n));
+                i += n;
+                stateSampleCount += n;
+
+                if (stateSampleCount >= warmupSamples)
+                {
+                    state = State::Crossfading;
+                    stateSampleCount = 0;   // crossfade may start mid-block
+                }
             }
 
-            prevFadeOutGain = fadeOutGain;
-            prevFadeInGain  = fadeInGain;
-
-            // Check if crossfade is complete
-            if (stateSampleCount >= crossfadeLengthSamples)
+            if (state == State::Crossfading && i < numSamples)
             {
-                // Swap active slot to the new one
-                activeSlot = 1 - activeSlot;
-                state = State::Idle;
-                stateBlockCount = 0;
-                stateSampleCount = 0;
-                crossfadeLengthSamples = 0;
-                fadeOutGain = 1.0f;
-                fadeInGain  = 0.0f;
-                prevFadeOutGain = 1.0f;
-                prevFadeInGain  = 0.0f;
+                const int n = std::min (numSamples - i, crossfadeSamples - stateSampleCount);
+                const float* a = slotOutputA.data();
+                const float* b = slotOutputB.data();
 
-                // Apply any pending IR that arrived during the transition
-                if (hasPendingIR)
+                for (int j = 0; j < n; ++j)
                 {
-                    hasPendingIR = false;
-                    setIR (pendingIR.data(), pendingIRLen);
+                    const int k = stateSampleCount + j + 1;   // 1..crossfadeSamples
+                    float gOut, gIn;
+                    computeCrossfadeGains (k, crossfadeSamples, crossfadeRho, gOut, gIn);
+                    out[i + j] = a[i + j] * gOut + b[i + j] * gIn;
+                }
+
+                i += n;
+                stateSampleCount += n;
+
+                if (stateSampleCount >= crossfadeSamples)
+                {
+                    // Crossfade finished (possibly mid-block): the rest of this
+                    // block is the new IR at unity gain.
+                    if (i < numSamples)
+                        std::memcpy (out + i, slotOutputB.data() + i,
+                                     sizeof (float) * static_cast<size_t> (numSamples - i));
+
+                    // Swap active slot to the new one
+                    activeSlot = 1 - activeSlot;
+                    state = State::Idle;
+                    stateSampleCount = 0;
+
+                    // Apply any pending IR that arrived during the transition
+                    if (hasPendingIR)
+                    {
+                        hasPendingIR = false;
+                        setIR (pendingIR.data(), pendingIRLen);
+                    }
                 }
             }
             break;
@@ -317,13 +343,7 @@ void PartitionedConvolver::reset()
 
     state = State::Idle;
     activeSlot = 0;
-    stateBlockCount = 0;
     stateSampleCount = 0;
-    crossfadeLengthSamples = 0;
-    fadeOutGain = 1.0f;
-    fadeInGain  = 0.0f;
-    prevFadeOutGain = 1.0f;
-    prevFadeInGain  = 0.0f;
     hasPendingIR = false;
     pendingIRLen = 0;
 }
@@ -334,7 +354,11 @@ void PartitionedConvolver::clearAll()
     // Zero frequency-domain IR data so the next setIR does a direct load
     // instead of crossfading from stale IR (used during preset transitions)
     for (int s = 0; s < 2; ++s)
+    {
         std::fill (slots[s].irFreqDomain.begin(), slots[s].irFreqDomain.end(), 0.0f);
+        std::fill (slots[s].irTime.begin(), slots[s].irTime.end(), 0.0f);
+        slots[s].irEnergy = 0.0;
+    }
 }
 
 } // namespace spatialcore
