@@ -124,6 +124,20 @@ Skipped by decision, not by accident:
 - Branch protection on `main`: no protection for now.
 - The consumer harness (`build-consumer.sh`) against the merge: it builds from a pushed commit on GitHub, so it can only run after the user allows the push.
 
+### Second merge of main (b35bd3b), 2026-10-24
+
+`origin/main` gained PR #33 (the #234 binaural HRIR crossfade and ITD fixes); merged locally as `be827e0` (conflict in `CLAUDE.md` only, both sides kept). Gate per decision D-19:
+
+| Step | Command | Result | Duration |
+|------|---------|--------|----------|
+| Release build | `cmake --build build-release -j8` | exit 0 | 11 s |
+| Release ctest | `ctest --test-dir build-release/tests --output-on-failure` | exit 0: `100% tests passed out of 418` | 147 s |
+| ui: listing | `ctest --test-dir build-release/tests -N \| grep -c 'ui:'` | 17 | instant |
+| Allocation and lock trap | `./build-release/tests/SpatialCoreTests "[rt]"` | exit 0: 2521 assertions in 47 test cases | 42 s |
+| Coverage tool | `python3 -I scripts/coverage-report.py --self-test` | exit 0: `self-test passed` | instant |
+
+Extra, run before D-19 was issued: full Debug `SpatialCoreTests` 401 cases (400 passed, 1 skipped), 330234 of 330234 assertions, exit 0, 488 s; Debug `SpatialCoreUITests` 17 cases, 152 assertions, 14 s; `[hrtf-switch][churn]` 5 Debug and 5 Release runs, all passed. Still nothing on GitHub for this tree.
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies

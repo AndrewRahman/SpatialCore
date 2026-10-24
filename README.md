@@ -114,6 +114,8 @@ cmake --build build --config Release
 
 There are two test executables: `SpatialCoreTests` (DSP, I/O, OSC, trajectories, engine) and `SpatialCoreUITests` (the map and its fonts; the only target that links `SpatialCoreUI`). The gate builds every target in Debug and runs both executables, then builds every target in Release and runs `ctest`:
 
+**Which part to run when (decision D-19, 2026-10-24).** During development the everyday gate is the Release part only: build `build-release` and run `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes; it includes the 20-second `[rt]` trap). The Debug part (both executables, about 8 minutes for `SpatialCoreTests`), the coverage build and the realtime-safety check below run only when you prepare a public release.
+
 ```bash
 # Debug
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

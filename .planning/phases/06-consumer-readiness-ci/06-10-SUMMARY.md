@@ -203,6 +203,25 @@ None - no external service configuration required.
 - When pushed, watch that run: it is the first for the merge with `origin/main`, and the first to exercise the `coverage` job's 93% enforcement.
 - OpenSpatialDelay (pin `3da7d89`) and OpenSpatialPanner (pin `ca8c88b`) can bump their SpatialCore pins once `main` has this branch.
 
+## Second merge of main (b35bd3b)
+
+On 2026-10-24 `origin/main` had moved by 9 commits (PR #33, the #234 binaural HRIR crossfade and ITD fixes, merge commit `b35bd3b`). It was merged locally as `be827e0`; nothing was pushed and no GitHub run was started.
+
+- **Conflict:** `CLAUDE.md` only, three adjacent bullets. Kept this branch's realtime-safety bullet (D-18 wording) and its per-source bullet (`MAX_SOURCES` = 32), and took main's sample-based crossfade bullet (`Binaural/TransitionTiming.h`, correlation-compensated 21.333 ms fade, 512-sample ITD ring). `docs/integration-guide.md` auto-merged; its #234 text and `CLAUDE.md` agree (4096-sample renderer fade, 5.333 ms warm-up, 21.333 ms crossfade). `kMinCrossfadeSamples` no longer exists in code or in any doc. The three test files that this branch had edited for the BUG-03 guard auto-merged and `[bug03]` still passes.
+- **Gate, as the user trimmed it (D-19: Release build + Release ctest + coverage self-test):**
+
+| Command | Result | Duration |
+|---------|--------|----------|
+| `cmake --build build-release -j8` | exit 0 | 11 s |
+| `ctest --test-dir build-release/tests --output-on-failure` | `100% tests passed out of 418` | 147 s |
+| `ctest --test-dir build-release/tests -N \| grep -c 'ui:'` | 17 | instant |
+| `./build-release/tests/SpatialCoreTests "[rt]"` | 2521 assertions in 47 cases, all passed | 42 s |
+| `python3 -I scripts/coverage-report.py --self-test` | `self-test passed` | instant |
+
+- **Extra evidence, run before the D-19 message arrived:** Debug build 8 s (exit 0); full Debug `SpatialCoreTests` 401 cases, 400 passed, 1 skipped, 330234 of 330234 assertions, exit 0, 488 s; Debug `SpatialCoreUITests` 17 cases, 152 assertions, 14 s; `[hrtf-switch][churn]` 5 runs in Debug (25 to 29 s each) and 5 in Release (3 to 6 s each), all exit 0. Together with the 24 earlier runs this makes 34 passes after the one failure logged in `deferred-items.md`. The Debug log has the same 99 `JUCE Assertion failure` lines and the same leaked-`FFT` report as the first merge's run (the deliberate `SharedFFTCache` singleton, D-08).
+- **Not run (decision D-19, 2026-10-24):** nothing more of the Debug part; coverage build; the realtime-safety check steps 2-5 (D-18).
+- **Unresolved:** the cause of the one-off churn failure is still unknown; it did not recur.
+
 ---
 *Phase: 06-consumer-readiness-ci*
 *Completed: 2026-10-24*

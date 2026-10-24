@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
 Plan: 10 of 10 (trimmed close-out, complete)
-Status: All 10 plans have a SUMMARY. origin/main merged into this branch locally (2026-10-24, `37fef2e`); local gate green on the merged tree. Next: phase verification, then the user's OK to push main (it would start a GitHub build). Nothing pushed, no branch protection.
-Last activity: 2026-10-24 — merged origin/main (21 commits: SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2 and 4; milestone re-audit 21/25 with the four gaps being Phase 6's INTG-01, INTG-02, CI-01, TEST-01)
+Status: All 10 plans have a SUMMARY. origin/main merged into this branch locally twice (2026-10-24: `37fef2e`, then `be827e0` for PR #33, the #234 binaural fixes); Release gate green on the merged tree (418 of 418, `[rt]` ok). Next: phase verification, then the user's OK to push main (it would start a GitHub build). Nothing pushed, no branch protection.
+Last activity: 2026-10-24 — second merge of origin/main `b35bd3b` (9 commits, PR #33, #234 HRIR crossfade and ITD fixes; CLAUDE.md conflict resolved, Release ctest 418 of 418). Earlier the same day: merged origin/main (21 commits: SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2 and 4; milestone re-audit 21/25 with the four gaps being Phase 6's INTG-01, INTG-02, CI-01, TEST-01)
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -220,6 +220,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-09: OSD v1.0.0 SharedFFTCache claim verified in OSD git history (same SpinLock-guarded per-order cache, Windows VST3 shipped); docs say macOS-only realtime proof; no requirement ticked, protection mode left to 06-10
 - [Phase 06]: D-18 (user decision 2026-10-24): the full realtime-safety check (README "Realtime-safety check" steps 2-5: the ThreadSanitizer tree, the [tsan] subset ~17 min, the whole suite under TSan ~32 min, ~100 min on GitHub) runs ONLY before a release tag, or by choice after a large change to audio-thread code; not at every phase end and not nightly. The 20-second [rt] allocation-and-lock trap (step 1) stays in the everyday Release ctest gate. ci.yml loses its `schedule:` trigger; `realtime-nightly` runs on a manual dispatch with the `realtime` input only. Supersedes Phase 5 05-08's "phase-end" wording and D-10's nightly; reasoning is written in README "Why it exists and when to run it". Last full pass: CI run 39058330902, 2026-10-17
 - [Phase 06]: 06-10: Phase 6 goes onto main only after phase verification passes, and the push to main needs the user's go-ahead (it would start a GitHub build); no branch protection for now — User decision 2026-10-24 (no cloud builds). README and CLAUDE.md say main has no branch protection yet; origin/main was merged locally and the local gate passes on the merged tree (Release ctest 418 of 418, Debug 401 + 17 cases)
+- [Phase 06]: D-19 (user decision 2026-10-24): during development the everyday gate is the Release build + `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes, includes the 20 s [rt] trap) and `python3 -I scripts/coverage-report.py --self-test`. The full Debug run of both executables, the coverage build and the realtime-safety check (D-18) run only when preparing a public release. Recorded in README "Local test gate" and CLAUDE.md
 
 ### Pending Todos
 
@@ -251,7 +252,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 |----------|------|--------|-------------|
 | Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Resolved — Phase 5 (05-06): documented as a deliberate process-lifetime allocation, D-08 | Phase 02 (02-04) |
 | Binaural | HUTUBS PP2 golden checksum fails in Debug only | Resolved — Phase 3 (03-02) | Phase 02 (02-10) |
-| Tests | `[hrtf-switch][churn]` failed once (15 of 16 switches) in a full Debug run after the origin/main merge and passed in 24 later runs; cause not found (`06-consumer-readiness-ci/deferred-items.md`) | Open | Phase 06 (06-10) |
+| Tests | `[hrtf-switch][churn]` failed once (15 of 16 switches) in a full Debug run after the origin/main merge and passed in 34 later runs (10 more after the second merge of main, b35bd3b); cause not found (`06-consumer-readiness-ci/deferred-items.md`) | Open | Phase 06 (06-10) |
 | CI | Nothing after 310fb93 (the merge with origin/main included) has run on GitHub; the coverage job's 93% enforcement is confirmed locally only (run 40102582138 cancelled, no cloud builds) | Open until the user allows the push | Phase 06 (06-10) |
 | CI | Branch protection on main (D-11) and the nightly schedule (D-10) | Dropped by decision 2026-10-24 (D-18 and the 06-10 decision) | Phase 06 (06-10) |
 | Docs | Stale "12 objects / 12 convolvers" in `.claude/skills/*`, `docs/development-roadmap.md` and `.planning/codebase/*` after SC-1 raised MAX_SOURCES to 32 | Open, one docs pass | Phase 06 (06-10) |
