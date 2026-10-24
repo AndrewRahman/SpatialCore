@@ -17,45 +17,27 @@ using namespace spatialcore;
 // (engineComputesGains + engineDerivesDispatch, positions in degrees, distance 0..1), except
 // that the input is DC so a settled block gives one clean value per channel.
 //
-// NFC choice: the engine runs a per-order NFC-HOA shelf on orders 1+ (renderAmbisonicsOutput).
-// At DC that shelf has gain tan(wZero)/tan(wPole), about r / kNfcReferenceRadius (1.5 m), so a
-// source at 1.5 m (distance 0.15 of the 0..10 m range) has pole == zero, a gain of 1, and the
-// shelf is neutral. The engine smooths the distance toward its target and only rewrites the
-// filter once it has moved 0.01 m, so the settled filter can sit up to 0.01 m / 1.5 m = 0.7 %
-// off neutral; the ratio checks below carry a tolerance that covers it. Direction errors
-// (a sign flip, a 90 degree rotation, a left/right swap) move a channel by 100 % or more.
+// The Ambisonics stream is plain AmbiX SN3D (SpatialCore#32): evalSH x signal x the block's
+// distance gain x tap fade, with no near-field filter and no max-rE weights, so the channel
+// ratios to W do not depend on the source distance. Direction errors (a sign flip, a 90 degree
+// rotation, a left/right swap) move a channel by 100 % or more.
 // ============================================================================
 
 namespace
 {
     constexpr double kSampleRate = 48000.0;
     constexpr int kBlockSize = 64;
-    constexpr int kSettleBlocks = 400;            // 25600 samples: many NFC and smoothing time constants
-    constexpr float kNeutralNfcDistance = 0.15f;  // 1.5 m == kNfcReferenceRadius, shelf gain 1 at DC
+    constexpr int kSettleBlocks = 400;            // 25600 samples, well past every smoothing time constant
+    constexpr float kDefaultDistance = 0.15f;     // 1.5 m of the 0..10 m range
     constexpr float kDcLevel = 0.5f;
 
     // "~ 0" in the cardinal-direction checks: |value| < kZeroRel * W.
     constexpr float kZeroRel = 1.0e-3f;
 
-    // Ratio-to-W tolerance for the higher-order check: 2 % absolute on a ratio whose magnitude
-    // is at most 1 (covers the NFC dead band above; a wrong sign or rotation is off by far more).
-    constexpr float kRatioTol = 0.02f;
-
-    int acnOrder (int acn)
-    {
-        int l = 0;
-        while ((l + 1) * (l + 1) <= acn)
-            ++l;
-        return l;
-    }
-
-    // Max-rE weight of SH order n for an order-N stream, g_n = cos (n * pi / (2N + 2)). RenderEngine
-    // keeps this in the private cachedMaxrE table, so the documented formula is reproduced here.
-    float maxReWeight (int order, int totalOrder)
-    {
-        return std::cos (static_cast<float> (order) * juce::MathConstants<float>::pi
-                         / (2.0f * static_cast<float> (totalOrder) + 2.0f));
-    }
+    // Ratio-to-W tolerance: absolute, on a ratio whose magnitude is at most 1. The stream is exact
+    // up to float rounding; a wrong sign or rotation is off by far more. The plain-AmbiX cases at
+    // the end of the file use the same bound as kRatioTol.
+    constexpr float kRatioTol = 1.0e-4f;
 
     // Renders a DC source at (azDeg, elDeg) for kSettleBlocks blocks on a fresh engine and returns
     // the mean of the last block for every output channel.
@@ -77,7 +59,7 @@ namespace
         sources.objectLive[0] = true;
         sources.objects[0].azimuthDeg = azDeg;
         sources.objects[0].elevationDeg = elDeg;
-        sources.objects[0].distance = kNeutralNfcDistance;
+        sources.objects[0].distance = kDefaultDistance;
         sources.objects[0].enabled = true;
 
         std::vector<std::vector<float>> channels ((size_t) numChannels, std::vector<float> ((size_t) kBlockSize, 0.0f));
@@ -153,7 +135,7 @@ TEST_CASE ("Ambisonics render: an elevated source (az 0, el +45) has positive Z 
     CHECK (out[(size_t) kX] > 0.0f);
     CHECK (std::abs (out[(size_t) kY]) < kZeroRel * w);
 
-    // Magnitude: sin(45) and cos(45) are equal, so |Z| and |X| match within the NFC dead band.
+    // Magnitude: sin(45) and cos(45) are equal, so |Z| and |X| match.
     CHECK (std::abs (out[(size_t) kZ] - out[(size_t) kX]) < kRatioTol * w);
 
     // Negative elevation flips Z only.
@@ -162,7 +144,7 @@ TEST_CASE ("Ambisonics render: an elevated source (az 0, el +45) has positive Z 
     CHECK (below[(size_t) kX] > 0.0f);
 }
 
-TEST_CASE ("Ambisonics render: every channel of a higher-order stream is evalSH x max-rE, relative to W",
+TEST_CASE ("Ambisonics render: every channel of a higher-order stream is plain evalSH, relative to W (no max-rE)",
            "[ambi][engine][ambix]")
 {
     struct Fmt { OutputFormat format; int order; const char* name; };
@@ -189,11 +171,11 @@ TEST_CASE ("Ambisonics render: every channel of a higher-order stream is evalSH 
 
                 const float azRad = juce::degreesToRadians (d.azDeg);
                 const float elRad = juce::degreesToRadians (d.elDeg);
-                const float wRef = evalSH (0, azRad, elRad) * maxReWeight (0, f.order);
+                const float wRef = evalSH (0, azRad, elRad);
 
                 for (int n = 1; n < numCh; ++n)
                 {
-                    const float expected = evalSH (n, azRad, elRad) * maxReWeight (acnOrder (n), f.order) / wRef;
+                    const float expected = evalSH (n, azRad, elRad) / wRef;
                     const float got = out[(size_t) n] / w;
 
                     INFO ("ACN " << n << " expected ratio " << expected << " got " << got);
@@ -215,7 +197,6 @@ TEST_CASE ("Ambisonics render: every channel of a higher-order stream is evalSH 
 // ============================================================================
 namespace
 {
-    constexpr float kStreamTol = 1.0e-4f;     // absolute, on out[n] / level and on ratios to W
     constexpr float kResidualTol = 1.0e-3f;   // least-squares residual / channel RMS
 
     struct FitResult
@@ -339,7 +320,7 @@ TEST_CASE ("Ambisonics render: the output stream equals the scipy SN3D tables at
                 {
                     INFO ("golden: " << f.name << ", az " << ref.azDeg << " el " << ref.elDeg << ", ACN " << n
                           << " expected " << ref.table[n] << " got " << out[(size_t) n] / kDcLevel);
-                    CHECK (std::abs (out[(size_t) n] / kDcLevel - ref.table[n]) < kStreamTol);
+                    CHECK (std::abs (out[(size_t) n] / kDcLevel - ref.table[n]) < kRatioTol);
                 }
             }
         }
@@ -378,11 +359,11 @@ TEST_CASE ("Ambisonics render: channel ratios to W do not depend on distance, at
 
                         INFO ("golden: " << f.name << ", " << freq << " Hz, distance " << dist
                               << ", ACN " << n << " expected " << expected << " got " << ratio);
-                        CHECK (std::abs (ratio - expected) < kStreamTol);
+                        CHECK (std::abs (ratio - expected) < kRatioTol);
 
                         INFO ("distance independence: " << f.name << ", " << freq << " Hz, distance " << dist
                               << ", ACN " << n << " ratio " << ratio << " vs ratio at 1.5 m " << baseRatio);
-                        CHECK (std::abs (ratio - baseRatio) < kStreamTol);
+                        CHECK (std::abs (ratio - baseRatio) < kRatioTol);
 
                         INFO ("phase residual: " << f.name << ", " << freq << " Hz, distance " << dist
                               << ", ACN " << n << " residual " << fit.residual[(size_t) n]);
