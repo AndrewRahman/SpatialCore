@@ -48,7 +48,7 @@ Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25
 - [ ] Session opened without the custom file plays KEMAR + warning and keeps the custom choice
 - [ ] Define a perceived-loudness standard (pink noise, ear-weighted, over all directions), apply it to custom and built-in profiles; OSD release note for the built-in level change. Input: Phase 3 D-14 measurement
 - [ ] Decide shared `SpatialCoreUI` widget vs per-plugin import UI
-- Full decision record: `.planning/phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` § Deferred Ideas
+- Full decision record: `.planning/milestones/v1.0.0-phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` § Deferred Ideas
 
 ### Phase 999.4: Listening check — Simple-mode height and rear cues (BACKLOG)
 

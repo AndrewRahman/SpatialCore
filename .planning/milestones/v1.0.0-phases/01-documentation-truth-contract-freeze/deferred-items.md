@@ -22,4 +22,5 @@ current task's changes).
   identically in isolation, confirming it is unrelated to the `[counts]`
   additions.
 - **Status:** acknowledged
-  contract freeze). Needs its own investigation/fix in a future phase.
+- **Deferral:** deferred — out of scope for phase 01 (documentation truth
+  contract freeze). Needs its own investigation/fix in a future phase. (acknowledged at v1.0.0 close: resolved by 04ecf6b)
