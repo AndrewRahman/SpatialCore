@@ -11,7 +11,9 @@ name: SpatialCore CI
 #   Every push and pull request also runs coverage (scripts/coverage.sh: an instrumented Debug build,
 #   both test executables, a per-area table on the run's summary page and the full report as the
 #   coverage-report artifact). It fails when the engine figure is below scripts/coverage-targets.json.
-#   Nightly and on a manual run: realtime-nightly (README "Realtime-safety check", steps 1-5).
+#   On a manual run only (workflow_dispatch with the realtime input on): realtime-nightly (README
+#   "Realtime-safety check", steps 1-5). It has no schedule and never runs on its own; run it
+#   before a release tag (user decision 2026-10-24).
 #
 # Security posture: the token is read-only, the only trigger that runs outside code is
 # pull_request, no secret is used, every action is first-party and pinned to a commit SHA, and
@@ -28,9 +30,6 @@ on:
         description: Also run the realtime-safety check (ThreadSanitizer and the allocation trap)
         type: boolean
         default: true
-  schedule:
-    # An off-minute: scheduled runs at the top of the hour are delayed or dropped.
-    - cron: '17 3 * * *'
 
 permissions:
   contents: read
@@ -48,7 +47,6 @@ jobs:
   macos-gate:
     name: macos-gate
     runs-on: macos-26
-    if: github.event_name != 'schedule'
     timeout-minutes: 180
 
     steps:
@@ -201,7 +199,6 @@ jobs:
   linux-tests:
     name: linux-tests
     runs-on: ubuntu-24.04
-    if: github.event_name != 'schedule'
     timeout-minutes: 120
 
     steps:
@@ -305,7 +302,6 @@ jobs:
     # Build-only by decision D-08: MSVC compiles every target, including the Windows-only code
     # branches, and no test is run. Running the suite on Windows is deferred.
     runs-on: windows-2025
-    if: github.event_name != 'schedule'
     timeout-minutes: 120
     defaults:
       run:
@@ -412,7 +408,6 @@ jobs:
   coverage:
     name: coverage
     runs-on: macos-26
-    if: github.event_name != 'schedule'
     timeout-minutes: 150
 
     steps:
@@ -497,13 +492,13 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # The schedule fires only from the default branch, so the nightly starts once this file is on
-  # main. The same job is also part of the phase-end and pre-release check that is run by hand,
-  # and a manual run of this workflow with the realtime input on starts it on any branch.
+  # The realtime-safety check runs only on a manual run of this workflow with the realtime input
+  # on (any branch), before a release tag. There is no schedule and no push trigger: the job
+  # keeps its name so existing references to it still resolve.
   realtime-nightly:
     name: realtime-nightly
     runs-on: macos-26
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.realtime)
+    if: github.event_name == 'workflow_dispatch' && inputs.realtime
     timeout-minutes: 360
 
     steps:

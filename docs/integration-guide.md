@@ -542,7 +542,7 @@ add_executable(YourPluginTests tests/YourTests.cpp)
 target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
 ```
 
-SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README, and CI runs it on every push and pull request: `macos-gate` (the same gate, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`; `realtime-nightly` runs the realtime-safety check nightly and on demand. Run the local gate before you push. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
+SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README, and CI runs it on every push and pull request: `macos-gate` (the same gate, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`; `realtime-nightly` runs the realtime-safety check on a manual run only, before a release. Run the local gate before you push. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
 
 ## Preset System
 

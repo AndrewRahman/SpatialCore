@@ -358,7 +358,7 @@ Open issues that close with evidence rather than a code change.
 
   - Acceptance: a green macOS CI run building against JUCE 9.0.0 and running the Catch2 suite.
   - Scope note (amended 2026-10-17, D-08): macOS is the full gate (the whole suite, the consumer
-    harness, the realtime-safety check nightly). Linux runs the test suite (the allocation trap is
+    harness; the realtime-safety check on a manual run before a release, amended 2026-10-24, D-18). Linux runs the test suite (the allocation trap is
     macOS-only, so its cases skip there). Windows builds only. Running the suite on Windows is
     deferred. This replaces the 2026-08-09 wording, which limited the supersession of "Windows/Linux
     CI is out of scope" to macOS + JUCE 9 and kept cross-platform matrices out of scope.

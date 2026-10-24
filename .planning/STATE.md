@@ -217,6 +217,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-07: user chose coverage target `hold` on 2026-10-24 — engine line coverage target 93% (measured 94.19% on CI run 39074814315, 93.97–94.00% locally), UI measured and shown (25.89%) but NOT a rule; Plan 06-08 enforces 93% — OQ-4 answered at the 06-07 blocking checkpoint
 - [Phase 06]: 06-08: engine coverage target committed as 93 exactly as the user gave it (not floor(94.19)=94); UI report-only, no ui_line_percent
 - [Phase 06]: 06-09: OSD v1.0.0 SharedFFTCache claim verified in OSD git history (same SpinLock-guarded per-order cache, Windows VST3 shipped); docs say macOS-only realtime proof; no requirement ticked, protection mode left to 06-10
+- [Phase 06]: D-18 (user decision 2026-10-24): the full realtime-safety check (README "Realtime-safety check" steps 2-5: the ThreadSanitizer tree, the [tsan] subset ~17 min, the whole suite under TSan ~32 min, ~100 min on GitHub) runs ONLY before a release tag, or by choice after a large change to audio-thread code; not at every phase end and not nightly. The 20-second [rt] allocation-and-lock trap (step 1) stays in the everyday Release ctest gate. ci.yml loses its `schedule:` trigger; `realtime-nightly` runs on a manual dispatch with the `realtime` input only. Supersedes Phase 5 05-08's "phase-end" wording and D-10's nightly; reasoning is written in README "Why it exists and when to run it". Last full pass: CI run 39058330902, 2026-10-17
 
 ### Pending Todos
 
