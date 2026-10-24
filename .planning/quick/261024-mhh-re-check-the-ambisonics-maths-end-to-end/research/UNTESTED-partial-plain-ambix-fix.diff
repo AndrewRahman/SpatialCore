@@ -1,0 +1,1143 @@
+diff --git a/include/SpatialCore/Engine/RenderEngine.h b/include/SpatialCore/Engine/RenderEngine.h
+index 40b7bd5..93d65cf 100644
+--- a/include/SpatialCore/Engine/RenderEngine.h
++++ b/include/SpatialCore/Engine/RenderEngine.h
+@@ -40,7 +40,7 @@ namespace spatialcore
+ // Doppler/pitch-shifted (the OSD-owned delay-line / feedback / Doppler /
+ // phase-vocoder pitch-shift engine stays OUTSIDE the engine, in the consumer).
+ // The engine does ONLY the spatialization step: HRTF convolution, binaural/
+-// stereo gain panning, ambisonics SH encode + NFC-HOA, or discrete-surround
++// stereo gain panning, ambisonics SH encode (plain AmbiX SN3D), or discrete-surround
+ // gain application — reproducing the EXACT 5-branch dispatch structure
+ // currently in OpenSpatialDelayProcessor::processBlock (D-09 — do not "clean
+ // up" or reorder the dispatch). The engine is latency-neutral: it introduces
+@@ -154,11 +154,9 @@ struct RenderBlockContext
+     // object (algorithm->computeGains output, up to MAX_SPEAKERS=16).
+     float objChannelGains[MAX_SOURCES][MAX_SPEAKERS] = {};
+ 
+-    // Ambisonics path inputs. Sample rate is required by the NFC-HOA per-order
+-    // shelf-filter pole/zero recompute (matches the pre-move code's direct
+-    // read of currentSampleRate) — supplied per-block rather than cached at
+-    // prepare() time so the engine has no hidden dependency on prepare()
+-    // having been called with the "right" rate if it ever changes.
++    // Ambisonics path inputs. The Ambisonics output stream is plain AmbiX (no near-field
++    // filter, SpatialCore#32), so it no longer reads the sample rate; the field stays for
++    // the other paths and for source compatibility.
+     int ambiOrder = 0;
+     double sampleRate = 48000.0;
+ 
+@@ -602,11 +600,6 @@ public:
+ private:
+     class HRTFProfileLoader;   // defined in RenderEngine.cpp; a nested class sees the private state below
+ 
+-    // TEST-ONLY seam (IN-07): SpatialCore's own tests define this struct to read the engine's
+-    // stored NFC filter coefficients. A friend declaration adds no public method and changes no
+-    // layout, and no consumer defines the struct.
+-    friend struct RenderEngineTestAccess;
+-
+     //--------------------------------------------------------------------------
+     // The 5 render paths (verbatim-transplanted bodies, Task 2). Internal —
+     // renderBlock() is the only public entry point, matching the pre-move
+@@ -699,17 +692,6 @@ private:
+     const RenderSources& sanitizeSources (const RenderSources& sources);
+     void resetLastGoodPositions();
+ 
+-    // ACN channel index -> SH order lookup (verbatim from
+-    // OpenSpatialDelayProcessor::acnToOrder, moved because it is used only by
+-    // renderAmbisonicsOutput's max-rE weighting).
+-    static constexpr int acnToOrder (int acn)
+-    {
+-        if (acn < 1)  return 0;  if (acn < 4)  return 1;
+-        if (acn < 9)  return 2;  if (acn < 16) return 3;
+-        if (acn < 25) return 4;  if (acn < 36) return 5;
+-        return 6;
+-    }
+-
+     //==========================================================================
+     // ENGINE-OWNED STATE — every field below is a required carry-forward of
+     // an implicit render-state dependency found in the Task 1 inventory
+@@ -828,17 +810,14 @@ private:
+     float prevStereoGainR[MAX_SOURCES] = {};
+     float prevChannelGains[MAX_SOURCES][MAX_SPEAKERS] = {};
+ 
+-    // --- Ambisonics NFC-HOA + max-rE weighting state ---
++    // --- Ambisonics output state ---
++    // The output stream is plain AmbiX SN3D (SpatialCore#32): evalSH x source x the block's gains,
++    // no near-field filter and no max-rE weighting. Only the SH-coefficient carry-forward for
++    // click-free per-block interpolation remains. The former per-object NFC-HOA shelf filters,
++    // smoothed distance, cached max-rE table and kNfcReferenceRadius are gone.
+     static constexpr int kMaxAmbiOrder = 6;
+     static constexpr int kMaxAmbiChannels = (kMaxAmbiOrder + 1) * (kMaxAmbiOrder + 1);
+-    static constexpr float kNfcReferenceRadius = 1.5f; // meters (typical studio monitoring distance)
+     float prevSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
+-    juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // MAX_SOURCES objects x 6 orders
+-    float smoothedNfcDistance[MAX_SOURCES] = {};
+-    float prevNfcDistance[MAX_SOURCES] = {};
+-    int   lastNfcAmbiOrder_ = -1;  // order the NFC filters were last updated for (SpatialCore#21)
+-    int   cachedMaxrEOrder = -1;
+-    float cachedMaxrE[kMaxAmbiOrder + 1] = {};
+ 
+     // --- Discrete-surround LFE generation filter (stateful IIR — persists
+     //     across blocks, must live with the render path that uses it).
+diff --git a/src/Engine/RenderEngine.cpp b/src/Engine/RenderEngine.cpp
+index 58553cc..cc2a89b 100644
+--- a/src/Engine/RenderEngine.cpp
++++ b/src/Engine/RenderEngine.cpp
+@@ -532,29 +532,6 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
+     lfeFilter.prepare (spec);
+     lfeFilter.reset();
+ 
+-    // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
+-    //
+-    // Same ordering rule as the LFE filter above: every NFC update installs
+-    // FIRST-order coefficients, so the placeholder must be first-order too and
+-    // be assigned BEFORE prepare()/reset() sizes the state. A second-order
+-    // placeholder (the former 1 kHz all-pass) made Filter::check() reallocate on
+-    // the audio thread when an order that became active after the distance
+-    // settled was first processed (SpatialCore#21). Identity is an exact
+-    // pass-through until the first NFC update replaces it.
+-    for (int obj = 0; obj < MAX_SOURCES; ++obj)
+-    {
+-        for (int n = 0; n < kMaxAmbiOrder; ++n)
+-        {
+-            *nfcFilters[obj][n].coefficients =
+-                juce::dsp::IIR::Coefficients<float> (1.0f, 0.0f, 1.0f, 0.0f);
+-            nfcFilters[obj][n].prepare (spec);
+-            nfcFilters[obj][n].reset();
+-        }
+-        prevNfcDistance[obj] = -1.0f;  // Force coefficient update on first block
+-        smoothedNfcDistance[obj] = 0.0f;
+-    }
+-    lastNfcAmbiOrder_ = -1;
+-
+     // SC-20: a fresh prepare has played nothing, so the first block takes the
+     // published layout without a fade and no fade-in is owed.
+     fadeInPending_ = false;
+@@ -1603,8 +1580,11 @@ void RenderEngine::renderStereoVariant (const RenderSources& sources,
+ }
+ 
+ //==============================================================================
+-// renderAmbisonicsOutput — verbatim-transplanted (max-rE weighting +
+-// NFC-HOA per-order shelf filters, now engine-owned state).
++// renderAmbisonicsOutput — plain AmbiX SN3D (SpatialCore#32): each object is
++// evalSH (acn, az, el) x source x distance gain x tap fade, with no near-field
++// filter and no max-rE weighting. That is what the IEM encoders emit; decoders
++// (IEM AllRAD, SimpleDecoder, ...) assume plane-wave encoding and apply their
++// own max-rE, so weighting here would be applied twice.
+ //==============================================================================
+ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
+                                              const RenderBlockContext& blockCtx,
+@@ -1614,71 +1594,6 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
+     const int ambiOrder = blockCtx.ambiOrder;
+     const int numAmbiCh = std::min ((ambiOrder + 1) * (ambiOrder + 1), kMaxAmbiChannels);
+ 
+-    // Max-rE weights per SH order for perceptual quality (Zotter & Frank 2012)
+-    if (ambiOrder != cachedMaxrEOrder)
+-    {
+-        const float maxrEDenom = 2.0f * static_cast<float> (ambiOrder) + 2.0f;
+-        for (int n = 0; n <= ambiOrder; ++n)
+-            cachedMaxrE[n] = std::cos (static_cast<float> (n) * juce::MathConstants<float>::pi / maxrEDenom);
+-        cachedMaxrEOrder = ambiOrder;
+-    }
+-
+-    // --- NFC-HOA: Update filter coefficients when distance changes (block-rate) ---
+-    constexpr float nfcSmoothAlpha = 0.15f;
+-    // Sample rate for the NFC pole/zero computation matches the pre-move
+-    // code's direct read of currentSampleRate — threaded through
+-    // RenderBlockContext per-block (D-02: renderBlock stays a pure function
+-    // of its inputs, no hidden dependency on prepare()'s cached rate).
+-    const double sr = blockCtx.sampleRate;
+-
+-    // An order change activates (or deactivates) filters whose coefficients
+-    // were last written under a different order, and the distance gate below
+-    // would not rewrite them while the distance stays settled. Invalidate
+-    // every object's last-written distance so this block's update recomputes
+-    // every active order (SpatialCore#21). No allocation: the update below
+-    // assigns four floats into the coefficient storage the prepare() placeholder
+-    // already sized (capacity of at least 8 floats, so assignImpl never
+-    // reallocates). It builds no temporary Coefficients object: that temporary
+-    // allocated on the audio thread (Phase 5 RESEARCH F1). The stored values are
+-    // bit-identical to the old construction (D-10, pinned by [nfc][d10]).
+-    if (ambiOrder != lastNfcAmbiOrder_)
+-    {
+-        for (int t = 0; t < MAX_SOURCES; ++t)
+-            prevNfcDistance[t] = -1.0f;
+-        lastNfcAmbiOrder_ = ambiOrder;
+-    }
+-
+-    for (int t = 0; t < MAX_SOURCES; ++t)
+-    {
+-        if (! sources.objectLive[t]) continue;
+-        float distMeters = sources.objects[t].distance * 10.0f;  // 0..1 -> 0..10m
+-
+-        smoothedNfcDistance[t] += nfcSmoothAlpha * (distMeters - smoothedNfcDistance[t]);
+-
+-        if (std::abs (smoothedNfcDistance[t] - prevNfcDistance[t]) > 0.01f)
+-        {
+-            for (int ord = 0; ord < ambiOrder && ord < kMaxAmbiOrder; ++ord)
+-            {
+-                int n = ord + 1;  // SH order (1-based)
+-                constexpr float c = 343.0f;  // speed of sound, m/s
+-                float r = std::max (0.05f, smoothedNfcDistance[t]);
+-                float fPole = static_cast<float> (n) * c / (2.0f * juce::MathConstants<float>::pi * r);
+-                float fZero = static_cast<float> (n) * c / (2.0f * juce::MathConstants<float>::pi * kNfcReferenceRadius);
+-                float maxFreq = static_cast<float> (sr) * 0.25f;
+-                fPole = std::min (fPole, maxFreq);
+-                fZero = std::min (fZero, maxFreq);
+-                float wPole = std::tan (juce::MathConstants<float>::pi * fPole / static_cast<float> (sr));
+-                float wZero = std::tan (juce::MathConstants<float>::pi * fZero / static_cast<float> (sr));
+-                float b0 = (1.0f + wZero);
+-                float b1 = (wZero - 1.0f);
+-                float a0 = (1.0f + wPole);
+-                float a1 = (wPole - 1.0f);
+-                *nfcFilters[t][ord].coefficients = std::array<float, 4> { b0 / a0, b1 / a0, 1.0f, a1 / a0 };
+-            }
+-            prevNfcDistance[t] = smoothedNfcDistance[t];
+-        }
+-    }
+-
+     // Pre-compute SH coefficients per enabled tap (block-rate)
+     float objSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
+     for (int t = 0; t < MAX_SOURCES; ++t)
+@@ -1687,7 +1602,7 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
+         float azRad = juce::degreesToRadians (sources.objects[t].azimuthDeg);
+         float elRad = juce::degreesToRadians (sources.objects[t].elevationDeg);
+         for (int c = 0; c < numAmbiCh; ++c)
+-            objSHCoeffs[t][c] = evalSH (c, azRad, elRad) * cachedMaxrE[acnToOrder (c)];
++            objSHCoeffs[t][c] = evalSH (c, azRad, elRad);
+     }
+ 
+     // SC-20: the fade-in block of a format switch starts at its own targets.
+@@ -1712,21 +1627,10 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
+             float dist = (sources.distGainPerSample[t] != nullptr) ? sources.distGainPerSample[t][s] : 1.0f;
+             float scaledMono = objMono * dist * tapFade;
+ 
+-            // Order 0 (W channel): no NFC needed
+-            float sh0 = prevSHCoeffs[t][0] + frac * (objSHCoeffs[t][0] - prevSHCoeffs[t][0]);
+-            ambiAccum[0] += scaledMono * sh0;
+-
+-            // Orders 1+: apply NFC-HOA per-order shelf filter
+-            for (int ord = 0; ord < ambiOrder && ord < kMaxAmbiOrder; ++ord)
++            for (int c = 0; c < numAmbiCh; ++c)
+             {
+-                float nfcMono = nfcFilters[t][ord].processSample (scaledMono);
+-                int startACN = (ord + 1) * (ord + 1);
+-                int endACN = (ord + 2) * (ord + 2);
+-                for (int c = startACN; c < endACN && c < numAmbiCh; ++c)
+-                {
+-                    float shc = prevSHCoeffs[t][c] + frac * (objSHCoeffs[t][c] - prevSHCoeffs[t][c]);
+-                    ambiAccum[c] += nfcMono * shc;
+-                }
++                const float shc = prevSHCoeffs[t][c] + frac * (objSHCoeffs[t][c] - prevSHCoeffs[t][c]);
++                ambiAccum[c] += scaledMono * shc;
+             }
+         }
+ 
+diff --git a/tests/Engine/AmbisonicsRenderDirectionTests.cpp b/tests/Engine/AmbisonicsRenderDirectionTests.cpp
+index 407714f..645592e 100644
+--- a/tests/Engine/AmbisonicsRenderDirectionTests.cpp
++++ b/tests/Engine/AmbisonicsRenderDirectionTests.cpp
+@@ -2,6 +2,7 @@
+ #include <SpatialCore/Engine/RenderEngine.h>
+ #include <SpatialCore/Core/SpatialMath.h>
+ #include <cmath>
++#include "../reference/ShBackHalfReference.h"
+ #include <vector>
+ 
+ using namespace spatialcore;
+@@ -15,29 +16,29 @@ using namespace spatialcore;
+ // (engineComputesGains + engineDerivesDispatch, positions in degrees, distance 0..1), except
+ // that the input is DC so a settled block gives one clean value per channel.
+ //
+-// NFC choice: the engine runs a per-order NFC-HOA shelf on orders 1+ (renderAmbisonicsOutput).
+-// At DC that shelf has gain tan(wZero)/tan(wPole), about r / kNfcReferenceRadius (1.5 m), so a
+-// source at 1.5 m (distance 0.15 of the 0..10 m range) has pole == zero, a gain of 1, and the
+-// shelf is neutral. The engine smooths the distance toward its target and only rewrites the
+-// filter once it has moved 0.01 m, so the settled filter can sit up to 0.01 m / 1.5 m = 0.7 %
+-// off neutral; the ratio checks below carry a tolerance that covers it. Direction errors
+-// (a sign flip, a 90 degree rotation, a left/right swap) move a channel by 100 % or more.
++// The Ambisonics output is plain AmbiX (SpatialCore#32): evalSH (acn, az, el) x source x the
++// block's distance gain and tap fade, with no near-field filter and no max-rE weighting. That is
++// what the IEM encoders produce, and the IEM decoders apply their own max-rE, so the stream
++// carries no weighting of its own. Distance therefore changes the level only through the
++// consumer's distGainPerSample, never the channel ratios or the spectrum of one channel against
++// another.
+ // ============================================================================
+ 
+ namespace
+ {
+     constexpr double kSampleRate = 48000.0;
+     constexpr int kBlockSize = 64;
+-    constexpr int kSettleBlocks = 400;            // 25600 samples: many NFC and smoothing time constants
+-    constexpr float kNeutralNfcDistance = 0.15f;  // 1.5 m == kNfcReferenceRadius, shelf gain 1 at DC
++    constexpr int kSettleBlocks = 400;            // 25600 samples
++    constexpr float kDefaultDistance = 0.15f;     // any distance gives the same ratios
+     constexpr float kDcLevel = 0.5f;
+ 
+     // "~ 0" in the cardinal-direction checks: |value| < kZeroRel * W.
+     constexpr float kZeroRel = 1.0e-3f;
+ 
+-    // Ratio-to-W tolerance for the higher-order check: 2 % absolute on a ratio whose magnitude
+-    // is at most 1 (covers the NFC dead band above; a wrong sign or rotation is off by far more).
+-    constexpr float kRatioTol = 0.02f;
++    // Ratio-to-W tolerance: 1e-4 absolute on a ratio whose magnitude is at most about 2.2 (float
++    // arithmetic through the engine). The stream is exact, so this is tight; a wrong sign,
++    // rotation, weighting or filter is off by orders of magnitude more.
++    constexpr float kRatioTol = 1.0e-4f;
+ 
+     int acnOrder (int acn)
+     {
+@@ -47,14 +48,6 @@ namespace
+         return l;
+     }
+ 
+-    // Max-rE weight of SH order n for an order-N stream, g_n = cos (n * pi / (2N + 2)). RenderEngine
+-    // keeps this in the private cachedMaxrE table, so the documented formula is reproduced here.
+-    float maxReWeight (int order, int totalOrder)
+-    {
+-        return std::cos (static_cast<float> (order) * juce::MathConstants<float>::pi
+-                         / (2.0f * static_cast<float> (totalOrder) + 2.0f));
+-    }
+-
+     // Renders a DC source at (azDeg, elDeg) for kSettleBlocks blocks on a fresh engine and returns
+     // the mean of the last block for every output channel.
+     std::vector<float> renderDc (OutputFormat format, int numChannels, float azDeg, float elDeg)
+@@ -75,7 +68,7 @@ namespace
+         sources.objectLive[0] = true;
+         sources.objects[0].azimuthDeg = azDeg;
+         sources.objects[0].elevationDeg = elDeg;
+-        sources.objects[0].distance = kNeutralNfcDistance;
++        sources.objects[0].distance = kDefaultDistance;
+         sources.objects[0].enabled = true;
+ 
+         std::vector<std::vector<float>> channels ((size_t) numChannels, std::vector<float> ((size_t) kBlockSize, 0.0f));
+@@ -151,7 +144,7 @@ TEST_CASE ("Ambisonics render: an elevated source (az 0, el +45) has positive Z
+     CHECK (out[(size_t) kX] > 0.0f);
+     CHECK (std::abs (out[(size_t) kY]) < kZeroRel * w);
+ 
+-    // Magnitude: sin(45) and cos(45) are equal, so |Z| and |X| match within the NFC dead band.
++    // Magnitude: sin(45) and cos(45) are equal, so |Z| and |X| match within kRatioTol.
+     CHECK (std::abs (out[(size_t) kZ] - out[(size_t) kX]) < kRatioTol * w);
+ 
+     // Negative elevation flips Z only.
+@@ -160,7 +153,7 @@ TEST_CASE ("Ambisonics render: an elevated source (az 0, el +45) has positive Z
+     CHECK (below[(size_t) kX] > 0.0f);
+ }
+ 
+-TEST_CASE ("Ambisonics render: every channel of a higher-order stream is evalSH x max-rE, relative to W",
++TEST_CASE ("Ambisonics render: every channel of a higher-order stream is plain evalSH, relative to W (no max-rE)",
+            "[ambi][engine][ambix]")
+ {
+     struct Fmt { OutputFormat format; int order; const char* name; };
+@@ -187,21 +180,165 @@ TEST_CASE ("Ambisonics render: every channel of a higher-order stream is evalSH
+ 
+                 const float azRad = juce::degreesToRadians (d.azDeg);
+                 const float elRad = juce::degreesToRadians (d.elDeg);
+-                const float wRef = evalSH (0, azRad, elRad) * maxReWeight (0, f.order);
++                const float wRef = evalSH (0, azRad, elRad);
+ 
+                 for (int n = 1; n < numCh; ++n)
+                 {
+-                    const float expected = evalSH (n, azRad, elRad) * maxReWeight (acnOrder (n), f.order) / wRef;
++                    const float expected = evalSH (n, azRad, elRad) / wRef;
+                     const float got = out[(size_t) n] / w;
+ 
+                     INFO ("ACN " << n << " expected ratio " << expected << " got " << got);
+                     CHECK (std::abs (got - expected) < kRatioTol);
+-
+-                    // The sign must match wherever the expected value is clear of the tolerance.
+-                    if (std::abs (expected) > 2.0f * kRatioTol)
+-                        CHECK ((got > 0.0f) == (expected > 0.0f));
+                 }
+             }
+         }
+     }
+ }
++
++TEST_CASE ("Ambisonics render: the 6th-order stream matches the independent scipy tables in the back half (#32)",
++           "[ambi][engine][ambix][golden]")
++{
++    // tests/reference/ShBackHalfReference.h comes from gen_sh_reference.py --back-half (scipy), so
++    // this compares the engine to an external reference, not to evalSH. W is 1 in SN3D, so the
++    // engine's channel over W is the table value.
++    for (const auto& ref : spatialcore_ref::kBackHalfRefs)
++    {
++        DYNAMIC_SECTION ("az " << ref.azDeg << " el " << ref.elDeg)
++        {
++            const auto out = renderDc (OutputFormat::Ambisonics6OA, 49, ref.azDeg, ref.elDeg);
++            const float w = out[(size_t) kW];
++            REQUIRE (w > 0.0f);
++
++            for (int n = 0; n < 49; ++n)
++            {
++                INFO ("ACN " << n << " reference " << ref.table[n] << " got " << out[(size_t) n] / w);
++                CHECK (std::abs (out[(size_t) n] / w - ref.table[n]) < kRatioTol);
++            }
++        }
++    }
++}
++
++namespace
++{
++    // Renders a unit-amplitude test signal (DC when freqHz == 0, else a sine) at the given
++    // distance and returns, per channel, the least-squares gain of the output onto the input
++    // (<out, in> / <in, in>) over the last 100 blocks, plus the relative residual
++    // (|out - gain x in| / |out|) so a filter's phase shift cannot hide in the gain.
++    struct ChannelFit { std::vector<float> gain; std::vector<float> residual; };
++
++    ChannelFit renderFit (OutputFormat format, int numChannels, float azDeg, float elDeg,
++                          float distance, float freqHz)
++    {
++        RenderEngine engine;
++        engine.prepare (kSampleRate, kBlockSize);
++        engine.setOutputFormat (format);
++
++        std::vector<float> mono ((size_t) kBlockSize, 1.0f);
++        std::vector<float> tapFade ((size_t) kBlockSize, 1.0f);
++        std::vector<float> distGain ((size_t) kBlockSize, 1.0f);
++
++        RenderSources sources;
++        sources.numSamples = kBlockSize;
++        sources.monoBuffers[0] = mono.data();
++        sources.tapFadeGainPerSample[0] = tapFade.data();
++        sources.distGainPerSample[0] = distGain.data();
++        sources.objectLive[0] = true;
++        sources.objects[0].azimuthDeg = azDeg;
++        sources.objects[0].elevationDeg = elDeg;
++        sources.objects[0].distance = distance;
++        sources.objects[0].enabled = true;
++
++        std::vector<std::vector<float>> channels ((size_t) numChannels, std::vector<float> ((size_t) kBlockSize, 0.0f));
++        std::vector<float*> ptrs ((size_t) numChannels);
++        for (int c = 0; c < numChannels; ++c)
++            ptrs[(size_t) c] = channels[(size_t) c].data();
++
++        constexpr int kMeasureBlocks = 100;
++        std::vector<double> xy ((size_t) numChannels, 0.0), yy ((size_t) numChannels, 0.0);
++        double xx = 0.0;
++        long sampleIndex = 0;
++
++        for (int b = 0; b < kSettleBlocks; ++b)
++        {
++            for (int s = 0; s < kBlockSize; ++s, ++sampleIndex)
++                mono[(size_t) s] = (freqHz <= 0.0f) ? 1.0f
++                    : (float) std::sin (2.0 * 3.14159265358979323846 * (double) freqHz * (double) sampleIndex / kSampleRate);
++
++            RenderBlockContext ctx;
++            ctx.sampleRate = kSampleRate;
++            ctx.engineComputesGains = true;
++            ctx.engineDerivesDispatch = true;
++            engine.renderBlock (sources, ctx, ptrs.data(), numChannels);
++
++            if (b >= kSettleBlocks - kMeasureBlocks)
++                for (int s = 0; s < kBlockSize; ++s)
++                {
++                    xx += (double) mono[(size_t) s] * (double) mono[(size_t) s];
++                    for (int c = 0; c < numChannels; ++c)
++                    {
++                        const double y = (double) channels[(size_t) c][(size_t) s];
++                        xy[(size_t) c] += (double) mono[(size_t) s] * y;
++                        yy[(size_t) c] += y * y;
++                    }
++                }
++        }
++
++        ChannelFit fit { std::vector<float> ((size_t) numChannels), std::vector<float> ((size_t) numChannels) };
++        for (int c = 0; c < numChannels; ++c)
++        {
++            const double g = xy[(size_t) c] / xx;
++            const double res = yy[(size_t) c] - g * g * xx;   // |out|^2 - |g x in|^2, the orthogonal part
++            fit.gain[(size_t) c] = (float) g;
++            fit.residual[(size_t) c] = (yy[(size_t) c] > 1.0e-12)
++                ? (float) std::sqrt (std::max (0.0, res) / yy[(size_t) c]) : 0.0f;
++        }
++        return fit;
++    }
++}
++
++TEST_CASE ("Ambisonics render: distance does not change the channel ratios, at DC or at 50 Hz (#32)",
++           "[ambi][engine][ambix][distance]")
++{
++    // Distance 0.05..1.0 is 0.5..10 m. The old output ran a per-order near-field shelf, so a
++    // far source had orders 1+ boosted against W at low frequency and the ratios moved with
++    // distance. The plain AmbiX stream has the same ratios at every distance and frequency.
++    // Tolerance: gain ratio within 1e-4 of evalSH (n) / evalSH (0); least-squares residual
++    // (anything the gain cannot explain, i.e. a phase shift) below 1e-3 of the channel's RMS.
++    constexpr float kResidualTol = 1.0e-3f;
++    const float distances[] = { 0.05f, 0.15f, 0.5f, 1.0f };
++    const float freqs[] = { 0.0f, 50.0f };
++
++    struct Fmt { OutputFormat format; int order; const char* name; };
++    const Fmt formats[] = {
++        { OutputFormat::AmbisonicsFOA, 1, "FOA" },
++        { OutputFormat::AmbisonicsHOA, 3, "3OA" },
++        { OutputFormat::Ambisonics6OA, 6, "6OA" },
++    };
++    const float azDeg = 30.0f, elDeg = 20.0f;
++
++    for (const auto& f : formats)
++    {
++        const int numCh = (f.order + 1) * (f.order + 1);
++        const float azRad = juce::degreesToRadians (azDeg);
++        const float elRad = juce::degreesToRadians (elDeg);
++
++        for (const float freq : freqs)
++            for (const float dist : distances)
++            {
++                DYNAMIC_SECTION (f.name << ", " << freq << " Hz, distance " << dist)
++                {
++                    const auto fit = renderFit (f.format, numCh, azDeg, elDeg, dist, freq);
++                    const float w = fit.gain[(size_t) kW];
++                    REQUIRE (w > 0.0f);
++
++                    for (int n = 1; n < numCh; ++n)
++                    {
++                        const float expected = evalSH (n, azRad, elRad) / evalSH (0, azRad, elRad);
++                        INFO ("ACN " << n << " expected ratio " << expected << " got " << fit.gain[(size_t) n] / w);
++                        CHECK (std::abs (fit.gain[(size_t) n] / w - expected) < kRatioTol);
++                        CHECK (fit.residual[(size_t) n] < kResidualTol);
++                    }
++                }
++            }
++    }
++}
+diff --git a/tests/Engine/RealtimeSafetyTests.cpp b/tests/Engine/RealtimeSafetyTests.cpp
+index 71561a7..54db84e 100644
+--- a/tests/Engine/RealtimeSafetyTests.cpp
++++ b/tests/Engine/RealtimeSafetyTests.cpp
+@@ -54,7 +54,7 @@ namespace
+     }
+ 
+     // Twelve live objects whose azimuth, elevation and distance change every block, so the
+-    // smoothed Ambisonics NFC distance moves by more than 0.01 m every block.
++    // distance changes every block (the Ambisonics stream must stay allocation-free under movement).
+     struct MovingScene
+     {
+         static constexpr int kMaxBlock = 4096;
+@@ -548,188 +548,6 @@ TEST_CASE ("Realtime: block-length edges, exactly prepared, one sample over, emp
+     }
+ }
+ 
+-// ----------------------------------------------------------------------------
+-// D-10: the NFC fix must store bit-for-bit the coefficients the old temporary stored.
+-// The formula below is a test-local copy of the update in RenderEngine::renderAmbisonicsOutput
+-// (same clamps, same float operations, c = 343, reference radius 1.5 m).
+-// ----------------------------------------------------------------------------
+-TEST_CASE ("Ambisonics NFC: the in-place array assignment stores the old coefficients bit for bit",
+-           "[ambi][nfc][d10]")
+-{
+-    constexpr float c = 343.0f;
+-    constexpr float referenceRadius = 1.5f;
+-    constexpr float pi = juce::MathConstants<float>::pi;
+-    const double rates[] = { 44100.0, 48000.0, 96000.0 };
+-    const float distances[] = { 0.05f, 0.1f, 0.25f, 0.5f, 1.0f, 1.5f, 2.0f, 5.0f, 10.0f };
+-
+-    int combinations = 0;
+-
+-    for (const double sr : rates)
+-    {
+-        for (int n = 1; n <= 6; ++n)
+-        {
+-            for (const float distance : distances)
+-            {
+-                const float r = std::max (0.05f, distance);
+-                float fPole = static_cast<float> (n) * c / (2.0f * pi * r);
+-                float fZero = static_cast<float> (n) * c / (2.0f * pi * referenceRadius);
+-                const float maxFreq = static_cast<float> (sr) * 0.25f;
+-                fPole = std::min (fPole, maxFreq);
+-                fZero = std::min (fZero, maxFreq);
+-                const float wPole = std::tan (pi * fPole / static_cast<float> (sr));
+-                const float wZero = std::tan (pi * fZero / static_cast<float> (sr));
+-                const float b0 = (1.0f + wZero);
+-                const float b1 = (wZero - 1.0f);
+-                const float a0 = (1.0f + wPole);
+-                const float a1 = (wPole - 1.0f);
+-
+-                const juce::dsp::IIR::Coefficients<float> oldWay (b0 / a0, b1 / a0, 1.0f, a1 / a0);
+-
+-                // prepare() installs this placeholder; the render path then assigns the array into it.
+-                juce::dsp::IIR::Coefficients<float> newWay (1.0f, 0.0f, 1.0f, 0.0f);
+-                newWay = std::array<float, 4> { b0 / a0, b1 / a0, 1.0f, a1 / a0 };
+-
+-                CAPTURE (sr, n, distance);
+-                REQUIRE (oldWay.coefficients.size() == newWay.coefficients.size());
+-                REQUIRE (std::memcmp (oldWay.getRawCoefficients(), newWay.getRawCoefficients(),
+-                                      sizeof (float) * (size_t) oldWay.coefficients.size()) == 0);
+-                ++combinations;
+-            }
+-        }
+-    }
+-
+-    CHECK (combinations == 3 * 6 * 9);
+-}
+-
+-// ----------------------------------------------------------------------------
+-// IN-07: the test above proves JUCE's two construction paths agree. This one proves the engine
+-// stores the formula's values: after a real run, every live object's NFC filter holds the
+-// coefficients the test-local formula gives for the distance the engine last updated with.
+-// ----------------------------------------------------------------------------
+-namespace spatialcore
+-{
+-    /** Declared a friend of RenderEngine (TEST-ONLY seam). */
+-    struct RenderEngineTestAccess
+-    {
+-        static const juce::dsp::IIR::Coefficients<float>& nfcCoefficients (const RenderEngine& e, int object, int orderIndex)
+-        {
+-            return *e.nfcFilters[object][orderIndex].coefficients;
+-        }
+-
+-        static float lastUpdateDistance (const RenderEngine& e, int object) { return e.prevNfcDistance[object]; }
+-    };
+-}
+-
+-TEST_CASE ("Ambisonics NFC: the engine stores the formula's coefficients for the distance it last updated with",
+-           "[ambi][nfc][d10][stored]")
+-{
+-    constexpr float c = 343.0f;
+-    constexpr float referenceRadius = 1.5f;
+-    constexpr float pi = juce::MathConstants<float>::pi;
+-
+-    int compared = 0;
+-
+-    for (const OutputFormat format : kAmbisonicsFormats)
+-    {
+-        auto engine = std::make_unique<RenderEngine>();
+-        engine->prepare (kSampleRate, kBlockSize);
+-        engine->setOutputFormat (format);
+-
+-        const RenderBlockContext ctx = makeEngineContext();
+-        const int numOutCh = channelsFor (format);
+-        const int order = OutputFormatRegistry::getInfo (format).ambiOrder;
+-
+-        MovingScene scene;
+-        OutputBank out;
+-
+-        for (int block = 0; block < 40; ++block)
+-        {
+-            scene.fill (block, kBlockSize);
+-            out.clear();
+-            const RenderSources sources = scene.sources (kBlockSize);
+-            engine->renderBlock (sources, ctx, out.ptrs, numOutCh);
+-        }
+-
+-        for (int t = 0; t < MAX_SOURCES; ++t)
+-        {
+-            const float distance = RenderEngineTestAccess::lastUpdateDistance (*engine, t);
+-            REQUIRE (distance >= 0.0f);   // the object was live, so its filters were updated
+-
+-            for (int ord = 0; ord < order; ++ord)
+-            {
+-                const int n = ord + 1;
+-                const float r = std::max (0.05f, distance);
+-                float fPole = static_cast<float> (n) * c / (2.0f * pi * r);
+-                float fZero = static_cast<float> (n) * c / (2.0f * pi * referenceRadius);
+-                const float maxFreq = static_cast<float> (kSampleRate) * 0.25f;
+-                fPole = std::min (fPole, maxFreq);
+-                fZero = std::min (fZero, maxFreq);
+-                const float wPole = std::tan (pi * fPole / static_cast<float> (kSampleRate));
+-                const float wZero = std::tan (pi * fZero / static_cast<float> (kSampleRate));
+-                const juce::dsp::IIR::Coefficients<float> expected ((1.0f + wZero) / (1.0f + wPole),
+-                                                                    (wZero - 1.0f) / (1.0f + wPole),
+-                                                                    1.0f,
+-                                                                    (wPole - 1.0f) / (1.0f + wPole));
+-
+-                const auto& stored = RenderEngineTestAccess::nfcCoefficients (*engine, t, ord);
+-                CAPTURE (static_cast<int> (format), t, ord, distance);
+-                REQUIRE (stored.coefficients.size() == expected.coefficients.size());
+-                CHECK (std::memcmp (stored.getRawCoefficients(), expected.getRawCoefficients(),
+-                                    sizeof (float) * (size_t) expected.coefficients.size()) == 0);
+-                ++compared;
+-            }
+-        }
+-    }
+-
+-    // Orders 1..6 across twelve objects.
+-    CHECK (compared == MAX_SOURCES * (1 + 2 + 3 + 4 + 5 + 6));
+-}
+-
+-// ----------------------------------------------------------------------------
+-// Hidden capture (not run by default, not registered by ctest): writes the six Ambisonics
+-// formats' raw output to the file named by SC_CAPTURE_FILE, so the before and after of the NFC
+-// fix can be compared with cmp (D-10). Same deterministic run as the [ambi] case, no trap.
+-//   SC_CAPTURE_FILE=/tmp/x.bin ./build/tests/SpatialCoreTests "[ambi-nfc-capture]"
+-// ----------------------------------------------------------------------------
+-TEST_CASE ("Ambisonics NFC: capture the six formats' raw output to SC_CAPTURE_FILE",
+-           "[.][ambi-nfc-capture]")
+-{
+-    const char* path = std::getenv ("SC_CAPTURE_FILE");
+-    REQUIRE (path != nullptr);
+-
+-    const juce::File file (juce::String::fromUTF8 (path));
+-    file.deleteFile();
+-    juce::FileOutputStream stream (file);
+-    REQUIRE (stream.openedOk());
+-
+-    for (const OutputFormat format : kAmbisonicsFormats)
+-    {
+-        auto engine = std::make_unique<RenderEngine>();
+-        engine->prepare (kSampleRate, kBlockSize);
+-        engine->setOutputFormat (format);
+-
+-        const RenderBlockContext ctx = makeEngineContext();
+-        const int numOutCh = channelsFor (format);
+-
+-        MovingScene scene;
+-        OutputBank out;
+-
+-        for (int block = 0; block < kBlockCount; ++block)
+-        {
+-            scene.fill (block, kBlockSize);
+-            out.clear();
+-            const RenderSources sources = scene.sources (kBlockSize);
+-            engine->renderBlock (sources, ctx, out.ptrs, numOutCh);
+-
+-            for (int ch = 0; ch < numOutCh; ++ch)
+-                REQUIRE (stream.write (out.channels[(size_t) ch].data(),
+-                                       sizeof (float) * (size_t) kBlockSize));
+-        }
+-    }
+-
+-    stream.flush();
+-}
+-
+ // ============================================================================
+ // Plan 05-03 (RTSF-05, D-02): the whole audio path. Mid-play switches, then the matrix.
+ // ============================================================================
+diff --git a/tests/Engine/RenderEngineTests.cpp b/tests/Engine/RenderEngineTests.cpp
+index 8abf09e..447444f 100644
+--- a/tests/Engine/RenderEngineTests.cpp
++++ b/tests/Engine/RenderEngineTests.cpp
+@@ -808,7 +808,7 @@ TEST_CASE ("RenderEngine: a first-ever non-finite position renders exactly like
+     }
+ }
+ 
+-TEST_CASE ("RenderEngine: a NaN distance never reaches the NFC-HOA filter state; output matches the last good distance (D-19ii, F7)",
++TEST_CASE ("RenderEngine: a NaN distance is held; the Ambisonics output matches the last good distance (D-19ii, F7)",
+            "[engine][sanitize]")
+ {
+     auto a = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
+@@ -1750,15 +1750,13 @@ TEST_CASE ("RenderEngine: a render thread always sees one of the formats a write
+ // ============================================================================
+ // SC-19 / SpatialCore#21 — a mid-stream Ambisonics order change must filter
+ // the newly active orders exactly like an engine that started at that order,
+-// and no NFC filter may change order (reallocate state) on the audio thread.
++// and nothing may change order (reallocate state) on the audio thread.
+ // ============================================================================
+ namespace
+ {
+-    // The NFC update is deliberately gated on the smoothed distance moving by
+-    // more than 0.01 m, so even a fresh engine's coefficients lag the settled
+-    // distance by up to 0.01 m: at 5 m that is 0.01 / 5 = 2e-3 relative DC
+-    // gain, which the engine under comparison shares. 5e-3 is that bound with
+-    // margin; the placeholder defect this guards against was ~70% relative.
++    // The Ambisonics stream is plain AmbiX (SpatialCore#32), so an order change
++    // must give exactly a fresh engine's values; 5e-3 is generous margin. The
++    // old per-order filter defect this guarded against was ~70% relative.
+     constexpr float kSc19RelTolerance = 5e-3f;
+ 
+     // One live object (azimuth 30, elevation 20, distance 0.5 = 5 m, DC 0.5)
+diff --git a/tests/IO/AmbisonicsCodecTests.cpp b/tests/IO/AmbisonicsCodecTests.cpp
+index 826bf0b..4884e38 100644
+--- a/tests/IO/AmbisonicsCodecTests.cpp
++++ b/tests/IO/AmbisonicsCodecTests.cpp
+@@ -4,6 +4,7 @@
+ #include <SpatialCore/IO/SpeakerLayout.h>
+ #include <SpatialCore/Core/SpatialMath.h>
+ #include "../reference/ShReference.h"
++#include "../reference/ShBackHalfReference.h"
+ #include "../TestNumerics.h"
+ #include <algorithm>
+ #include <cmath>
+@@ -199,391 +200,7 @@ TEST_CASE("SH: evalSH and AmbisonicsCodec::evaluateSH match 49 scipy reference v
+ // generator: python3 tests/reference/gen_sh_reference.py --back-half
+ // (two independent routes agree below 1e-12 at every direction).
+ // ============================================================================
+-namespace
+-{
+-// az 135, el 0
+-constexpr float kRef_az135_el0[49] = {
+-    1.000000000f,  // ACN 0
+-    0.707106781f,  // ACN 1
+-    0.000000000f,  // ACN 2
+-    -0.707106781f,  // ACN 3
+-    -0.866025404f,  // ACN 4
+-    0.000000000f,  // ACN 5
+-    -0.500000000f,  // ACN 6
+-    0.000000000f,  // ACN 7
+-    0.000000000f,  // ACN 8
+-    0.559016994f,  // ACN 9
+-    0.000000000f,  // ACN 10
+-    -0.433012702f,  // ACN 11
+-    0.000000000f,  // ACN 12
+-    0.433012702f,  // ACN 13
+-    0.000000000f,  // ACN 14
+-    0.559016994f,  // ACN 15
+-    0.000000000f,  // ACN 16
+-    0.000000000f,  // ACN 17
+-    0.559016994f,  // ACN 18
+-    0.000000000f,  // ACN 19
+-    0.375000000f,  // ACN 20
+-    0.000000000f,  // ACN 21
+-    0.000000000f,  // ACN 22
+-    0.000000000f,  // ACN 23
+-    -0.739509973f,  // ACN 24
+-    -0.496078371f,  // ACN 25
+-    0.000000000f,  // ACN 26
+-    -0.369754986f,  // ACN 27
+-    0.000000000f,  // ACN 28
+-    0.342326598f,  // ACN 29
+-    0.000000000f,  // ACN 30
+-    -0.342326598f,  // ACN 31
+-    0.000000000f,  // ACN 32
+-    -0.369754986f,  // ACN 33
+-    0.000000000f,  // ACN 34
+-    0.496078371f,  // ACN 35
+-    0.671693289f,  // ACN 36
+-    0.000000000f,  // ACN 37
+-    0.000000000f,  // ACN 38
+-    0.000000000f,  // ACN 39
+-    -0.452855523f,  // ACN 40
+-    0.000000000f,  // ACN 41
+-    -0.312500000f,  // ACN 42
+-    0.000000000f,  // ACN 43
+-    0.000000000f,  // ACN 44
+-    0.000000000f,  // ACN 45
+-    0.496078371f,  // ACN 46
+-    0.000000000f,  // ACN 47
+-    0.000000000f,  // ACN 48
+-};
+-
+-// az -135, el 0
+-constexpr float kRef_azm135_el0[49] = {
+-    1.000000000f,  // ACN 0
+-    -0.707106781f,  // ACN 1
+-    0.000000000f,  // ACN 2
+-    -0.707106781f,  // ACN 3
+-    0.866025404f,  // ACN 4
+-    0.000000000f,  // ACN 5
+-    -0.500000000f,  // ACN 6
+-    0.000000000f,  // ACN 7
+-    0.000000000f,  // ACN 8
+-    -0.559016994f,  // ACN 9
+-    0.000000000f,  // ACN 10
+-    0.433012702f,  // ACN 11
+-    0.000000000f,  // ACN 12
+-    0.433012702f,  // ACN 13
+-    0.000000000f,  // ACN 14
+-    0.559016994f,  // ACN 15
+-    0.000000000f,  // ACN 16
+-    0.000000000f,  // ACN 17
+-    -0.559016994f,  // ACN 18
+-    0.000000000f,  // ACN 19
+-    0.375000000f,  // ACN 20
+-    0.000000000f,  // ACN 21
+-    0.000000000f,  // ACN 22
+-    0.000000000f,  // ACN 23
+-    -0.739509973f,  // ACN 24
+-    0.496078371f,  // ACN 25
+-    0.000000000f,  // ACN 26
+-    0.369754986f,  // ACN 27
+-    0.000000000f,  // ACN 28
+-    -0.342326598f,  // ACN 29
+-    0.000000000f,  // ACN 30
+-    -0.342326598f,  // ACN 31
+-    0.000000000f,  // ACN 32
+-    -0.369754986f,  // ACN 33
+-    0.000000000f,  // ACN 34
+-    0.496078371f,  // ACN 35
+-    -0.671693289f,  // ACN 36
+-    0.000000000f,  // ACN 37
+-    0.000000000f,  // ACN 38
+-    0.000000000f,  // ACN 39
+-    0.452855523f,  // ACN 40
+-    0.000000000f,  // ACN 41
+-    -0.312500000f,  // ACN 42
+-    0.000000000f,  // ACN 43
+-    0.000000000f,  // ACN 44
+-    0.000000000f,  // ACN 45
+-    0.496078371f,  // ACN 46
+-    0.000000000f,  // ACN 47
+-    0.000000000f,  // ACN 48
+-};
+-
+-// az 170, el 0
+-constexpr float kRef_az170_el0[49] = {
+-    1.000000000f,  // ACN 0
+-    0.173648178f,  // ACN 1
+-    0.000000000f,  // ACN 2
+-    -0.984807753f,  // ACN 3
+-    -0.296198133f,  // ACN 4
+-    0.000000000f,  // ACN 5
+-    -0.500000000f,  // ACN 6
+-    0.000000000f,  // ACN 7
+-    0.813797681f,  // ACN 8
+-    0.395284708f,  // ACN 9
+-    0.000000000f,  // ACN 10
+-    -0.106337358f,  // ACN 11
+-    0.000000000f,  // ACN 12
+-    0.603069122f,  // ACN 13
+-    0.000000000f,  // ACN 14
+-    -0.684653197f,  // ACN 15
+-    -0.475347848f,  // ACN 16
+-    0.000000000f,  // ACN 17
+-    0.191195073f,  // ACN 18
+-    0.000000000f,  // ACN 19
+-    0.375000000f,  // ACN 20
+-    0.000000000f,  // ACN 21
+-    -0.525304145f,  // ACN 22
+-    0.000000000f,  // ACN 23
+-    0.566497505f,  // ACN 24
+-    0.537426722f,  // ACN 25
+-    0.000000000f,  // ACN 26
+-    -0.261456258f,  // ACN 27
+-    0.000000000f,  // ACN 28
+-    0.084067063f,  // ACN 29
+-    0.000000000f,  // ACN 30
+-    -0.476768003f,  // ACN 31
+-    0.000000000f,  // ACN 32
+-    0.452855523f,  // ACN 33
+-    0.000000000f,  // ACN 34
+-    -0.450954564f,  // ACN 35
+-    -0.581703452f,  // ACN 36
+-    0.000000000f,  // ACN 37
+-    0.318873030f,  // ACN 38
+-    0.000000000f,  // ACN 39
+-    -0.154885711f,  // ACN 40
+-    0.000000000f,  // ACN 41
+-    -0.312500000f,  // ACN 42
+-    0.000000000f,  // ACN 43
+-    0.425544994f,  // ACN 44
+-    0.000000000f,  // ACN 45
+-    -0.380018079f,  // ACN 46
+-    0.000000000f,  // ACN 47
+-    0.335846645f,  // ACN 48
+-};
+-
+-// az -170, el 0
+-constexpr float kRef_azm170_el0[49] = {
+-    1.000000000f,  // ACN 0
+-    -0.173648178f,  // ACN 1
+-    0.000000000f,  // ACN 2
+-    -0.984807753f,  // ACN 3
+-    0.296198133f,  // ACN 4
+-    0.000000000f,  // ACN 5
+-    -0.500000000f,  // ACN 6
+-    0.000000000f,  // ACN 7
+-    0.813797681f,  // ACN 8
+-    -0.395284708f,  // ACN 9
+-    0.000000000f,  // ACN 10
+-    0.106337358f,  // ACN 11
+-    0.000000000f,  // ACN 12
+-    0.603069122f,  // ACN 13
+-    0.000000000f,  // ACN 14
+-    -0.684653197f,  // ACN 15
+-    0.475347848f,  // ACN 16
+-    0.000000000f,  // ACN 17
+-    -0.191195073f,  // ACN 18
+-    0.000000000f,  // ACN 19
+-    0.375000000f,  // ACN 20
+-    0.000000000f,  // ACN 21
+-    -0.525304145f,  // ACN 22
+-    0.000000000f,  // ACN 23
+-    0.566497505f,  // ACN 24
+-    -0.537426722f,  // ACN 25
+-    0.000000000f,  // ACN 26
+-    0.261456258f,  // ACN 27
+-    0.000000000f,  // ACN 28
+-    -0.084067063f,  // ACN 29
+-    0.000000000f,  // ACN 30
+-    -0.476768003f,  // ACN 31
+-    0.000000000f,  // ACN 32
+-    0.452855523f,  // ACN 33
+-    0.000000000f,  // ACN 34
+-    -0.450954564f,  // ACN 35
+-    0.581703452f,  // ACN 36
+-    0.000000000f,  // ACN 37
+-    -0.318873030f,  // ACN 38
+-    0.000000000f,  // ACN 39
+-    0.154885711f,  // ACN 40
+-    0.000000000f,  // ACN 41
+-    -0.312500000f,  // ACN 42
+-    0.000000000f,  // ACN 43
+-    0.425544994f,  // ACN 44
+-    0.000000000f,  // ACN 45
+-    -0.380018079f,  // ACN 46
+-    0.000000000f,  // ACN 47
+-    0.335846645f,  // ACN 48
+-};
+-
+-// az 180, el 0
+-constexpr float kRef_az180_el0[49] = {
+-    1.000000000f,  // ACN 0
+-    0.000000000f,  // ACN 1
+-    0.000000000f,  // ACN 2
+-    -1.000000000f,  // ACN 3
+-    0.000000000f,  // ACN 4
+-    0.000000000f,  // ACN 5
+-    -0.500000000f,  // ACN 6
+-    0.000000000f,  // ACN 7
+-    0.866025404f,  // ACN 8
+-    0.000000000f,  // ACN 9
+-    0.000000000f,  // ACN 10
+-    0.000000000f,  // ACN 11
+-    0.000000000f,  // ACN 12
+-    0.612372436f,  // ACN 13
+-    0.000000000f,  // ACN 14
+-    -0.790569415f,  // ACN 15
+-    0.000000000f,  // ACN 16
+-    0.000000000f,  // ACN 17
+-    0.000000000f,  // ACN 18
+-    0.000000000f,  // ACN 19
+-    0.375000000f,  // ACN 20
+-    0.000000000f,  // ACN 21
+-    -0.559016994f,  // ACN 22
+-    0.000000000f,  // ACN 23
+-    0.739509973f,  // ACN 24
+-    0.000000000f,  // ACN 25
+-    0.000000000f,  // ACN 26
+-    0.000000000f,  // ACN 27
+-    0.000000000f,  // ACN 28
+-    0.000000000f,  // ACN 29
+-    0.000000000f,  // ACN 30
+-    -0.484122918f,  // ACN 31
+-    0.000000000f,  // ACN 32
+-    0.522912517f,  // ACN 33
+-    0.000000000f,  // ACN 34
+-    -0.701560760f,  // ACN 35
+-    0.000000000f,  // ACN 36
+-    0.000000000f,  // ACN 37
+-    0.000000000f,  // ACN 38
+-    0.000000000f,  // ACN 39
+-    0.000000000f,  // ACN 40
+-    0.000000000f,  // ACN 41
+-    -0.312500000f,  // ACN 42
+-    0.000000000f,  // ACN 43
+-    0.452855523f,  // ACN 44
+-    0.000000000f,  // ACN 45
+-    -0.496078371f,  // ACN 46
+-    0.000000000f,  // ACN 47
+-    0.671693289f,  // ACN 48
+-};
+-
+-// az -100, el -25
+-constexpr float kRef_azm100_elm25[49] = {
+-    1.000000000f,  // ACN 0
+-    -0.892538935f,  // ACN 1
+-    -0.422618262f,  // ACN 2
+-    -0.157378696f,  // ACN 3
+-    0.243295311f,  // ACN 4
+-    0.653335200f,  // ACN 5
+-    -0.232090707f,  // ACN 6
+-    0.115200623f,  // ACN 7
+-    -0.668448374f,  // ACN 8
+-    0.509680214f,  // ACN 9
+-    -0.229914838f,  // ACN 10
+-    0.058465658f,  // ACN 11
+-    0.445221793f,  // ACN 12
+-    0.010309073f,  // ACN 13
+-    0.631685827f,  // ACN 14
+-    0.294264009f,  // ACN 15
+-    -0.320711385f,  // ACN 16
+-    -0.569895272f,  // ACN 17
+-    0.039299832f,  // ACN 18
+-    -0.521786799f,  // ACN 19
+-    -0.155209975f,  // ACN 20
+-    -0.092005091f,  // ACN 21
+-    -0.107975400f,  // ACN 22
+-    -0.329029189f,  // ACN 23
+-    0.382208946f,  // ACN 24
+-    -0.275747348f,  // ACN 25
+-    0.406615465f,  // ACN 26
+-    0.204786562f,  // ACN 27
+-    0.141180194f,  // ACN 28
+-    0.358893757f,  // ACN 29
+-    -0.238107209f,  // ACN 30
+-    0.063282653f,  // ACN 31
+-    -0.387889394f,  // ACN 32
+-    0.118233577f,  // ACN 33
+-    -0.484585441f,  // ACN 34
+-    -0.328622892f,  // ACN 35
+-    0.322370958f,  // ACN 36
+-    0.386505738f,  // ACN 37
+-    -0.207538452f,  // ACN 38
+-    0.255490800f,  // ACN 39
+-    -0.147858337f,  // ACN 40
+-    0.150065118f,  // ACN 41
+-    0.313827146f,  // ACN 42
+-    0.026460529f,  // ACN 43
+-    0.406237442f,  // ACN 44
+-    0.147507682f,  // ACN 45
+-    0.247334696f,  // ACN 46
+-    0.460619602f,  // ACN 47
+-    -0.186120959f,  // ACN 48
+-};
+-
+-// az 120, el 40
+-constexpr float kRef_az120_el40[49] = {
+-    1.000000000f,  // ACN 0
+-    0.663413948f,  // ACN 1
+-    0.642787610f,  // ACN 2
+-    -0.383022222f,  // ACN 3
+-    -0.440118067f,  // ACN 4
+-    0.738605815f,  // ACN 5
+-    0.119763867f,  // ACN 6
+-    -0.426434266f,  // ACN 7
+-    -0.254102284f,  // ACN 8
+-    0.000000000f,  // ACN 9
+-    -0.632589087f,  // ACN 10
+-    0.433020408f,  // ACN 11
+-    -0.300220524f,  // ACN 12
+-    -0.250004449f,  // ACN 13
+-    -0.365225480f,  // ACN 14
+-    0.355387304f,  // ACN 15
+-    0.220541606f,  // ACN 16
+-    0.000000000f,  // ACN 17
+-    -0.537573455f,  // ACN 18
+-    -0.036331592f,  // ACN 19
+-    -0.427534458f,  // ACN 20
+-    0.020976055f,  // ACN 21
+-    -0.310368179f,  // ACN 22
+-    0.604391607f,  // ACN 23
+-    -0.127329756f,  // ACN 24
+-    -0.160274988f,  // ACN 25
+-    0.425284236f,  // ACN 26
+-    0.000000000f,  // ACN 27
+-    -0.200445599f,  // ACN 28
+-    -0.385235805f,  // ACN 29
+-    -0.254488515f,  // ACN 30
+-    0.222415995f,  // ACN 31
+-    -0.115727320f,  // ACN 32
+-    0.639048126f,  // ACN 33
+-    -0.245537968f,  // ACN 34
+-    -0.092534808f,  // ACN 35
+-    0.000000000f,  // ACN 36
+-    -0.341687895f,  // ACN 37
+-    0.524451183f,  // ACN 38
+-    0.000000000f,  // ACN 39
+-    0.184941592f,  // ACN 40
+-    -0.430333124f,  // ACN 41
+-    0.056378264f,  // ACN 42
+-    0.248452945f,  // ACN 43
+-    0.106776078f,  // ACN 44
+-    0.404323775f,  // ACN 45
+-    -0.302792032f,  // ACN 46
+-    -0.197273598f,  // ACN 47
+-    0.135735926f,  // ACN 48
+-};
+-
+-struct BackHalfRef { float azDeg; float elDeg; const float* table; };
+-
+-const BackHalfRef kBackHalfRefs[] = {
+-    { 135.0f, 0.0f, kRef_az135_el0 },
+-    { -135.0f, 0.0f, kRef_azm135_el0 },
+-    { 170.0f, 0.0f, kRef_az170_el0 },
+-    { -170.0f, 0.0f, kRef_azm170_el0 },
+-    { 180.0f, 0.0f, kRef_az180_el0 },
+-    { -100.0f, -25.0f, kRef_azm100_elm25 },
+-    { 120.0f, 40.0f, kRef_az120_el40 },
+-};
+-} // namespace
++using spatialcore_ref::kBackHalfRefs;
+ 
+ TEST_CASE("SH: evalSH and AmbisonicsCodec::evaluateSH match 49 scipy reference values in the back half of the sphere (999.5, #32)",
+           "[ambi][sn3d][golden]")

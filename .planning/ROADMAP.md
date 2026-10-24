@@ -393,7 +393,9 @@ None is dropped — see the REQUIREMENTS.md triage table for the reason on each.
 **Follow-ups:**
 - [x] The Phase 2 `[ambi]` / `[ambi-pin]` tests still pass — done 2026-10-24, quick task 261024-mhh
 - [x] A test encodes sources at 0°, +90°, 180° and -90° and asserts the first-order channel signs match AmbiX (W, Y, Z, X; Y > 0 on the left, X > 0 in front) — done 2026-10-24, quick task 261024-mhh
-- [ ] REAPER listening check: OSD Ambisonics output through an IEM decoder and the IEM EnergyVisualizer shows each source where the map puts it, at every order OSD offers. Reopen SpatialCore#32 if it finds a rotation
+- [ ] Speaker-rig listening check at the pre-release review (20-speaker ring, 6th order, OSD as AU and VST3), after the two fixes below
+- [ ] SpatialCore: Ambisonics output becomes plain AmbiX SN3D — drop the inverted NFC shelf and the encoder-side max-rE (SpatialCore#32)
+- [ ] OSD: AU accepts a 50-channel output; visible warning on any format fallback; re-resolve on bus change; wiki azimuth sign (openspatialdelay#22)
 
 ---
 *Roadmap rewritten 2026-08-10 against branch `gsd-remap`, after the original was found to have been planned against a branch missing 42 commits.*

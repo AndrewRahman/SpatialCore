@@ -43,3 +43,7 @@ The higher-order case takes its expectations from the library's own `evalSH`, so
 
 - REAPER listening check.
 - Phase 999.5 part 3.
+
+## After the quick task
+
+Later investigation found the likely cause of the heard fault and two SpatialCore defects. See `261024-mhh-FINDINGS.md` (research in `research/`). Issues: SpatialCore#32 (open) and openspatialdelay#22. Fixes are deferred to new sessions; see `.planning/HANDOFF-ambisonics-fix.md`.
