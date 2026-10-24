@@ -4,7 +4,7 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-06-PLAN.md
+stopped_at: 06-07 checkpoint answered (coverage target 93%)
 last_updated: "2026-10-17T21:59:33.951Z"
 last_activity: 2026-10-17
 last_activity_desc: Phase 06 execution started
@@ -211,6 +211,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-06: Windows needs zlib supplied by the consumer: CI installs zlib:x64-windows-static-md with vcpkg and names zs.lib to FindZLIB; all five HRTF profiles embed with MSVC 19.51 (SPATIALCORE_EMBED_ALL_HRTF stays ON) — libmysofa v1.3.5's MSVC branch only runs nuget install zlib, which finds no package; 06-09 documents it beside the zlib (system) lines
 - [Phase 06]: 06-06: JUCE 9.0.0 FFTFallback::perform takes a SpinLock (juce_FFT.cpp:115, priority -1 at :92); with no FFTW/MKL/IPP flag set Linux and Windows builds use it, so instances sharing one FFT per order contend on the audio thread; vDSP on macOS takes no lock — Answer to Phase 5 D-13 for Plan 06-09 to write into SharedFFTCache.h and CLAUDE.md
 - [Phase 06]: 06-06: MSVC 19.51 test-source fixes are NOMINMAX in FreeUdpPort.h and static constexpr for three no-capture lambdas; the wall-clock sender case discards attempts where its own caller paused (gap of 40 ms or more) instead of widening a bound — No library source changed; Release ctest 416 of 416 and the final push run green on three platforms
+- [Phase 06]: 06-07: user chose coverage target `hold` on 2026-10-24 — engine line coverage target 93% (measured 94.19% on CI run 39074814315, 93.97–94.00% locally), UI measured and shown (25.89%) but NOT a rule; Plan 06-08 enforces 93% — OQ-4 answered at the 06-07 blocking checkpoint
 
 ### Pending Todos
 
@@ -221,7 +222,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **OQ-1** — algorithm count. **CLOSED: 8**, verified from the tree.
 - **OQ-2** — `outputLimiter()`. **CLOSED 2026-08-10: keep the shipped tanh soft ceiling**; amend the SPEC to match. OSD ships v1.0.0 with that curve, so it is the known sound. Hard-clamp mode deferred to v2 as LIMIT-01.
 - **OQ-3** — HRTF profile count. **CLOSED: 5**, verified from the tree.
-- **OQ-4** (Phase 6) — test coverage target. **Blocked, not merely undefined**: no coverage tooling exists in the build, so there is nothing to measure against. Wire up instrumentation, read the real number, then set the target. The old "~5%" figure was never measured.
+- **OQ-4** (Phase 6) — test coverage target. **ANSWERED 2026-10-24: 93% engine line coverage, UI report-only** (user, at the 06-07 checkpoint). Tooling exists since 06-07 (`scripts/coverage.sh`, CI `coverage` job); enforced by 06-08.
 - **OQ-5** (not a v1 phase) — org repo migration pending; `docs/integration-guide.md` publishes a submodule URL that does not resolve.
 - **OQ-6** (Phase 3) — HRTF packaging. **CLOSED 2026-08-10: lookup chain now, embedded default for v1.** Target architecture is the user's — profiles on disk once per machine in a shared folder, all SML plugins reference it; better than embedding chiefly because it enables user-supplied SOFA files. But v1 still embeds all 5, because the shared folder needs a signed installer that does not exist and OSD ships drag-and-drop. Phase 3 builds the resolution chain (shared folder → embedded → loud error) behind `SPATIALCORE_EMBED_ALL_HRTF=ON`; flipping it OFF later is a build flag, not a redesign. Tracked as SUITE-01.
 
@@ -254,6 +255,6 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 ## Session Continuity
 
 Last session: 2026-10-17T21:59:25.732Z
-Stopped at: Completed 06-06-PLAN.md
-Resume file: None
-Next command: `/gsd-discuss-phase 4`
+Stopped at: 06-07 checkpoint answered (coverage target 93%, UI report-only); 06-07 Task 3 and SUMMARY not yet written
+Resume file: .planning/phases/06-consumer-readiness-ci/.continue-here.md
+Next command: `/gsd-execute-phase 06`
