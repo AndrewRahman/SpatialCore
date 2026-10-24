@@ -209,7 +209,9 @@ struct RenderBlockContext
     // first sample is exactly 0). The new format is therefore heard one block
     // later and a switch costs a two-block dip. Several setOutputFormat() calls
     // between two blocks still give one fade-out and one fade-in, of the last
-    // format. The first block after prepare() never fades, and getBlockLayout()
+    // format. A setOutputFormat() that lands while a block is choosing its
+    // layout is taken up by the next block and fades the same way; it is never
+    // heard unfaded. The first block after prepare() never fades, and getBlockLayout()
     // always reports the layout the block actually rendered (the held one during
     // the fade-out block). Only the channels the block's path writes are faded;
     // wait-free, no allocation, lock or logging. Defaults false so every existing
@@ -454,6 +456,23 @@ public:
     // Any thread, lock-free; the render path allocates, locks and logs nothing for it.
     int getUnsuppliedGainsBlockCount() const noexcept;
 
+#if JUCE_UNIT_TESTS
+    //--------------------------------------------------------------------------
+    // Test-only entry point (mirrors ADMOSCReceiver::testProcessOSCMessage).
+    // Installs a function that renderBlock() calls once per
+    // engineFadesFormatSwitch block, at the point where that block's single
+    // fresh-bit load found nothing fresh, so a test can publish a layout
+    // exactly inside the former SC-20 publish-after-check window. The members
+    // are plain (not atomic): set it only while no renderBlock() is in flight
+    // (tests set it from the rendering thread between blocks). nullptr clears.
+    //--------------------------------------------------------------------------
+    void setLayoutPeekHookForTesting (void (*hook) (void*), void* context) noexcept
+    {
+        layoutPeekHook_ = hook;
+        layoutPeekHookContext_ = context;
+    }
+#endif
+
     //--------------------------------------------------------------------------
     // Escape hatches (D-02 -- leaf classes stay public). The LEGACY HRTF route, kept for
     // OpenSpatialDelay's current calls until the next major version (RTSF-03, D-09). The safe
@@ -671,9 +690,11 @@ private:
 
     //--------------------------------------------------------------------------
     // SC-16: the one place a block obtains its layout. renderBlock() calls
-    // this exactly once and passes the same snapshot to the dispatch
-    // derivation, the SC-13 gain computation and the discrete-surround
-    // speaker routing; no render path reads the active-layout state again.
+    // this at most once per block (with engineFadesFormatSwitch, a block that
+    // holds its layout or fades it out renders the reader's own slot without
+    // acquiring) and passes the same snapshot to the dispatch derivation, the
+    // SC-13 gain computation and the discrete-surround speaker routing; no
+    // render path reads the active-layout state again.
     //--------------------------------------------------------------------------
     const LayoutState& acquireBlockLayout();
 
@@ -837,7 +858,7 @@ private:
     static constexpr int kMaxAmbiChannels = (kMaxAmbiOrder + 1) * (kMaxAmbiOrder + 1);
     static constexpr float kNfcReferenceRadius = 1.5f; // meters (typical studio monitoring distance)
     float prevSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
-    juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // 12 objects x 6 orders
+    juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // MAX_SOURCES objects x 6 orders
     float smoothedNfcDistance[MAX_SOURCES] = {};
     float prevNfcDistance[MAX_SOURCES] = {};
     int   lastNfcAmbiOrder_ = -1;  // order the NFC filters were last updated for (SpatialCore#21)
@@ -866,6 +887,20 @@ private:
     bool fadeInPending_ = false;
     bool renderedSincePrepare_ = false;
     bool snapInterpolation_ = false;
+    // Test seam for the SC-20 publish-after-check race (OSP Phase 3 review WR-04).
+    // Render thread only; null in every consumer. renderBlock() calls the hook
+    // once per fade-on block, at the point where that block's single fresh-bit
+    // load found nothing fresh, so a test can publish exactly inside the former
+    // race window. Present in every build type and never #if'd (like
+    // inSetOutputFormat_), so the class layout does not depend on
+    // JUCE_UNIT_TESTS. A compile-time seam is not possible: RenderEngine.cpp is
+    // compiled once into the shared SpatialCore static library that both the
+    // plugin and SpatialCoreTests link, and JUCE_UNIT_TESTS is a PRIVATE define
+    // of the test target only. Cost: one plain pointer load and a not-taken
+    // branch per block, on the fade-on hold path only; no atomic, allocation,
+    // lock or logging.
+    void (*layoutPeekHook_) (void*) = nullptr;
+    void* layoutPeekHookContext_ = nullptr;
     // Debug detector for the single-writer contract (WR-09): set while a
     // setOutputFormat() call is in flight so an overlapping second writer
     // trips a jassert. Present in every build type (never #if'd) so the class

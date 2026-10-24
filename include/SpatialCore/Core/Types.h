@@ -5,7 +5,8 @@
 namespace spatialcore
 {
 
-static constexpr int MAX_SOURCES  = 12;
+// SC-1 (AndrewRahman/SpatialCore#3): object ceiling for every hand-off array. MAX_SPEAKERS is unchanged.
+static constexpr int MAX_SOURCES  = 32;
 static constexpr int MAX_SPEAKERS = 16;
 
 // Forward declarations — SpeakerLayout.h includes this header for

@@ -94,6 +94,14 @@ public:
     // reader and never clears the bit, and it makes no promise about the
     // published payload, so the reader must not read a fresh slot until
     // acquireLatest() has returned it.
+    //
+    // A true result holds until the reader's own next acquireLatest(), because
+    // only the reader clears the bit, so a reader may decide on it. A false
+    // result can turn true at any instant, so a reader that needs ONE decision
+    // per block must not follow a false result with acquireLatest() in the same
+    // block: the acquire would load the bit again and could take a layout the
+    // decision never saw. The engine holds its slot instead; see the SC-20
+    // decision in RenderEngine::renderBlock().
     bool hasFresh() const noexcept
     {
         return (middle_.load (std::memory_order_relaxed) & kFreshBit) != 0;

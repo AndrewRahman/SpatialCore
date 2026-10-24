@@ -7,7 +7,7 @@ status: executing
 stopped_at: Completed 06-09-PLAN.md
 last_updated: "2026-10-24T14:26:55.268Z"
 last_activity: 2026-10-17
-last_activity_desc: Phase 06 execution started
+last_activity_desc: Phase 06 trimmed close-out - origin/main merged locally (SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2, 4); local gate and 06-10 evidence next
 state_head: f8622a7e0120480f2eec2085ce8dafc43b86f7e6
 progress:
   total_phases: 6
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 9 of 10
-Status: Ready to execute
-Last activity: 2026-10-17 — Phase 06 execution started
+Plan: 10 of 10 (trimmed close-out)
+Status: origin/main merged into this branch locally (2026-10-24); local gate and 06-10 evidence in progress. Nothing pushed; pushing to main needs the user's go-ahead (it would start a GitHub build).
+Last activity: 2026-10-24 — merged origin/main (21 commits: SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2 and 4; milestone re-audit 21/25 with the four gaps being Phase 6's INTG-01, INTG-02, CI-01, TEST-01)
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -254,7 +254,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Resolved — Phase 4 (04-03) | Phase 02 (02-07) |
 | Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Resolved — Phase 5 (05-03): [rt][switch][tracer], [rt][switch][audit] | v1.0.0 audit |
-| Planning | 01-VALIDATION.md and 02-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`, `2`) | Open | v1.0.0 audit |
+| Planning | 01-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`); 02-VALIDATION.md validated 2026-10-17 | Open | v1.0.0 audit |
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 

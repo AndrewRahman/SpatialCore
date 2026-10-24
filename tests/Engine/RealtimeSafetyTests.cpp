@@ -224,7 +224,7 @@ TEST_CASE ("Realtime: the trap sees a deliberate allocation and a deliberate loc
     requireRealtimeTrapCanary();
 }
 
-TEST_CASE ("Realtime: a cold-start 7.1.4 render of 12 moving objects allocates and locks nothing",
+TEST_CASE ("Realtime: a cold-start 7.1.4 render of MAX_SOURCES moving objects allocates and locks nothing",
            "[rt][rt-alloc][rt-lock][tracer]")
 {
     requireRealtimeTrapCanary();

@@ -59,7 +59,7 @@ int countDifferingPixels (const juce::Image& a, const juce::Image& b)
 
 } // namespace
 
-TEST_CASE ("Multi-map: sixteen live maps share one face set and paint identically (OSD#131)",
+TEST_CASE ("Multi-map: sixteen live maps share one face set and paint identically (Spatial-Media-Lab/OpenSpatialDelay#131)",
            "[ui][multi][tracer]")
 {
     constexpr int numMaps = 16;
