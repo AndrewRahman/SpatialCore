@@ -149,7 +149,7 @@ namespace
     }
 }
 
-TEST_CASE ("MIT KEMAR Large Pinna — OSD#89: zero SOFA delays fall back to the waveform onsets, so the aligned ears start together",
+TEST_CASE ("MIT KEMAR Large Pinna — Spatial-Media-Lab/OpenSpatialDelay#89: zero SOFA delays fall back to the waveform onsets, so the aligned ears start together",
            "[binaural][mitkemar][osd89]")
 {
     HRTFDatabase db;
@@ -176,7 +176,7 @@ TEST_CASE ("MIT KEMAR Large Pinna — OSD#89: zero SOFA delays fall back to the 
         const int alignedOnsetR = firstSampleAtTenPercentOfPeak (alignedR);
 
         CAPTURE (dir.azDeg, rawDelayL, rawDelayR, rawOnsetL, rawOnsetR, delayL, delayR, alignedOnsetL, alignedOnsetR);
-        WARN ("OSD#89 az " << dir.azDeg << ": raw delays " << rawDelayL << "/" << rawDelayR
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 az " << dir.azDeg << ": raw delays " << rawDelayL << "/" << rawDelayR
               << ", raw onsets " << rawOnsetL << "/" << rawOnsetR << ", reported delays " << delayL << "/" << delayR
               << ", aligned onsets " << alignedOnsetL << "/" << alignedOnsetR);
 

@@ -145,7 +145,7 @@ TEST_CASE ("PartitionedConvolver: an IR set during a transition is deferred, the
 // recorded in the 06-03 SUMMARY).
 // ============================================================================
 
-TEST_CASE ("PartitionedConvolver: an IR change mid-stream is click-free (OSD#50 dual slots)",
+TEST_CASE ("PartitionedConvolver: an IR change mid-stream is click-free (Spatial-Media-Lab/OpenSpatialDelay#50 dual slots)",
            "[convolver][osd50]")
 {
     constexpr double kSampleRate = 48000.0;
@@ -199,7 +199,7 @@ TEST_CASE ("PartitionedConvolver: an IR change mid-stream is click-free (OSD#50 
 
         CAPTURE (callSize, steady, through, through / steady, steadyRms, lowestRms, lowestRms / steadyRms,
                  worstVsB, worstVsA);
-        WARN ("OSD#50 " << callSize << "-sample calls: steady step " << steady << ", step through the change "
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#50 " << callSize << "-sample calls: steady step " << steady << ", step through the change "
               << through << " (x" << through / steady << " of steady), min 256-sample RMS " << lowestRms
               << " (x" << lowestRms / steadyRms << " of steady), worst |diff| vs IR B " << worstVsB
               << ", max |diff| vs IR A " << worstVsA);

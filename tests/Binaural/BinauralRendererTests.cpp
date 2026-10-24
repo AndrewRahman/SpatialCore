@@ -627,7 +627,7 @@ TEST_CASE ("BinauralRenderer: the scratch guards count nothing at the boundary a
 // elevation checks turns the pole comparison red (D-17).
 // ============================================================================
 
-TEST_CASE ("BinauralRenderer: OSD#89 near the pole a large azimuth change under 1 degree of arc keeps the HRIR",
+TEST_CASE ("BinauralRenderer: Spatial-Media-Lab/OpenSpatialDelay#89 near the pole a large azimuth change under 1 degree of arc keeps the HRIR",
            "[binaural][renderer][osd89]")
 {
     // static: makeAt below has no capture list, and MSVC (19.51) rejects a local constexpr used in it
@@ -676,7 +676,7 @@ TEST_CASE ("BinauralRenderer: OSD#89 near the pole a large azimuth change under 
 
         const double worst = maxDifference (fromStayed, fromMoved);
         CAPTURE (worst);
-        WARN ("OSD#89 pole: max |diff| between the renderer that stayed and the one that moved 30 degrees of azimuth: " << worst);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 pole: max |diff| between the renderer that stayed and the one that moved 30 degrees of azimuth: " << worst);
         CHECK (signalIsFinite (fromMoved));
         CHECK (peakMagnitude (fromStayed) > 1.0e-3f);
         CHECK (std::memcmp (fromStayed.left.data(), fromMoved.left.data(), kCompare * sizeof (float)) == 0);
@@ -698,7 +698,7 @@ TEST_CASE ("BinauralRenderer: OSD#89 near the pole a large azimuth change under 
 
         const double worst = maxDifference (fromStayed, fromMoved);
         CAPTURE (worst);
-        WARN ("OSD#89 control: max |diff| after a 2 degree move at ear level: " << worst);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 control: max |diff| after a 2 degree move at ear level: " << worst);
         CHECK (signalIsFinite (fromMoved));
         CHECK (worst > 1.0e-6);
     }
