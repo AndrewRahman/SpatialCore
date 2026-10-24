@@ -28,7 +28,7 @@ yet consume SpatialCore; the migration is unstarted.
 - [x] **Phase 3: Binaural Defects & HRTF Packaging** - The two inherited binaural bugs are fixed and a consumer gets HRTF data by linking (completed 2026-10-04)
 - [x] **Phase 4: Control Surface & UI** - OSC, trajectories, and the spatial map verified by interaction (completed 2026-10-05)
 - [x] **Phase 5: Realtime Safety Hardening** - Nothing on the audio path allocates, locks, or races, in Release builds (completed 2026-10-17)
-- [ ] **Phase 6: Consumer Readiness & CI** - OSD can submodule, link, and build — proven in CI
+- [x] **Phase 6: Consumer Readiness & CI** - OSD can submodule, link, and build — proven in CI (completed 2026-10-24)
 
 ## Phase Details
 
@@ -306,7 +306,7 @@ all four closed there, in code SpatialCore now owns — plus `#234`, which is st
 **Milestone boundary**: v1 closes when OpenSpatialDelay itself ships on SpatialCore. That work
 lives in the OpenSpatialDelay repository and has deliberately no SpatialCore phase — see PROJECT.md
 External Dependencies.
-**Plans**: 10/10 plans executed (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
+**Plans**: 10/10 plans complete (run one at a time: every plan builds in the shared `build/` and `build-release/` trees, from 06-07 also `build-cov/`, and from 06-04 on each one pushes the work branch for CI, so each wave holds exactly one plan)
 
 Plans:
 **Wave 1**
@@ -350,7 +350,7 @@ Plans:
 | 3. Binaural Defects & HRTF Packaging | 11/11 | Complete    | 2026-10-04 |
 | 4. Control Surface & UI | 8/8 | Complete    | 2026-10-05 |
 | 5. Realtime Safety Hardening | 8/8 | Complete    | 2026-10-17 |
-| 6. Consumer Readiness & CI | 10/10 | In Progress | - |
+| 6. Consumer Readiness & CI | 10/10 | Complete    | 2026-10-24 |
 
 ## Coverage
 

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v1.0.0
 current_phase: 06
-current_phase_name: Consumer Readiness & CI
-status: executing
-stopped_at: Completed 06-10-PLAN.md (trimmed); phase verification next, then the user's OK to push main
-last_updated: "2026-10-24T16:35:22.760Z"
+status: completed
+stopped_at: Phase 06 complete — all phases complete
+last_updated: "2026-10-24T17:04:50.725Z"
 last_activity: 2026-10-24
-last_activity_desc: Phase 06 trimmed close-out done - origin/main merged locally, local gate green on the merged tree (Release 418 of 418, Debug 401 + 17 cases), INTG-01, INTG-02, CI-01, TEST-01 ticked; nothing pushed
-state_head: abcdc11056f5ff4aaad07337c7a1088522cae2c1
+last_activity_desc: Phase 06 complete
+state_head: dcc042b918097b052c7abbb6f63a2a178fcef96a
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 52
   completed_plans: 52
+  percent: 100
 milestone_name: milestone
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 
 ## Current Position
 
-Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 10 of 10 (trimmed close-out, complete)
-Status: All 10 plans have a SUMMARY. origin/main merged into this branch locally twice (2026-10-24: `37fef2e`, then `be827e0` for PR #33, the #234 binaural fixes); Release gate green on the merged tree (418 of 418, `[rt]` ok). Next: phase verification, then the user's OK to push main (it would start a GitHub build). Nothing pushed, no branch protection.
-Last activity: 2026-10-24 — second merge of origin/main `b35bd3b` (9 commits, PR #33, #234 HRIR crossfade and ITD fixes; CLAUDE.md conflict resolved, Release ctest 418 of 418). Earlier the same day: merged origin/main (21 commits: SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2 and 4; milestone re-audit 21/25 with the four gaps being Phase 6's INTG-01, INTG-02, CI-01, TEST-01)
+Phase: 06
+Plan: Not started
+Status: All phases complete
+Last activity: 2026-10-24 — Phase 06 complete
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
 profiles, **23** output formats, **15** speaker layouts, **JUCE 9.0.0**. The previously-locked D-04
@@ -49,13 +49,13 @@ count context as a defect.
 The 2026-08-09 pass was planned against a branch missing 42 commits of code, so its codebase map
 described a tree that no longer matched reality. Do not plan against `origin/main` alone.
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 34
+- Total plans completed: 44
 - Average duration: —
 - Total execution time: —
 
@@ -67,6 +67,7 @@ Progress: [███████░░░] 67%
 | 02 | 10 | - | - |
 | 3 | 11 | - | - |
 | 04 | 8 | - | - |
+| 06 | 10 | - | - |
 
 **Recent Trend:**
 
@@ -269,6 +270,6 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 ## Session Continuity
 
 Last session: 2026-10-24T16:35:22.550Z
-Stopped at: Completed 06-10-PLAN.md (trimmed); phase verification next, then the user's OK to push main
+Stopped at: Phase 06 complete — all phases complete
 Resume file: .planning/phases/06-consumer-readiness-ci/.continue-here.md
 Next command: `/gsd-verify-work 6` (then ask the user before pushing main)
