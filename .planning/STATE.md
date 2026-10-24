@@ -4,16 +4,16 @@ milestone: v1.0.0
 current_phase: 06
 current_phase_name: Consumer Readiness & CI
 status: executing
-stopped_at: Completed 06-09-PLAN.md
-last_updated: "2026-10-24T14:26:55.268Z"
-last_activity: 2026-10-17
-last_activity_desc: Phase 06 trimmed close-out - origin/main merged locally (SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2, 4); local gate and 06-10 evidence next
-state_head: f8622a7e0120480f2eec2085ce8dafc43b86f7e6
+stopped_at: Completed 06-10-PLAN.md (trimmed); phase verification next, then the user's OK to push main
+last_updated: "2026-10-24T16:35:22.760Z"
+last_activity: 2026-10-24
+last_activity_desc: Phase 06 trimmed close-out done - origin/main merged locally, local gate green on the merged tree (Release 418 of 418, Debug 401 + 17 cases), INTG-01, INTG-02, CI-01, TEST-01 ticked; nothing pushed
+state_head: abcdc11056f5ff4aaad07337c7a1088522cae2c1
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 52
-  completed_plans: 51
+  completed_plans: 52
 milestone_name: milestone
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-05)
 ## Current Position
 
 Phase: 06 (Consumer Readiness & CI) — EXECUTING
-Plan: 10 of 10 (trimmed close-out)
-Status: origin/main merged into this branch locally (2026-10-24); local gate and 06-10 evidence in progress. Nothing pushed; pushing to main needs the user's go-ahead (it would start a GitHub build).
+Plan: 10 of 10 (trimmed close-out, complete)
+Status: All 10 plans have a SUMMARY. origin/main merged into this branch locally (2026-10-24, `37fef2e`); local gate green on the merged tree. Next: phase verification, then the user's OK to push main (it would start a GitHub build). Nothing pushed, no branch protection.
 Last activity: 2026-10-24 — merged origin/main (21 commits: SC-1 MAX_SOURCES 32, SC-20 single-load race fix, Nyquist validation of phases 1, 2 and 4; milestone re-audit 21/25 with the four gaps being Phase 6's INTG-01, INTG-02, CI-01, TEST-01)
 
 **Count contract settled 2026-08-11:** the canonical counts are **8** algorithms, **5** SOFA HRTF
@@ -129,6 +129,7 @@ Progress: [███████░░░] 67%
 | Phase 06 P07 | n/a (paused at checkpoint) | 3 tasks | 5 files |
 | Phase 06 P08 | 1 min | 2 tasks | 1 files |
 | Phase 06 P09 | 8 min | 3 tasks | 9 files |
+| Phase 06 P10 | 40 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-08: engine coverage target committed as 93 exactly as the user gave it (not floor(94.19)=94); UI report-only, no ui_line_percent
 - [Phase 06]: 06-09: OSD v1.0.0 SharedFFTCache claim verified in OSD git history (same SpinLock-guarded per-order cache, Windows VST3 shipped); docs say macOS-only realtime proof; no requirement ticked, protection mode left to 06-10
 - [Phase 06]: D-18 (user decision 2026-10-24): the full realtime-safety check (README "Realtime-safety check" steps 2-5: the ThreadSanitizer tree, the [tsan] subset ~17 min, the whole suite under TSan ~32 min, ~100 min on GitHub) runs ONLY before a release tag, or by choice after a large change to audio-thread code; not at every phase end and not nightly. The 20-second [rt] allocation-and-lock trap (step 1) stays in the everyday Release ctest gate. ci.yml loses its `schedule:` trigger; `realtime-nightly` runs on a manual dispatch with the `realtime` input only. Supersedes Phase 5 05-08's "phase-end" wording and D-10's nightly; reasoning is written in README "Why it exists and when to run it". Last full pass: CI run 39058330902, 2026-10-17
+- [Phase 06]: 06-10: Phase 6 goes onto main only after phase verification passes, and the push to main needs the user's go-ahead (it would start a GitHub build); no branch protection for now — User decision 2026-10-24 (no cloud builds). README and CLAUDE.md say main has no branch protection yet; origin/main was merged locally and the local gate passes on the merged tree (Release ctest 418 of 418, Debug 401 + 17 cases)
 
 ### Pending Todos
 
@@ -249,6 +251,10 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 |----------|------|--------|-------------|
 | Binaural | `SharedFFTCache` static outlives JUCE's leak detector: "Leaked objects detected: 1 FFT" at test exit (false positive) | Resolved — Phase 5 (05-06): documented as a deliberate process-lifetime allocation, D-08 | Phase 02 (02-04) |
 | Binaural | HUTUBS PP2 golden checksum fails in Debug only | Resolved — Phase 3 (03-02) | Phase 02 (02-10) |
+| Tests | `[hrtf-switch][churn]` failed once (15 of 16 switches) in a full Debug run after the origin/main merge and passed in 24 later runs; cause not found (`06-consumer-readiness-ci/deferred-items.md`) | Open | Phase 06 (06-10) |
+| CI | Nothing after 310fb93 (the merge with origin/main included) has run on GitHub; the coverage job's 93% enforcement is confirmed locally only (run 40102582138 cancelled, no cloud builds) | Open until the user allows the push | Phase 06 (06-10) |
+| CI | Branch protection on main (D-11) and the nightly schedule (D-10) | Dropped by decision 2026-10-24 (D-18 and the 06-10 decision) | Phase 06 (06-10) |
+| Docs | Stale "12 objects / 12 convolvers" in `.claude/skills/*`, `docs/development-roadmap.md` and `.planning/codebase/*` after SC-1 raised MAX_SOURCES to 32 | Open, one docs pass | Phase 06 (06-10) |
 | Tests | Other tight test-local tolerances may fail on another compiler/build type (none fails today) | Open | Phase 02 (02-10) |
 | CI | ctest step runs zero tests; no arm64/FMA Release leg | Resolved — Phase 6 (06-01, 06-05) | Phase 02 (02-10) |
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
@@ -260,7 +266,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 
 ## Session Continuity
 
-Last session: 2026-10-24T14:26:55.035Z
-Stopped at: Completed 06-09-PLAN.md
-Resume file: None
-Next command: `/gsd-execute-phase 06`
+Last session: 2026-10-24T16:35:22.550Z
+Stopped at: Completed 06-10-PLAN.md (trimmed); phase verification next, then the user's OK to push main
+Resume file: .planning/phases/06-consumer-readiness-ci/.continue-here.md
+Next command: `/gsd-verify-work 6` (then ask the user before pushing main)

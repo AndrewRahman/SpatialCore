@@ -214,7 +214,8 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     rendering on a host with no SML font installed.
   - Phase 4 evidence: `[ui][fonts][bytes]`, `[ui][fonts][spy]`, `[ui][fonts][rule]` and `[ui][fonts][identical]` plus the D-05 grep gate. A run on a machine with no fonts installed was replaced by this provenance proof (D-05).
 
-- [ ] **INTG-01**: A consumer plugin can submodule, link, and build against SpatialCore
+- [x] **INTG-01**: A consumer plugin can submodule, link, and build against SpatialCore
+  - **Complete (Phase 6):** proven by the consumer harness (`examples/harness/scripts/build-consumer.sh`, `HarnessCheck: PASS`, CI run 39058330902) and `[umbrella]` inside Release ctest 418 of 418 (Plans 06-01, 06-04, 06-09 and 06-10; evidence in `06-10-SUMMARY.md`). The harness was not re-run on the merge with origin/main: it builds from a pushed commit.
   - **Corrected.** The 2026-08-09 acceptance named only
     `target_link_libraries(... PRIVATE SpatialCore)`. There are **two** targets: `SpatialCore`
     (DSP-only) and `SpatialCoreUI` (GUI). OSD needs both, so the old criterion would have passed a
@@ -229,7 +230,8 @@ otherwise. What remains is verifying the named gaps, not building the modules.
     headers instead of only `SpatialCore.h`, because a consumer that links `SpatialCoreUI` needs
     the UI umbrella, and it builds from a real submodule of the GitHub remote at a pushed commit.
 
-- [ ] **INTG-02**: `engineComputesGains` does not silently no-op for a migrating consumer
+- [x] **INTG-02**: `engineComputesGains` does not silently no-op for a migrating consumer
+  - **Complete (Phase 6):** proven by `[intg02]`, `[rt][intg02]` and `[rt]` (2521 assertions in 47 cases) in Release; `RenderEngine::getUnsuppliedGainsBlockCount()` counts the misuse and Debug asserts once (Plan 06-02; evidence in `06-10-SUMMARY.md`).
   - **New.** SC-13 (issue #14, closed) moved panning-gain computation into `RenderEngine`, but
     behind an **opt-in** `engineComputesGains` flag. A consumer that doesn't set it still gets the
     old pass-through path where `RenderEngine` only reads `objChannelGains` — the exact bug #14
@@ -352,7 +354,8 @@ Open issues that close with evidence rather than a code change.
   - Note: the cache is create-once-never-destroy by design — a deliberate permanent allocation,
     not a leak bug. Document it as such.
 
-- [ ] **CI-01**: SpatialCore is CI-verified against JUCE 9.0.0
+- [x] **CI-01**: SpatialCore is CI-verified against JUCE 9.0.0
+  - **Complete (Phase 6):** proven by green macOS CI on JUCE 9.0.0 (runs 39053183247, 39058330902, 39074814315), Linux (run 39070985243) and a Windows build; the realtime check runs on a manual dispatch before a release (D-18). Branch protection is not set (decision 2026-10-24); nothing after 310fb93 has run on GitHub (Plans 06-05, 06-06 and 06-10; evidence in `06-10-SUMMARY.md`).
   - **SpatialCore#9.** SpatialCore's own CI builds on Linux only. The tree is pinned to JUCE 9.0.0
     while CLAUDE.md claims 8 — the mismatch must be settled in CI, not prose.
 
@@ -365,7 +368,8 @@ Open issues that close with evidence rather than a code change.
 
 ### Test Coverage
 
-- [ ] **TEST-01**: Coverage tooling exists and the untested modules are covered
+- [x] **TEST-01**: Coverage tooling exists and the untested modules are covered
+  - **Complete (Phase 6):** proven by `scripts/coverage.sh` and `scripts/coverage-report.py` (`--self-test` passes), engine 94.19% and UI 25.89% in CI run 39074814315, the 93% engine target in `scripts/coverage-targets.json` (local 94.00%; its CI enforcement run was cancelled, see `06-10-SUMMARY.md`), and dedicated tests for `PartitionedConvolver.cpp` (96.08%) and `BinauralRenderer.cpp` (100%) (Plans 06-03, 06-07 and 06-08).
   - **Reframed.** No coverage tooling is configured anywhere in the build, so no percentage can be
     measured — the old "~5%" figure was invented, and OQ-4 ("set a coverage target") cannot be
     answered until measurement exists.
@@ -456,10 +460,10 @@ Not needed for OSD parity. OSD already implements #4 and #5 internally and fills
 | BUG-03 | CONCERNS.md | 1 | Complete |
 | VERIFY-01 | SpatialCore#11 | 2 | Complete |
 | VERIFY-02 | SpatialCore#12 | 5 | Complete |
-| CI-01 | SpatialCore#9 | 6 | Pending |
-| INTG-01 | Build gate + v1 metric | 6 | Pending |
-| INTG-02 | SpatialCore#14 residual | 6 | Pending |
-| TEST-01 | REQ-test-port-and-coverage | 6 | Reframed; OQ-4 closed (engine 93%, UI report-only) |
+| CI-01 | SpatialCore#9 | 6 | Complete (Phase 6) |
+| INTG-01 | Build gate + v1 metric | 6 | Complete (Phase 6) |
+| INTG-02 | SpatialCore#14 residual | 6 | Complete (Phase 6) |
+| TEST-01 | REQ-test-port-and-coverage | 6 | Complete (Phase 6); OQ-4 closed (engine 93%, UI report-only) |
 
 **Coverage:** 25 active v1 requirements, all mapped. 1 closed as non-finding (RTSF-04).
 14 open issues triaged: 4 into v1 requirements, 9 deferred to v2, 1 (#14) closed with residual
