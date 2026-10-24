@@ -7,3 +7,6 @@ JUCE
 build-release/
 build-tsan/
 build-cov/
+
+# GSD-generated, rewritten from STATE.md
+.planning/state.json
