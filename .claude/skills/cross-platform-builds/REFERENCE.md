@@ -625,7 +625,7 @@ wraptool verify --verbose MyPlugin-signed.aaxplugin
 ```yaml
 name: Build Plugin
 
-on: [push, pull_request]   # generic template; SpatialCore's own CI runs only on release tags / manual dispatch (D-20, see .github/workflows/ci.yml)
+on: [push, pull_request]   # generic template; SpatialCore's own CI runs only when started by hand (workflow_dispatch since PR #46; see .github/workflows/ci.yml)
 
 jobs:
   build:

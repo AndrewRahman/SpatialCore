@@ -65,7 +65,7 @@ compiler warnings in the harness or SpatialCore, otherwise the sound check's own
 The script seeds the submodule's Git LFS store from the checkout it lives in, so `git lfs pull` only
 downloads what is missing (the HRTF files are about 60 MB and GitHub meters LFS bandwidth).
 
-The macOS CI gate runs this script on a release-tag or manual CI run (no build starts on a branch push).
+The macOS CI gate runs this script in a manual CI run; CI has only a `workflow_dispatch` trigger since PR #46 (2026-10-25), so no push, tag or pull request starts a build.
 
 ## The OpenSpatialDelay-like configuration
 

@@ -44,6 +44,9 @@ PresetSaveOverlay::PresetSaveOverlay()
             dismiss();
         }
     };
+    // JUCE's TextEditor consumes Escape while it has focus, so keyPressed()
+    // below never sees it from here; close the overlay without saving.
+    nameEditor.onEscapeKey = [this] { dismiss(); };
     addAndMakeVisible (nameEditor);
 
     // Save button — filled cyan, dark text (primary action)

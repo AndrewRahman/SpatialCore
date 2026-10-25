@@ -112,18 +112,51 @@ cmake --build build --config Release
 
 ### Local test gate
 
-There are two test executables: `SpatialCoreTests` (DSP, I/O, OSC, trajectories, engine) and `SpatialCoreUITests` (the map and its fonts; the only target that links `SpatialCoreUI`). The gate builds every target in Debug and runs both executables, then builds every target in Release and runs `ctest`:
+There are two test executables: `SpatialCoreTests` (DSP, I/O, OSC, trajectories, engine) and `SpatialCoreUITests` (the map and its fonts; the only target that links `SpatialCoreUI`).
 
-**Which part to run when (decision D-19, 2026-10-24).** During development the everyday gate is the Release part only: build `build-release` and run `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes; it includes the 20-second `[rt]` trap). The Debug part (both executables, about 8 minutes for `SpatialCoreTests`), the coverage build and the realtime-safety check below run only when you prepare a public release.
+**Which tests to run when (decision P7-D01, 2026-10-25).** The moment decides the tier: quick checks while you work, the whole Release suite before `main`, and everything else once, when you prepare a release. This section is the one place the tiers and their commands are written; CLAUDE.md, the integration guide and the planning handoffs point here. P7-D01 replaces the everyday-gate wording of D-19 (2026-10-24); D-18 and the release-only part of D-19 stand.
+
+#### No test run: documentation and planning changes
+
+A change that touches only Markdown, `.planning/` files or other documentation needs no test run. A comment edit inside a `.h` or `.cpp` file still compiles, so it takes the light tier.
+
+#### Light tier: while iterating
+
+Build the Release tree, then run only the tests for the area you changed. It is much quicker than the whole suite.
 
 ```bash
-# Debug
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j8
-./build/tests/SpatialCoreTests
-./build/tests/SpatialCoreUITests
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release   # first time only
+cmake --build build-release --target SpatialCoreTests -j8
+./build-release/tests/SpatialCoreTests --filenames-as-tags "[#BinauralRendererTests]~[.]"
+```
 
-# Release
+`--filenames-as-tags` gives every test case a tag made from its file name (its short form `-#` is not used because zsh with EXTENDED_GLOB treats it as a pattern), so `[#BinauralRendererTests]` selects the cases in `tests/Binaural/BinauralRendererTests.cpp`. Several files are joined with commas, each with its own `~[.]`. `~[.]` keeps hidden capture cases out, because a filter that names a hidden case's file runs it, and the `[.][ambi-maxre-capture]` case fails without its `SC_CAPTURE_FILE` variable.
+
+To run every test file of one folder:
+
+```bash
+area=Binaural; ./build-release/tests/SpatialCoreTests --filenames-as-tags "$(for f in tests/$area/*.cpp; do printf '[#%s]~[.],' "$(basename "$f" .cpp)"; done | sed 's/,$//')"
+```
+
+| You changed | Run |
+|-------------|-----|
+| `Algorithms/` | `area=Algorithms` |
+| `Binaural/` | `area=Binaural` |
+| `Core/` | `area=Core` |
+| `Engine/` | `area=Engine` (it includes the 20-second `[rt]` trap) |
+| `IO/` | `area=IO` |
+| `OSC/` | `area=OSC`, or `"[osc]"`, which is on every case in `tests/OSC/` |
+| `Trajectory/` | `area=Trajectory` |
+| `UI/` | `cmake --build build-release --target SpatialCoreUITests -j8`, then `./build-release/tests/SpatialCoreUITests` (the whole UI executable) |
+| `CMakeLists.txt`, an umbrella header (`SpatialCore.h`, `SpatialCoreUI.h`) or code several areas use | the full Release `ctest` of the next section |
+
+The area tags (`[binaural]`, `[engine]`, `[io]` and the like) are not on every case in their folder: `[binaural]` is on 25 of the 69 cases in `tests/Binaural/` in the default build (counted 2026-10-25; one more case compiles only when `SPATIALCORE_EMBED_ALL_HRTF` is OFF), so a tag run can miss the test that covers your change. Use the file tags.
+
+#### Before merging or pushing to `main`
+
+Run the whole Release suite. `main` has no CI run and no branch protection, so this is the only check that catches a break in an area you did not touch. It takes about 2 minutes, including the 20-second `[rt]` trap.
+
+```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release -j8
 ctest --test-dir build-release/tests --output-on-failure
@@ -132,13 +165,33 @@ ctest --test-dir build-release/tests -N | grep 'ui:'
 
 The last command is a listing check: it must print tests whose names start with `ui:` (CTest drops the space after the prefix), which proves the UI executable is in the run. Build every target before `ctest`. A Catch2 target that has not been built registers a failing `_NOT_BUILT` test, so a partial build fails for the wrong reason.
 
-CI (`.github/workflows/ci.yml`) runs this same gate only for a public release: on its own when a release tag is pushed (a release candidate such as `v1.0.0-rc1`, or the final `v1.0.0`), or when started by hand (Actions, "SpatialCore CI", Run workflow). A push to a branch or a pull request starts no GitHub build (D-20, 2026-10-24): `macos-gate` on GitHub's Apple Silicon Mac (it also builds and runs the consumer harness, see "Consumer harness" below), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases report skipped there), `windows-build` (an MSVC build of every target, no test run) and `coverage` (see "Coverage" below). Run the local gate before you push anyway, because a failure is quicker to fix here. `ctest --test-dir build-release` from the build root now finds the tests too (the `build-release/tests` form above still works). `main` has no branch protection yet, so nothing on GitHub stops a push whose CI would fail: this local gate is the safety net before every push to `main`, which is pushed to directly as before. Protection that requires the CI jobs may be added later.
+#### Full tier: only when preparing a release
 
-#### Realtime-safety check (before a release tag)
+Run all of these once, when you prepare a release (a release candidate or the final release):
 
-The everyday gate above is unchanged. This second check proves that nothing `RenderEngine::renderBlock` reaches allocates, takes a lock or races with another thread. Run steps 2-5 only before a release tag (or by choice after a large change to audio-thread code), not on every edit, not at the end of every phase and not on a timer. Step 1, the 20-second `[rt]` trap, is cheap and already runs inside the everyday Release `ctest` gate. Proved on macOS (Apple Silicon) only. On Linux the whole suite runs in CI, but the allocation and lock trap is built on macOS only, so its cases are skipped there; Windows is built in CI and its tests are not run. On Linux and Windows JUCE 9.0.0 selects its fallback FFT, whose `perform()` takes a `SpinLock` (`juce_FFT.cpp:115`), so the "no lock" part of this proof does not carry over to those platforms (see the note in `Binaural/SharedFFTCache.h`). No claim covers a real DAW.
+1. The Debug build with both executables (about 8 minutes for `SpatialCoreTests`):
 
-**Why it exists and when to run it.** Audio code must never pause. The host asks the plugin for a chunk of sound about every 10 milliseconds, and if the code grabs memory or waits for a lock at that moment, the chunk arrives late and the listener hears a click or a dropout. These faults come and go, so they are easy to miss when you listen to a test. A 2026-08-09 audit found real bugs of exactly this kind: two places in `BinauralRenderer` could allocate memory in a Release build (RTSF-01), and the trajectory values were read and written by different threads without protection (RTSF-02). Phase 5 fixed them and added this check (this section was added in commit `947fa58`, 2026-10-06) with the rule "every phase end and before a release tag". The ThreadSanitizer runs (steps 2-5) are slow because ThreadSanitizer watches every memory access, which makes the suite 5 to 15 times slower: about 17 minutes for the subset and about 32 minutes for the whole suite on this Mac, about 100 minutes on GitHub. For a pre-1.0 library with a few dozen users, the trade is: the 20-second trap (step 1) catches exactly the click-causing bugs and costs almost nothing, so it runs in every gate; the ThreadSanitizer runs go before a release only, or by choice after a large change to audio-thread code (decision of 2026-10-24, STATE.md D-18). The `realtime-nightly` CI job has no schedule any more: it runs on its own when a release tag is pushed (a release candidate or the final release), or when you start it by hand (Actions, "SpatialCore CI", Run workflow, `realtime` on). The last full pass was CI run 39058330902 on 2026-10-17.
+   ```bash
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+   cmake --build build -j8
+   ./build/tests/SpatialCoreTests
+   ./build/tests/SpatialCoreUITests
+   ```
+
+2. The Release `ctest` above (it includes the `[rt]` trap).
+3. The realtime-safety check below, steps 2-5 (the `build-tsan` tree).
+4. Coverage ("Coverage" below).
+5. The consumer harness ("Consumer harness" below; the commit must be pushed first).
+6. The speaker-rig and DAW listening checks, by ear (the open ones are listed in `.planning/ROADMAP.md`).
+7. With the user's go-ahead, a manual CI run (next paragraph).
+
+CI (`.github/workflows/ci.yml`) runs only when started by hand (Actions, "SpatialCore CI", Run workflow, or `gh workflow run ci.yml`). Since PR #46 (2026-10-25) its only trigger is `workflow_dispatch`: no branch push, tag push, pull request or schedule starts it, and a manual run waits for the user's go-ahead. A run has five jobs: `macos-gate` on GitHub's Apple Silicon Mac (the Debug and Release parts of the full tier, plus the consumer harness, see "Consumer harness" below), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases report skipped there), `windows-build` (an MSVC build of every target, no test run), `coverage` (see "Coverage" below), and `realtime-nightly` when the `realtime` input is ticked (a manual run started from a `v*` tag runs it even with the input off). Because nothing on GitHub checks a push, the Release `ctest` of "Before merging or pushing to `main`" is the safety net before every push to `main`, which has no branch protection and is pushed to directly. `ctest --test-dir build-release` from the build root finds the tests too.
+
+#### Realtime-safety check (full tier, before a release)
+
+This check is part of the full tier. It proves that nothing `RenderEngine::renderBlock` reaches allocates, takes a lock or races with another thread. Run steps 2-5 only when preparing a release (or by choice after a large change to audio-thread code), not on every edit, not at the end of every phase and not on a timer. Step 1, the 20-second `[rt]` trap, is cheap and already runs inside the Release `ctest` before every merge or push to `main`. Proved on macOS (Apple Silicon) only. On Linux the whole suite runs in CI, but the allocation and lock trap is built on macOS only, so its cases are skipped there; Windows is built in CI and its tests are not run. On Linux and Windows JUCE 9.0.0 selects its fallback FFT, whose `perform()` takes a `SpinLock` (`juce_FFT.cpp:115`), so the "no lock" part of this proof does not carry over to those platforms (see the note in `Binaural/SharedFFTCache.h`). No claim covers a real DAW.
+
+**Why it exists and when to run it.** Audio code must never pause. The host asks the plugin for a chunk of sound about every 10 milliseconds, and if the code grabs memory or waits for a lock at that moment, the chunk arrives late and the listener hears a click or a dropout. These faults come and go, so they are easy to miss when you listen to a test. A 2026-08-09 audit found real bugs of exactly this kind: two places in `BinauralRenderer` could allocate memory in a Release build (RTSF-01), and the trajectory values were read and written by different threads without protection (RTSF-02). Phase 5 fixed them and added this check (this section was added in commit `947fa58`, 2026-10-06) with the rule "every phase end and before a release". The ThreadSanitizer runs (steps 2-5) are slow because ThreadSanitizer watches every memory access, which makes the suite 5 to 15 times slower: about 17 minutes for the subset and about 32 minutes for the whole suite on this Mac, about 100 minutes on GitHub. For a pre-1.0 library with a few dozen users, the trade is: the 20-second trap (step 1) catches exactly the click-causing bugs and costs almost nothing, so it runs in every Release `ctest`; the ThreadSanitizer runs go before a release only, or by choice after a large change to audio-thread code (decision of 2026-10-24, STATE.md D-18). The `realtime-nightly` CI job has no schedule and no push or tag trigger: it runs only in a manual run of the workflow with `realtime` on (Actions, "SpatialCore CI", Run workflow, or `gh workflow run ci.yml -f realtime=true`), or in a manual run started from a `v*` tag, and a manual run waits for the user's go-ahead. The last full pass was CI run 39058330902 on 2026-10-17.
 
 ```bash
 # 1. Allocation and lock trap, Release (macOS only, skipped elsewhere; also part of the Release ctest).
@@ -170,7 +223,7 @@ tail -1 /tmp/sc-tsan-full.log
 grep -c "WARNING: ThreadSanitizer" /tmp/sc-tsan-full.log
 ```
 
-A run passes only when its exit status is 0 and its warning count is 0. The ThreadSanitizer tree is `RelWithDebInfo` because an `-O0` instrumented SADIE HRTF load takes longer than the engine's 15 s shutdown wait. The allocation trap is not built in that tree (ThreadSanitizer's allocator hides allocations from it), so its cases report skipped there and Catch2's summary line counts them as skipped instead of saying "All tests passed"; the recorded exit status is the verdict. Measured run times on an Apple Silicon Mac, each run alone: `[rt]` in Release about 20 s, the `[tsan]` subset about 17 min (992 s, 40 cases), the UI suite under ThreadSanitizer about 45 s, the whole suite under ThreadSanitizer about 32 min (1938 s, 386 cases of which 43 are skipped trap cases). Run the last one in the background and wait for it. CI runs steps 1-5 as the `realtime-nightly` job, on a release-tag push or a manual run only (no schedule, no branch-push trigger); on a GitHub macOS runner the measured times were about 46 s for `[rt]`, 1887 s for the `[tsan]` subset, 58 s for the UI suite and 3183 s for the whole suite (100 minutes for the job, including both builds). Run them (by hand, or through the manual CI run) before a release tag.
+A run passes only when its exit status is 0 and its warning count is 0. The ThreadSanitizer tree is `RelWithDebInfo` because an `-O0` instrumented SADIE HRTF load takes longer than the engine's 15 s shutdown wait. The allocation trap is not built in that tree (ThreadSanitizer's allocator hides allocations from it), so its cases report skipped there and Catch2's summary line counts them as skipped instead of saying "All tests passed"; the recorded exit status is the verdict. Measured run times on an Apple Silicon Mac, each run alone: `[rt]` in Release about 20 s, the `[tsan]` subset about 17 min (992 s, 40 cases), the UI suite under ThreadSanitizer about 45 s, the whole suite under ThreadSanitizer about 32 min (1938 s, 386 cases of which 43 are skipped trap cases). Run the last one in the background and wait for it. CI runs steps 1-5 as the `realtime-nightly` job, in a manual run only (no schedule and no push, tag or pull-request trigger); on a GitHub macOS runner the measured times were about 46 s for `[rt]`, 1887 s for the `[tsan]` subset, 58 s for the UI suite and 3183 s for the whole suite (100 minutes for the job, including both builds). Run them as part of the full tier, when preparing a release (by hand, or through a manual CI run with the user's go-ahead).
 
 ### Demo app
 
@@ -192,7 +245,7 @@ git push origin HEAD
 examples/harness/scripts/build-consumer.sh "$(git rev-parse HEAD)"
 ```
 
-To reuse downloaded sources instead of fetching JUCE and libmysofa again, add a `--` and the pass-through flags, for example `-- -DFETCHCONTENT_SOURCE_DIR_JUCE=$PWD/build/_deps/juce-src -DFETCHCONTENT_SOURCE_DIR_MYSOFA=$PWD/build/_deps/mysofa-src`. Set `HARNESS_OSD_LIKE=1` for OpenSpatialDelay's own configuration (its libmysofa v1.3.2 and fast-math on its own targets). A pass ends with `HarnessCheck: PASS`. The `macos-gate` CI job runs it on a release-tag or manual run. Details are in [examples/harness/README.md](examples/harness/README.md).
+To reuse downloaded sources instead of fetching JUCE and libmysofa again, add a `--` and the pass-through flags, for example `-- -DFETCHCONTENT_SOURCE_DIR_JUCE=$PWD/build/_deps/juce-src -DFETCHCONTENT_SOURCE_DIR_MYSOFA=$PWD/build/_deps/mysofa-src`. Set `HARNESS_OSD_LIKE=1` for OpenSpatialDelay's own configuration (its libmysofa v1.3.2 and fast-math on its own targets). A pass ends with `HarnessCheck: PASS`. The `macos-gate` CI job runs it in every manual CI run. Details are in [examples/harness/README.md](examples/harness/README.md).
 
 ### Coverage
 
@@ -217,6 +270,8 @@ A change to SpatialCore only reaches a plugin after you:
 2. In the consumer repo, `cd SpatialCore && git pull` (or checkout the tag), then `git add SpatialCore` in the consumer to bump the submodule pointer, and commit.
 
 The consumer builds whatever commit its submodule pointer references — editing SpatialCore in place without bumping the pointer changes nothing in a clean build (this is what `build_version.sh` and CI both do).
+
+**Landing order and handoffs (decision P7-D02, 2026-10-25).** A change always lands in SpatialCore first: commit and push it here, then each consumer bumps its submodule pin in its own repo, in its own commit. Work a consumer has to do is handed over as an issue in that consumer's repo (as openspatialdelay#23 and OpenSpatialPanner#4 were), never as edits made from a SpatialCore session. The handoff's "Done when" asks for the light tier of "Local test gate" above, or the consumer's own equivalent, unless the handoff is release prep, which asks for the full tier. Whether OpenSpatialDelay and OpenSpatialPanner adopt the same tiers is decided in their own repos.
 
 ## License
 

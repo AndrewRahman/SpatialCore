@@ -535,7 +535,7 @@ Post-build auto-install:
 
 ### 9.3 Windows Build
 
-GitHub Actions CI builds Windows only on a release tag push (`v*`) or a manual run; a branch push starts no build (SpatialCore D-20, 2026-10-24). Uses Visual Studio 17 2022 x64, vcpkg for zlib.
+GitHub Actions CI builds Windows only when the workflow is started by hand (`workflow_dispatch`, the only trigger since PR #46, 2026-10-25); no push, tag or pull request starts a build (SpatialCore D-20, amended 2026-10-25). Uses Visual Studio 17 2022 x64, vcpkg for zlib.
 
 ---
 
@@ -566,7 +566,7 @@ GitHub Actions CI builds Windows only on a release tag push (`v*`) or a manual r
 | VBAP 3D triplet search (per source) | ~0.01ms | 30 triplets, matrix multiply |
 | KNN search K=3 (per source) | ~0.005ms | Partial sort + inverse-distance |
 | DBAP gain computation (per source) | ~0.003ms | Euclidean distance + normalize |
-| processBlock total (12 sources, measured figure) | <5ms @ 512 samples | Lock-free, pre-allocated |
+| processBlock total (12 sources; dated 2026-04-12 figure, not re-measured for 32 sources) | <5ms @ 512 samples | Lock-free, pre-allocated |
 | HRIR update (position change) | ~0.5ms | KD-tree lookup + IR copy |
 | Soft clipper (per sample) | ~2ns | Branchless polynomial |
 

@@ -182,7 +182,7 @@ Then, outside the audio thread, call `engine.setHRTFProfile (n)` to change the H
 
 **If you choose (B),** a block on which every active object's gains on the rendered path are exactly zero is counted by `engine.getUnsuppliedGainsBlockCount()`, and the first one asserts in a Debug build. In Release it is only counted and plays what you supplied, which is silence: the engine never fills gains in for you. The direct-binaural HRTF path, the Ambisonics formats and a block with no active object are never counted. Assert in your plugin's own tests that the count is 0 after you render your real configurations; that is how the mistake behind SpatialCore#14 (gains neither computed nor supplied, so silence) gets caught.
 
-The worked example of this whole set is `examples/harness/src/HarnessPlugin.cpp`, with a short comment on why each call is there. `examples/harness/` builds in CI on a release-tag or manual run, from a real submodule of the GitHub remote.
+The worked example of this whole set is `examples/harness/src/HarnessPlugin.cpp`, with a short comment on why each call is there. `examples/harness/` builds in CI in a manual run (CI has only a `workflow_dispatch` trigger since PR #46, 2026-10-25), from a real submodule of the GitHub remote.
 
 ### Wiring OSC, trajectories and the map into RenderEngine
 
@@ -573,7 +573,7 @@ add_executable(YourPluginTests tests/YourTests.cpp)
 target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
 ```
 
-SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README, and CI runs it only for a public release, on a release tag push or by hand (a branch push starts nothing): `macos-gate` (the same gate, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`; `realtime-nightly` runs the realtime-safety check on a manual run only, before a release. Run the local gate before you push. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
+SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Which of them to run when (no test run for a doc-only change, the light tier while iterating, the full Release `ctest` before merging to `main`, the full tier before a release) is written once, in the README's "Local test gate" (P7-D01, 2026-10-25). CI runs only when started by hand (`workflow_dispatch`, since PR #46): `macos-gate` (the Debug and Release parts of the full tier, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`, plus `realtime-nightly` when the `realtime` input is ticked; no push, tag or pull request starts it. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
 
 ## Preset System
 
@@ -582,3 +582,66 @@ Follow the OpenSpatialDelay pattern:
 - Use `PresetData` struct with JSON serialization
 - Factory presets in C++ source, installed via build-time CLI tool
 - User presets in `User/` subfolder, never overwritten
+
+### PresetBrowser contract
+
+`spatialcore::PresetBrowser` (`<SpatialCore/UI/PresetBrowser.h>`, in `SpatialCoreUI`) is menu chrome only (SpatialCore#13, 2026-10-25). It shows a category and preset popup built from a list you give it, tells you which entry the user picked, and owns a `PresetSaveOverlay` that asks for a name. It stores no presets and keeps no state, so it has no state format, no save or load hook and no versioning: where presets live, how they are written and read, and how an old preset file is upgraded are your plugin's. OpenSpatialPanner's position presets will share a state format through SpatialCore in ROADMAP Phase 11 (SpatialCore#2), built on this contract. The header comments are the full statement; this section is the summary.
+
+| You supply | You get back |
+|------------|--------------|
+| A `std::vector<PresetBrowser::Entry>` (`category`, `name`, `originalIndex`, `isFactory`) | `onSelect (originalIndex)` once, after the user picks an entry, and nothing if the menu is dismissed |
+| The `originalIndex` of the active preset, or a value no entry uses | That entry ticked, or no entry ticked |
+| A target component and a look-and-feel | The menu, opened below the component |
+| `getSaveOverlay().onSave` and a call to `getSaveOverlay().show (currentName, editor)` | `onSave (name)` with the trimmed, non-empty name after Save or Return, and nothing on Cancel, Escape or a click outside |
+
+**Rules for the entry list**
+
+- Group entries by category. A category split across the list shows up twice.
+- Put factory entries before user entries within a category. A separator is drawn before the first user entry only when a factory entry comes before it in that category.
+- Give every entry a non-empty category. An entry with an empty category is not shown.
+- Make `originalIndex` unique and 0 or more. The popup item ID is `originalIndex + 1`, and JUCE reserves 0 for "nothing picked" (an index of -1 asserts in Debug).
+
+A "User" submenu is always shown, with one disabled "(empty)" item when no entry has the category `User`.
+
+**Threading and lifetime**
+
+- Message thread only. Never call it from `processBlock`.
+- `showMenu` returns at once, and `onSelect` runs later on the message thread.
+- The open menu keeps only a copy of `onSelect` and does not watch your editor for deletion. Capture a `juce::Component::SafePointer` to the editor in `onSelect` (or call `juce::PopupMenu::dismissAllActiveMenus()` in the editor's destructor), and keep the `PresetBrowser` as a member of the editor.
+- The overlay checks only for an empty name and writes nothing. Clean the name (strip path separators and characters your file system rejects) before you use it in a file path.
+
+```cpp
+class YourEditor : public juce::AudioProcessorEditor
+{
+    spatialcore::PresetBrowser presetBrowser;
+    juce::TextButton presetButton { "Presets" }, saveButton { "Save" };
+
+    // currentPresetIndex, currentPresetName, loadPreset() and savePresetAs()
+    // are your plugin's own; SpatialCore knows nothing about them.
+
+    void wirePresets()
+    {
+        presetButton.onClick = [this]
+        {
+            // Your own preset list, already sorted by category, factory first.
+            std::vector<spatialcore::PresetBrowser::Entry> entries;
+            // ... fill entries ...
+
+            presetBrowser.showMenu (entries, currentPresetIndex, presetButton, getLookAndFeel(),
+                                    [safe = juce::Component::SafePointer<YourEditor> (this)] (int index)
+                                    {
+                                        if (safe != nullptr)
+                                            safe->loadPreset (index);
+                                    });
+        };
+
+        // onSave may capture this: the overlay is owned by the editor's PresetBrowser and closes with it.
+        presetBrowser.getSaveOverlay().onSave = [this] (const juce::String& name) { savePresetAs (name); };
+
+        saveButton.onClick = [this]
+        {
+            presetBrowser.getSaveOverlay().show (currentPresetName, this);
+        };
+    }
+};
+```

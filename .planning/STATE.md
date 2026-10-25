@@ -1,19 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.6.0
-status: Phase 7 context gathered
-stopped_at: Phase 7 context gathered
-last_updated: "2026-10-25T07:51:10.871Z"
+milestone_name: Pre-release follow-up
+current_phase: 08
+current_phase_name: Panning correctness — Ambisonics and VBAP
+status: "Phase 07 shipped — PR #51"
+stopped_at: Phase 7 complete, ready to plan Phase 08
+last_updated: "2026-10-25T15:36:33.865Z"
 last_activity: 2026-10-25
-last_activity_desc: "Phase 7 context gathered; #24 and #9 closed"
-state_head: 50af971838bbf743a80e2ebe086f7b7a4e7b2f8f
+state_head: c92b38f4988f0aedde4ac8434b0555e08a0f71ad
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 6
-  total_plans: 52
+  total_plans: 4
   completed_plans: 52
-milestone_name: milestone
-current_phase: 07
+  percent: 86
 ---
 
 # Project State
@@ -24,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v0.5.0 shipped and archived 2026-10-24 (labelled v1.0.0 until 2026-10-25; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Milestone v0.6.0 Phase 7 (process, docs and consumer close-out): context gathered 2026-10-25; next: /gsd-plan-phase 7
+**Current focus:** Phase 7 — Process, docs and consumer close-out
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
 - SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness, #39 7.1.4 below-horizon listening, #40 gap bridge + DBAP listening, #41 Simple-mode listening (all now in v0.6.0 Phases 7-13; ROADMAP lists the phase for each)
@@ -33,16 +34,16 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 ## Current Position
 
-Phase: 07 (Process, docs and consumer close-out) — milestone v0.6.0
-Plan: — (not planned yet)
-Status: Context gathered (07-CONTEXT.md)
-Last activity: 2026-10-25 — Phase 7 context gathered: two test tiers decided (light while iterating, full Release ctest before main, full tier before a release); #24 and #9 closed
+Phase: 08 — Panning correctness — Ambisonics and VBAP
+Plan: Not started
+Status: Phase 07 shipped — PR #51
+Last activity: 2026-10-25
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 44
+- Total plans completed: 48
 - Average duration: —
 - Total execution time: —
 
@@ -55,6 +56,7 @@ Last activity: 2026-10-25 — Phase 7 context gathered: two test tiers decided (
 | 3 | 11 | - | - |
 | 04 | 8 | - | - |
 | 06 | 10 | - | - |
+| 7 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -118,6 +120,10 @@ Last activity: 2026-10-25 — Phase 7 context gathered: two test tiers decided (
 | Phase 06 P08 | 1 min | 2 tasks | 1 files |
 | Phase 06 P09 | 8 min | 3 tasks | 9 files |
 | Phase 06 P10 | 40 min | 3 tasks | 12 files |
+| Phase 7 P01 | 15 min | 3 tasks | 4 files |
+| Phase 7 P07-02 | 10min | 2 tasks | 5 files |
+| Phase 7 P07-03 | 15 min | 3 tasks | 2 files |
+| Phase 7 P07-04 | 10min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -211,6 +217,11 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-10: Phase 6 goes onto main only after phase verification passes, and the push to main needs the user's go-ahead (it would start a GitHub build); no branch protection for now — User decision 2026-10-24 (no cloud builds). README and CLAUDE.md say main has no branch protection yet; origin/main was merged locally and the local gate passes on the merged tree (Release ctest 418 of 418, Debug 401 + 17 cases)
 - [Phase 06]: D-19 (user decision 2026-10-24): during development the everyday gate is the Release build + `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes, includes the 20 s [rt] trap) and `python3 -I scripts/coverage-report.py --self-test`. The full Debug run of both executables, the coverage build and the realtime-safety check (D-18) run only when preparing a public release. Recorded in README "Local test gate" and CLAUDE.md
 - [Quick 261024-qlw]: P999.5-D01: the Ambisonics output-format stream is plain AmbiX SN3D (evalSH x signal x distance and tap gains): the near-field shelf (inverted against Daniel 2003) and the encoder-side max-rE (applied twice by IEM decoders) are removed; max-rE stays in AmbisonicsAlgorithm, [ambi-pin] and the codec; per-block SH interpolation and the public API are unchanged (SpatialCore#32 open until openspatialdelay#22 ships; closed SpatialCore#21 guarded by [sc19])
+- [Phase 7]: P7-D01: tests run in tiers chosen by the moment (README Local test gate is the single source)
+- [Phase 7]: P7-D02: SpatialCore lands first, consumers bump pins in their own repos; handoffs are consumer issues using the light tier
+- [Phase 7]: 07-02: processBlock row in spatial-audio-dsp skill labelled a dated 12-source figure, not a measurement (no measurement record exists, D-09)
+- [Phase 7]: PresetBrowser documented as it is (menu chrome only, no state/format/versioning), not recorded as unsuitable (D-11)
+- [Phase 7]: 07-04: ci.yml changed in comment lines only; #42/#37/#13 close post-merge via 07-CLOSEOUT.md (D-14)
 
 ### Pending Todos
 
@@ -278,9 +289,9 @@ Acknowledged at the v0.5.0 milestone close (2026-10-24) through `audit-open ackn
 
 ## Session Continuity
 
-Last session: 2026-10-25T07:51:10.857Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-process-docs-consumer-closeout/07-CONTEXT.md
+Last session: 2026-10-25T08:47:37.278Z
+Stopped at: Phase 7 complete, ready to plan Phase 08
+Resume file: None
 Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
 ## Operator Next Steps
