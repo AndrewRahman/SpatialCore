@@ -1,5 +1,5 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "UAT G-02-10: [ambi-pin] fails in a Release build only. RenderEngineTests.cpp ~line 700, CHECK (worstHere <= 1e-6f): the order-3 decode matrix differs from the test's referenceAmbiDecode by up to 5.3e-6 on 10 of 15 layouts. Debug passes. CI builds Release."
 created: 2026-10-03T00:00:00Z
 updated: 2026-10-03T00:00:00Z
@@ -167,8 +167,8 @@ root_cause: |
   (1) Compiler: at -O3 on arm64 (AppleClang, -ffp-contract=on default, hardware FMA) the E*E^T dot product `sum += E[i][s]*E[j][s]` (src/IO/AmbisonicsCodec.cpp:69-70 in the lib, the same loop in referenceAmbiDecode) is an llvm.fmuladd reduction. The loop vectorizer turns the vectorized portion into fmul.4s + a strict-order scalar fadd chain (unfused, 2 roundings per term) and leaves the scalar remainder as fmadd (fused, 1 rounding). The two TUs vectorize it differently (lib: runtime M, [49][16] arrays, 8-wide block; ref: constant M=16, [16][16] arrays, 16-wide plus 4-wide blocks), so for a speaker count N the number of fused vs unfused terms differs: they agree only for N = 8, 9, 11 and differ for N = 4, 5, 7, 13, 15 (10 of 15 layouts). In Debug (-O0) nothing is vectorized and both copies are the same scalar fused sequence, hence bit-identical.
   (2) Numerics: EE^T is singular (rank <= N <= 15 of 16) and the 0.01 Tikhonov term gives cond ~500-1800 with inverse entries up to 100. A one-rounding change in an EET entry moves the final decode by 1e-6..1e-5. The honest float noise floor of this solve is 5e-6..2e-5 (distance of any float variant from a double solve), above the 1e-6 tolerance. The tolerance was inherited from a Debug-grade `worst 0` measurement (02-RESEARCH F10) with an unmeasured safety factor, and it is effectively a bit-exactness assertion.
   The library decoder is NOT wrong: it is as accurate as the reference (lib 1.4e-5, ref 1.3e-5 from double truth) and algorithmically identical (bit-equal under -ffp-contract=off). The defect is the test's assertion strength, exposed by build-type/TU-dependent FP code generation. Shipped behavior is unaffected at the ~1e-5 (-100 dB) level.
-fix: ""
-verification: ""
+fix: "Resolved by G-02-10 (02-10-SUMMARY.md): d3ab2c5 derived the [ambi-pin] bound and anchored it to a double-precision decode; 264fd8d made the Release suite a phase gate and recorded the out-of-scope risks; 02fb8fc marked G-02-10 resolved. The library decoder was not changed."
+verification: "02-10-SUMMARY.md; Phase 2 verification passed."
 files_changed: []
 
 artifacts (for plan-phase --gaps):

@@ -71,7 +71,7 @@ SpatialCore extraction happens **after** OpenSpatialDelay v1.0 ships (deadline: 
 | Module | Source in OpenSpatialDelay | What Gets Extracted |
 |---|---|---|
 | **Algorithms/** | PluginProcessor.h/cpp | VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural — all 7 SpatializationAlgorithm implementations |
-| **Binaural/** | PluginProcessor.h/cpp | HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (12 per-source convolvers) |
+| **Binaural/** | PluginProcessor.h/cpp | HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (one convolver per source, up to 32) |
 | **IO/** | PluginProcessor.h/cpp | OutputFormatRegistry (22 formats), SpeakerLayout (13 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | **OSC/** | PluginProcessor.cpp | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
 | **Trajectory/** | PluginProcessor.cpp | 13 shapes, origin-point architecture, forward/reverse |

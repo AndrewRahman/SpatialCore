@@ -165,7 +165,7 @@ For each enabled source (tap):
   5. Sum all convolver outputs → wet L/R
 ```
 
-12 independent per-source PartitionedConvolvers. HRIR loaded at source's exact 3D direction — no virtual speaker intermediary. This is the highest-quality binaural path.
+One independent PartitionedConvolver per source (MAX_SOURCES = 32, Core/Types.h). HRIR loaded at source's exact 3D direction — no virtual speaker intermediary. This is the highest-quality binaural path.
 
 ### Path B: Simple Woodworth (Binaural output, profile 0)
 
@@ -269,24 +269,11 @@ The numbering is `kHRTFProfiles` in `Binaural/HRTFProfile.h`; consumers persist 
 
 ---
 
-## 4. Virtual Speaker Deployment
+## 4. Binaural Output and Speaker Layouts
 
-16 virtual speakers used for binaural rendering when algorithms compute speaker gains (VBAP/VBIP/KNN in binaural mode):
+Binaural output uses no virtual speaker array. `RenderEngine` gives the Binaural format a 0-speaker layout (2 output channels), and each object is rendered on its own: per-source HRTF convolution (DirectBinaural / `BinauralRenderer`, one `PartitionedConvolver` pair per object slot, `MAX_SOURCES` = 32) for HRTF profiles 1-5, or the Simple Woodworth path (profile 0). `struct VirtualSpeaker` in `IO/SpeakerLayout.h` is an unused leftover; nothing reads it.
 
-```
-Ear level ring (9 speakers, 0° elevation):
-  C(0°)  L(30°)  R(-30°)  Lw(60°)  Rw(-60°)  Ls(90°)  Rs(-90°)  Lrs(135°)  Rrs(-135°)
-
-Top ring (6 speakers, +45° elevation):
-  Tfl(45°,45°)  Tfr(-45°,45°)  Tsl(90°,45°)  Tsr(-90°,45°)  Trl(135°,45°)  Trr(-135°,45°)
-
-Zenith (1 speaker, +90° elevation):
-  T(0°,90°)
-```
-
-**Rationale:** 9.1.6 Atmos layout plus zenith. 16 total = minimum for well-conditioned 3rd-order HOA decode matrix ((3+1)² = 16). Zenith included specifically for Ambisonics mathematical completeness.
-
-**VBAP triplets:** 30 pre-computed triangulations covering upper hemisphere. Each triplet stores speaker indices {i,j,k} and pre-computed 3x3 inverse matrix. Determinant threshold 0.01 for degenerate geometry.
+VBAP triplets are built per physical speaker layout (see below), not for a binaural array. Each triplet stores speaker indices {i,j,k} and the pre-computed 3x3 inverse matrix. Determinant threshold 0.01 for degenerate geometry.
 
 **Below-horizon handling:** On height speaker layouts with no lower speakers, VBAP, VBIP and MDAP use the ITU-R BS.2127 (EAR) lower-hemisphere construction: a virtual speaker at -30° under each ear-level speaker plus a virtual nadir, downmixed onto the ear-level speakers (the nadir at `1/sqrt(n)` to each) and power-normalised. Between the horizon and the -30° ring each neighbouring ear-level pair is one pan region (the pair's horizon pan, held at every elevation); below it the nadir cap blends to equal gain at -90°. All of it is precomputed at layout build and tried only after every regular triplet. VBAP matches PyPI ear 2.1.0 except behind the listener on 5.1.4. VBAP and VBIP put no gain on an elevated speaker for a source at or below -1°. Binaural (per-source HRTF) and Ambisonics output keep the true negative elevation.
 
@@ -425,7 +412,7 @@ Individual `/x`, `/y`, `/z` messages update cached Cartesian values (`oscCartesi
 - `--manual` — Single AED message
 - `--orbit` — Continuous azimuth orbit
 - `--sweep` — Elevation sweep -90° to +90°
-- `--multi` — Coordinated spiral of all 12 objects
+- `--multi` — Coordinated spiral of all active objects (up to MAX_SOURCES = 32)
 - `--xyz` — Cartesian position update
 - `--aed` — Combined AED message
 - `--axes` — Individual /x, /y, /z updates
@@ -548,8 +535,7 @@ Post-build auto-install:
 
 ### 9.3 Windows Build
 
-GitHub Actions CI on push to `main`. Uses Visual Studio 17 2022 x64, vcpkg for zlib.
-Download: `bash scripts/download_windows_build.sh` → `build/windows/`
+GitHub Actions CI builds Windows only on a release tag push (`v*`) or a manual run; a branch push starts no build (SpatialCore D-20, 2026-10-24). Uses Visual Studio 17 2022 x64, vcpkg for zlib.
 
 ---
 
@@ -580,7 +566,7 @@ Download: `bash scripts/download_windows_build.sh` → `build/windows/`
 | VBAP 3D triplet search (per source) | ~0.01ms | 30 triplets, matrix multiply |
 | KNN search K=3 (per source) | ~0.005ms | Partial sort + inverse-distance |
 | DBAP gain computation (per source) | ~0.003ms | Euclidean distance + normalize |
-| processBlock total (12 sources) | <5ms @ 512 samples | Lock-free, pre-allocated |
+| processBlock total (12 sources, measured figure) | <5ms @ 512 samples | Lock-free, pre-allocated |
 | HRIR update (position change) | ~0.5ms | KD-tree lookup + IR copy |
 | Soft clipper (per sample) | ~2ns | Branchless polynomial |
 

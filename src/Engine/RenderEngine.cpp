@@ -838,6 +838,17 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     }
     const RenderBlockContext& ctx = *dispatchCtx;
 
+    // INTG-02 (D-05, D-06): the consumer neither asked the engine to compute gains nor supplied
+    // any on a path that reads them (SpatialCore#14). Count it, assert once per engine in Debug,
+    // and never compute gains on the consumer's behalf: the block renders what was supplied.
+    // ctx is the finished context, so engineDerivesDispatch and the engineSelectsHRTF objGains
+    // fill are already applied. One relaxed atomic add, no allocation, lock or logging (DR-1).
+    if (! blockCtx.engineComputesGains && blockHasUnsuppliedGains (src, ctx, layout))
+    {
+        if (unsuppliedGainsBlockCount_.fetch_add (1, std::memory_order_relaxed) == 0)
+            jassertfalse;
+    }
+
     float* outL = (numOutCh > 0) ? outChannels[0] : nullptr;
     float* outR = (numOutCh > 1) ? outChannels[1] : nullptr;
 
@@ -908,6 +919,65 @@ void RenderEngine::renderBlock (const RenderSources& sources,
     swapGenerationHandled_.store (blockSwapGeneration, std::memory_order_release);
 
     renderedSincePrepare_ = true;
+}
+
+//==============================================================================
+// blockHasUnsuppliedGains — INTG-02. Mirrors the dispatch chain in renderBlock(): the same
+// order, so it judges the path the block really renders. An object is active when the render
+// paths would not skip it: live, with a mono and a tap-fade buffer, and a tap fade above 0 at
+// the first or last sample (every path skips a sample whose fade is 0 or less). The block is
+// unsupplied when at least one object is active and none of them has a non-zero gain on the
+// path. Fixed-size loops over at most MAX_SOURCES x MAX_SPEAKERS floats.
+//==============================================================================
+bool RenderEngine::blockHasUnsuppliedGains (const RenderSources& src, const RenderBlockContext& ctx,
+                                             const LayoutState& layout) const noexcept
+{
+    // The paths that read no consumer gains: the HRTF path (profile gains come from the HRIRs,
+    // and a binaural block with engineSelectsHRTF had objGains filled by the engine, WR-06)
+    // and Ambisonics (spherical-harmonic coefficients are computed from the positions).
+    if (! ctx.isStereoVariant)
+    {
+        if (ctx.isBinaural && (ctx.engineSelectsHRTF || ctx.useHRTF))
+            return false;
+        if (! ctx.isBinaural && ctx.isAmbiOutput)
+            return false;
+    }
+
+    if (src.numSamples <= 0)
+        return false;
+
+    const int last = src.numSamples - 1;
+    const int numSpeakers = std::min (layout.layout.numSpeakers, MAX_SPEAKERS);
+    bool anyActive = false;
+
+    for (int t = 0; t < MAX_SOURCES; ++t)
+    {
+        if (! src.objectLive[t] || src.monoBuffers[t] == nullptr || src.tapFadeGainPerSample[t] == nullptr)
+            continue;
+        if (! (src.tapFadeGainPerSample[t][0] > 0.0f || src.tapFadeGainPerSample[t][last] > 0.0f))
+            continue;
+
+        anyActive = true;
+
+        if (ctx.isStereoVariant)
+        {
+            if (ctx.objGainL[t] != 0.0f || ctx.objGainR[t] != 0.0f)
+                return false;
+        }
+        else if (ctx.isBinaural)
+        {
+            if (ctx.objGains[t].leftGain != 0.0f || ctx.objGains[t].rightGain != 0.0f)
+                return false;
+        }
+        else
+        {
+            for (int sp = 0; sp < numSpeakers; ++sp)
+                if (ctx.objChannelGains[t][sp] != 0.0f)
+                    return false;
+        }
+    }
+
+    return anyActive;
 }
 
 //==============================================================================
@@ -1844,6 +1914,11 @@ void RenderEngine::swapActiveRenderer()
 int RenderEngine::getOversizedBlockCount() const noexcept
 {
     return oversizedBlockCount_.load (std::memory_order_relaxed);
+}
+
+int RenderEngine::getUnsuppliedGainsBlockCount() const noexcept
+{
+    return unsuppliedGainsBlockCount_.load (std::memory_order_relaxed);
 }
 
 std::size_t RenderEngine::currentThreadHash() noexcept

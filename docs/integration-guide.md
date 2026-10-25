@@ -63,6 +63,14 @@ target_sources(OpenSpatialYourEffect PRIVATE
 )
 ```
 
+Five notes on this block:
+
+- **SpatialCore's tests stay out of your build.** `SPATIALCORE_BUILD_TESTS` defaults to ON only when SpatialCore is the top-level project. Set `-DSPATIALCORE_BUILD_TESTS=ON` if you want them built inside yours.
+- **If your project fetches libmysofa v1.3.2 itself** (as OpenSpatialDelay does, and SpatialCore then skips its own v1.3.5 fetch because the `mysofa-static` target already exists), configure with `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` under CMake 4. SpatialCore sets that policy only after your own fetch has already run, so it cannot rescue it.
+- **Apply `-ffast-math` only to your own targets,** never globally before `add_subdirectory(SpatialCore)`. SpatialCore's non-finite guards are `std::isfinite` tests that fast-math folds away, so `FloatSemanticsGuard.h` stops the build with an error on purpose.
+- **On Apple, SpatialCore's own `CMakeLists.txt` sets `CMAKE_OSX_ARCHITECTURES` to `arm64` and `CMAKE_OSX_DEPLOYMENT_TARGET` to `12.0` in its own scope** and writes `CMAKE_POLICY_VERSION_MINIMUM` (3.5) into the cache. A consumer that builds a universal binary must expect an arm64-only SpatialCore today (OpenSpatialDelay builds arm64 itself, so it is not affected).
+- **On Windows, supply zlib yourself.** Windows has no system zlib. SpatialCore links `ZLIB::ZLIB` and libmysofa v1.3.5's MSVC branch only runs a `nuget install zlib` that finds no package today. CI's working recipe is the vcpkg package `zlib:x64-windows-static-md`, `ZLIB_INCLUDE_DIR` and `ZLIB_LIBRARY` pointing at the static library (named `zs.lib`, which CMake's FindZLIB does not search), and the include folder on the C compiler's command line (see the `windows-build` job in `.github/workflows/ci.yml`).
+
 ## Step 4: PluginProcessor — Using SpatialCore
 
 Your processor integrates SpatialCore by:
@@ -150,12 +158,38 @@ public:
 > with the flag false you still supply them yourself.
 > See `include/SpatialCore/Engine/RenderEngine.h` for the exact struct and signature.
 
+### Set these flags
+
+For a new plugin, or one migrating onto `RenderEngine`, this is the whole set. On every block's `RenderBlockContext`:
+
+```cpp
+ctx.sampleRate             = currentSampleRate;
+ctx.engineComputesGains    = true;   // gains for every path, from the object positions
+ctx.engineDerivesDispatch  = true;   // format, binaural/stereo/Ambisonics flags and order, from the engine's own layout
+ctx.engineSelectsHRTF      = true;   // the engine picks Simple or HRTF itself, and blends them during a switch
+ctx.engineFadesFormatSwitch = true;  // a format switch fades out and in instead of clicking
+```
+
+Then, outside the audio thread, call `engine.setHRTFProfile (n)` to change the HRTF profile and `engine.setAlgorithmIndex (kAlgorithmIndex...)` to change the speaker algorithm. On the audio thread, read `engine.getBlockLayout()` after `renderBlock()` to choose the output channel map. What each one buys you:
+
+- `engineComputesGains`: you do not compute or supply any gain array (`objChannelGains`, `objGains`, and on the stereo variants `objGainL`, `objGainR` and `stereoMode`).
+- `engineDerivesDispatch`: the dispatch fields and the layout come from one snapshot per block, so a format switch landing mid-block cannot tear them apart (SC-16).
+- `engineSelectsHRTF` with `setHRTFProfile`: a profile switch, including Simple to HRTF and back, is click-free (D-15).
+- `engineFadesFormatSwitch`: an output-format switch is click-free (SC-20).
+- `getBlockLayout()`: the channel map you choose is the one of the layout the block really rendered, so it stays paired with the samples (SC-17).
+
+**Choose one mode for gains.** Either (A) the engine computes them (`engineComputesGains = true`, recommended), or (B) you supply them yourself on every block, for every active object, in the array of the path you render: `objChannelGains` for discrete surround, `objGains` for the Simple binaural path, and `objGainL`, `objGainR` and `stereoMode` for the stereo variants. Every flag above defaults to `false`, so a plugin that sets none of them renders exactly as it did before.
+
+**If you choose (B),** a block on which every active object's gains on the rendered path are exactly zero is counted by `engine.getUnsuppliedGainsBlockCount()`, and the first one asserts in a Debug build. In Release it is only counted and plays what you supplied, which is silence: the engine never fills gains in for you. The direct-binaural HRTF path, the Ambisonics formats and a block with no active object are never counted. Assert in your plugin's own tests that the count is 0 after you render your real configurations; that is how the mistake behind SpatialCore#14 (gains neither computed nor supplied, so silence) gets caught.
+
+The worked example of this whole set is `examples/harness/src/HarnessPlugin.cpp`, with a short comment on why each call is there. `examples/harness/` builds in CI on a release-tag or manual run, from a real submodule of the GitHub remote.
+
 ### Wiring OSC, trajectories and the map into RenderEngine
 
 `examples/demo/DemoComponent.cpp` is the worked example: ADM-OSC in and out, trajectories and the spatial map all driving `RenderEngine`. Build it with `-DSPATIALCORE_BUILD_EXAMPLES=ON` (see the README), and run `SpatialCoreDemo --selftest` to see all three routes reach the renderer. The rules it follows:
 
 - **Control stays on the message thread.** OSC input, the trajectory timer and map drags all run there. The consumer merges OSC updates that carry NaN for an axis they did not send (it keeps the stored value for that axis), then copies each object's position into per-object `std::atomic` values. The audio thread only loads those atomics and calls `renderBlock`. It never reads `ADMOSCReceiver`, `TrajectoryEngine` or the map. The `TrajectoryEngine` getters (`getFinalAz`, `getFinalEl`, `getFinalDist`, `isActive`) are lock-free atomics and safe to call from any thread, but the flow above stays the recommended one: read them on the message thread and copy the values into your own per-object atomics.
-- **Let the engine compute gains and dispatch.** Set `engineComputesGains` and `engineDerivesDispatch` on the `RenderBlockContext`.
+- **Let the engine compute gains and dispatch.** Set the flags in "Set these flags" above.
 - **Answer position queries.** Override `ADMOSCReceiver::Listener::admPositionQueried` and call `ADMOSCSender::queueReply` from your own state. The reply goes to the sender's configured destination, not to the device that asked, and a reply still queued when you call `connect` or `disconnect` is dropped, so it never reaches a new destination. Tick the sender from a timer of 30 Hz or more; it keeps its own 30 Hz clock.
 - **Range-limit parameter values.** `admObjectParamReceived` and `admGlobalParamReceived` deliver finite values, but only x, y and z are clamped. `/doppler`, `/pitch`, `/speed` and every `/osd/global/*` value are unbounded, so clamp them to your parameter's range before use.
 - **Set `reverse` yourself.** `TrajectoryEngine::getState` always reports `TrajectoryState::reverse` as false. Set it from your own per-object flag on the state before you pass it to `SpatialMapComponent::setTrajectoryState`, as the demo does.
@@ -165,8 +199,7 @@ Security: `ADMOSCReceiver::connect (port)` listens on every network interface an
 ## Step 5: PluginEditor — Using SpatialCore UI
 
 ```cpp
-#include <SpatialCore/UI/SpatialMapComponent.h>
-#include <SpatialCore/UI/SMLLookAndFeel.h>
+#include <SpatialCore/SpatialCoreUI.h>   // every UI header in one include (D-02)
 
 class YourEditor : public juce::AudioProcessorEditor {
 public:
@@ -184,6 +217,8 @@ public:
     }
 };
 ```
+
+The individual headers (`<SpatialCore/UI/SpatialMapComponent.h>`, `<SpatialCore/UI/SMLLookAndFeel.h>` and the others) still work if you prefer to include only what you use.
 
 **Share one `SMLLookAndFeel` across editors.** An `SMLLookAndFeel` loads its seven typefaces when it is constructed, so a look-and-feel created per editor repeats that work for every open editor window (the per-instance duplication behind `Spatial-Media-Lab/OpenSpatialDelay#131`). Create one, for example as a member of the processor or in a shared pointer, and have each editor call `setLookAndFeel` with it; clear it in the editor's destructor with `setLookAndFeel (nullptr)` before the editor goes away. The spatial map already shares its own JetBrains Mono face set between all maps, so it needs nothing from you (proved by `[ui][multi]`).
 
@@ -435,8 +470,9 @@ audio path skip calls.
 message-thread only. `getHRTFProfileStatus` is safe from any thread. The audio thread only does atomic
 operations (loads, stores, exchanges) for the profile handoff: no lock, no allocation, no file access.
 The whole render path, `renderBlock` and everything it reaches, neither allocates nor takes a lock
-(proved on macOS, Apple Silicon, by the `[rt]` trap tests and a ThreadSanitizer run; Windows and Linux
-are checked in Phase 6). A host block longer than the size you passed to `prepare()` is rendered in
+(proved on macOS, Apple Silicon, by the `[rt]` trap tests and a ThreadSanitizer run; on Linux the suite
+runs in CI without the allocation trap, Windows is built and not run, and on both JUCE's fallback FFT
+takes a `SpinLock`, see `Binaural/SharedFFTCache.h`; no claim covers a real DAW). A host block longer than the size you passed to `prepare()` is rendered in
 full, in pieces of at most the prepared size, with no Debug assertion; `engine.getOversizedBlockCount()`
 counts such blocks, so you can show the mismatch in your own diagnostics. If a renderer's scratch buffers
 are ever too small for a call (a `prepare()` contract violation), the call is skipped (`renderSourceBuffers` outputs silence for that call and advances no state, `updateSourceHRIR` keeps the
@@ -461,13 +497,21 @@ opt-in flag, and both only lengthen a transition at small block sizes (they neve
 - The renderer crossfade of a profile swap lasts `max (8 blocks, kMinRendererXfadeSamples = 4096)`
   samples, fixed when the fade starts. At blocks of 512 samples and above it is the old 8-block fade;
   at 256 and below it is longer (at least 85 ms at 48 kHz).
-- A convolver's warm-up before a new IR is faded in now also waits until the new slot has convolved at
-  least one IR length of samples. A 558-sample KEMAR IR at 512-sample calls therefore warms for two
-  calls where it used to warm for one, and the convolver crossfade is never shorter than
-  `PartitionedConvolver::kMinCrossfadeSamples` (2048).
+- A convolver's HRIR transition is counted in samples from `Binaural/TransitionTiming.h`, never in
+  calls (Spatial-Media-Lab/OpenSpatialDelay#234, decided and A/B-tested in OpenSpatialDelay O211/O212;
+  it replaces Phase 3's call-counted rule of one warm-up call, then `max (4 calls, 2048 samples)`).
+  The inactive slot warms for `max (IR length, kHRIRWarmupMinMs = 5.333 ms)` and then crossfades over
+  `kHRIRCrossfadeMs = 21.333 ms` (256 and 1024 samples at 48 kHz) at every call size and sample rate;
+  either may begin or end mid-call. The fade gains are correlation-compensated: `a = 1 - t`, `b = t`,
+  `g = 1 / sqrt (a^2 + b^2 + 2 rho a b)` with `rho` the zero-lag correlation of the two IRs, so neither
+  coherent neighbouring HRIRs (an equal-power fade bumps them +3 dB) nor unrelated ones (a linear fade
+  dips them -3 dB) change level mid-fade. `BinauralRenderer` moves the ITD on the same warm-up and
+  crossfade window, and its ITD line is 512 samples and carries each ear's onset shift relative to the
+  earlier ear (0 for the leading ear), so every bundled profile's rendered onset equals the raw HRIR
+  onset.
 
-Steady-state output is unchanged by these two; a recording that captures a profile swap will differ
-during the transition. Treat the Simple-path change above and these two as one release-note item, and
+Steady-state output is unchanged by these two; a recording that captures a profile swap or a moving
+source will differ during the transition. Treat the Simple-path change above and these two as one release-note item, and
 bump the minor version when you ship them.
 
 **Source-compatibility notes (SpatialCore 0.5.0).** SpatialCore is pre-1.0 (no public release uses it yet; it
@@ -491,8 +535,9 @@ worth a line in your own release notes:
   `TrajectoryEngine::kMaxObjects` are now defined as `MAX_SOURCES` (the ceilings were unified, not kept
   independent), so a doppler and trajectory slot exists for every object slot. `MAX_SPEAKERS` is unchanged. The
   project version stays 0.5.0 under the pre-1.0 rule: SC-1 is a consumer ticket, not a SpatialCore milestone phase.
-  `SpatialMapComponent::objectColours` still has 12 colours (AndrewRahman/SpatialCore#31, SC-21), so a consumer that
-  draws more than 12 objects must supply its own palette until that is fixed.
+  `SpatialMapComponent::objectColours` still has 12 colours (AndrewRahman/SpatialCore#31, SC-21), so objects 13-32 draw
+  invisibly on the map (a transparent colour) until that is fixed; `objectColours` is a fixed static array and there is no
+  way to supply a palette today.
 
 ## What to Keep vs Replace
 
@@ -528,7 +573,7 @@ add_executable(YourPluginTests tests/YourTests.cpp)
 target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
 ```
 
-SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README; CI runs zero tests until Phase 6.
+SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README, and CI runs it only for a public release, on a release tag push or by hand (a branch push starts nothing): `macos-gate` (the same gate, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`; `realtime-nightly` runs the realtime-safety check on a manual run only, before a release. Run the local gate before you push. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
 
 ## Preset System
 

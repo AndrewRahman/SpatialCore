@@ -18,6 +18,7 @@ add_executable(SpatialCoreTests
     Trajectory/DopplerTests.cpp
     Core/SpatialMathTests.cpp
     Core/CountsTests.cpp
+    Core/UmbrellaTests.cpp
     Core/IssueReferenceTests.cpp
     Core/VBAPTripletSelectionTests.cpp
     Binaural/SadieD2KU100Tests.cpp
@@ -29,6 +30,7 @@ add_executable(SpatialCoreTests
     Binaural/BinauralCueTests.cpp
     Binaural/PartitionedConvolverTests.cpp
     Binaural/BinauralRendererTests.cpp
+    Binaural/HRTFOnsetContinuityTests.cpp
     Binaural/ProfileLoudnessTests.cpp
     Binaural/HRTFEmbeddedTests.cpp
     Binaural/SharedFFTCacheTests.cpp
@@ -39,6 +41,7 @@ add_executable(SpatialCoreTests
     Engine/RealtimeSafetyTests.cpp
     Engine/MultiInstanceTests.cpp
     Engine/AmbisonicsRenderDirectionTests.cpp
+    Engine/UnsuppliedGainsTests.cpp
 )
 
 target_link_libraries(SpatialCoreTests
@@ -90,6 +93,7 @@ add_executable(SpatialCoreUITests
     UI/SpatialMapComponentTests.cpp
     UI/FontProvenanceTests.cpp
     UI/MultiMapTests.cpp
+    UI/UmbrellaUITests.cpp
 )
 
 target_link_libraries(SpatialCoreUITests

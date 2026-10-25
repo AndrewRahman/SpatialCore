@@ -1,5 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "BinauralTestUtilities.h"
+
+#include <algorithm>
+#include <cmath>
+#include <vector>
 
 using namespace spatialcore;
 using namespace spatialcore::test;
@@ -35,7 +40,13 @@ namespace
     // Replaces the FNV checksum 0xd69ffad577d8f609: byte-exact float hashes differ across
     // build types by one ulp (research Pitfall 6). D-17 governs any future change of these
     // values.
-    constexpr HRIRFingerprint kGoldenFingerprint { 558, 31.0f, 61.0f, 2.00355748, 0.163567331, 0.515830636f, -0.121116042f, 39, 52 };
+    // delayL/delayR are the onset SHIFT since the WR-01 fix (Spatial-Media-Lab/OpenSpatialDelay#234,
+    // O212): getAlignedHRIR reports onset - minOnset, so the leading ear is 0 and the other
+    // carries the ITD. Before it they were the absolute onsets 31 / 61; only these two
+    // fields moved (energy, peaks and peak indices are unchanged, the aligned waveform is the same).
+    constexpr HRIRFingerprint kGoldenFingerprint { 558, 0.0f, 33.0f, 2.00355748, 0.163567328, 0.515830636f, -0.121116042f, 39, 49 };
+    // O214 (Spatial-Media-Lab/OpenSpatialDelay#234): onset now from detectOnsetEnergy (smooth energy onset), so the
+    // lagging ear's shift and the aligned right-ear tail changed; rendered onsets are unchanged (lossless).
     constexpr int kGoldenIRLength = 558;
     constexpr int kGoldenNumPositions = 710;
 }
@@ -110,6 +121,78 @@ TEST_CASE ("MIT KEMAR Large Pinna — ITD pass-through: raw SOFA delay is zero (
 
     CHECK (rawDelayL < 0.001f);
     CHECK (rawDelayR < 0.001f);
+}
+
+// ============================================================================
+// Regression test for Spatial-Media-Lab/OpenSpatialDelay#89 (OSD v1.0.11): MIT KEMAR stores its
+// interaural time difference in the HRIR waveform and reports a zero SOFA delay for both ears.
+// Without the fallback in getAlignedHRIR(), the dual-slot crossfade blended HRIRs whose ears were
+// not time-aligned and comb-filtered. The fallback measures each ear's waveform onset, shifts the
+// later ear back by the onset difference so the aligned pair starts together, and reports the
+// onsets as the delays so the renderer's ITD delay line puts the time difference back.
+//
+// What the checks prove, at azimuth +90, -90 and +45 degrees at ear level:
+//   - the raw pair really has zero delays and (at +-90) onsets at least 10 samples apart, so the
+//     fallback has real work to do;
+//   - the reported delays differ by the raw onset difference to within the 0.5-sample delay rounding (O214, Spatial-Media-Lab/OpenSpatialDelay#234);
+//   - the aligned ears' onsets differ by at most 1 sample.
+// Removing the zero-delay branch turns the second and third checks red (D-17).
+// ============================================================================
+
+namespace
+{
+    // The library's onset rule since O214 (Spatial-Media-Lab/OpenSpatialDelay#234): HRTFDatabase::detectOnsetEnergy
+    // (15% of the cumulative energy of a 16-tap low-passed IR; fractional samples). The test calls the
+    // same detector production uses to measure the IRs, so it checks the fallback's bookkeeping.
+    float onsetOf (const std::vector<float>& ir)
+    {
+        return HRTFDatabase::detectOnsetEnergy (ir.data(), static_cast<int> (ir.size()));
+    }
+}
+
+TEST_CASE ("MIT KEMAR Large Pinna — Spatial-Media-Lab/OpenSpatialDelay#89: zero SOFA delays fall back to the waveform onsets, so the aligned ears start together",
+           "[binaural][mitkemar][osd89]")
+{
+    HRTFDatabase db;
+    REQUIRE (db.loadFromFile (getSofaFile (kSofaFile), static_cast<float> (kTestSampleRate)));
+
+    const size_t irLength = static_cast<size_t> (db.getIRLength());
+    REQUIRE (irLength > 0);
+
+    struct Probe { float azDeg; bool farEar; };
+    const Probe directions[] = { { 90.0f, true }, { -90.0f, true }, { 45.0f, false } };
+
+    for (const auto& dir : directions)
+    {
+        const float az = juce::degreesToRadians (dir.azDeg);
+
+        std::vector<float> rawL (irLength), rawR (irLength), alignedL (irLength), alignedR (irLength);
+        float rawDelayL = -1.0f, rawDelayR = -1.0f, delayL = -1.0f, delayR = -1.0f;
+        db.getInterpolatedHRIR (az, 0.0f, rawL.data(), rawR.data(), rawDelayL, rawDelayR);
+        db.getAlignedHRIR (az, 0.0f, alignedL.data(), alignedR.data(), delayL, delayR);
+
+        const float rawOnsetL = onsetOf (rawL);
+        const float rawOnsetR = onsetOf (rawR);
+        const float alignedOnsetL = onsetOf (alignedL);
+        const float alignedOnsetR = onsetOf (alignedR);
+
+        CAPTURE (dir.azDeg, rawDelayL, rawDelayR, rawOnsetL, rawOnsetR, delayL, delayR, alignedOnsetL, alignedOnsetR);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#89 az " << dir.azDeg << ": raw delays " << rawDelayL << "/" << rawDelayR
+              << ", raw onsets " << rawOnsetL << "/" << rawOnsetR << ", reported delays " << delayL << "/" << delayR
+              << ", aligned onsets " << alignedOnsetL << "/" << alignedOnsetR);
+
+        // The precondition: KEMAR's SOFA delays are zero and the ITD sits in the waveform.
+        CHECK (rawDelayL < 0.001f);
+        CHECK (rawDelayR < 0.001f);
+        if (dir.farEar)
+            CHECK (std::abs (rawOnsetR - rawOnsetL) >= 10.0f);
+
+        // The fallback: the reported delay of each ear is its waveform onset.
+        CHECK (delayR - delayL == Catch::Approx (rawOnsetR - rawOnsetL).margin (0.5));
+
+        // The aligned ears start together.
+        CHECK (std::abs (alignedOnsetR - alignedOnsetL) <= 1.0f);
+    }
 }
 
 TEST_CASE ("MIT KEMAR Large Pinna — negative control: unloaded database has no data", "[binaural][mitkemar][negative-control]")

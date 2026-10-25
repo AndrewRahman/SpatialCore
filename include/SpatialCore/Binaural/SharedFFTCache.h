@@ -34,8 +34,17 @@ namespace spatialcore
 //
 // Platform limit: on Windows and Linux without FFTW, MKL or IPP, JUCE selects its fallback FFT,
 // whose perform() takes a SpinLock. With one shared FFT per order every instance's audio thread
-// then contends on that one lock. That is a lock on the audio path that this macOS proof cannot
-// see; it is checked in Phase 6 (D-13), not claimed here.
+// then contends on that one lock. That is a lock on the audio path that the macOS proof cannot
+// see. Phase 6 (Plan 06-06) read it in JUCE 9.0.0 (modules/juce_dsp/frequency/juce_FFT.cpp):
+// FFTFallback (line 89, priority -1, the lowest) takes `SpinLock::ScopedLockType sl (processLock)`
+// in perform() at line 115, and the real-only transforms PartitionedConvolver calls reach it
+// (lines 175-193). The engines ranked above it are Apple vDSP (macOS and iOS, no lock), FFTW,
+// Intel MKL and Intel IPP; this repository enables none of the last three, and neither the Linux
+// nor the Windows configure and build logs of CI mention them, so those builds use FFTFallback.
+// On macOS vDSP is used and takes no lock. The contention itself was not measured, and the
+// Windows tests are not run (D-08). OpenSpatialDelay v1.0.0 already ships this same cache design
+// (a SpinLock-guarded map, one FFT per order) in its Windows build, so the migration adds no new
+// exposure. It is not fixed in v1.
 //==============================================================================
 struct SharedFFTCache
 {

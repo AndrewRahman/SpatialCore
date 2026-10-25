@@ -1,5 +1,5 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "UAT G-02-2: below-horizon 0 to -30 degree band on height layouts does not pan as BS.2127 (EAR) (7.1.4 az 60: M+030/M+090 lean 0.72/0.69 instead of 0.7071/0.7071, side flip between -20 and -25)"
 created: 2026-10-03T00:00:00Z
 updated: 2026-10-03T00:00:00Z
@@ -106,6 +106,6 @@ started: Discovered in UAT verify-work phase 02
 ## Resolution
 
 root_cause: In appendLowerHemisphereTriplets (src/IO/SpeakerLayout.cpp:257-339) every ear-level/-30 degree trapezoid, a planar quad, is emitted as all 4 of its overlapping triangles (the facet filter at :298-311 deliberately keeps coplanar quads whole), and computeVBAPGains3D (src/Core/SpatialMath.cpp:279-316, strict `sum < bestGainSum`) picks one of the two enclosing triangles by minimum gain sum. In a planar facet all triangles have the same gain sum (n.p/d), so the pick is enumeration order on exact ties and 1-2 ULP noise otherwise, and the two candidates are mirror-image leans (up to 0.101 apart). EAR (ear/core/point_source.py QuadRegion) pans the same trapezoid as one bilinear region, which with the -30 copies downmixed 1:1 onto their ear-level speakers collapses to the elevation-independent 2D pair pan at the source azimuth. Triangulating (any split, or averaging the splits) cannot reproduce it: the region model is wrong, not the triplet data. Additionally on 5.1.4 EAR's rear-gap facets reach the height speakers, which the deliberate lower-only hull (RESEARCH F4) does not copy.
-fix: (not applied - diagnose only)
-verification: (not applicable)
+fix: "Resolved by G-02-2: 582fa5a and 1237af4 (plan 02-08) pinned the below-horizon band against ear 2.1.0 on all 8 height layouts and implemented the pair-pan band; b4f0046 (plan 02-09) described the EAR-exact band, the 5.1.4 exception and #22 above the horizon only."
+verification: "02-08 and 02-09 summaries; Phase 2 verification passed."
 files_changed: []

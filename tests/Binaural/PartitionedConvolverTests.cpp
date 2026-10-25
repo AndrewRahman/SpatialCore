@@ -127,6 +127,96 @@ TEST_CASE ("PartitionedConvolver: an IR set during a transition is deferred, the
 }
 
 // ============================================================================
+// Regression test for Spatial-Media-Lab/OpenSpatialDelay#50: the HRTF transition that clicked
+// when a new IR replaced the playing one. OpenSpatialDelay v1.0.5 fixed it by loading the new IR
+// into the second convolver slot, warming that slot up and crossfading from the old slot to it.
+//
+// The input is a steady 440 Hz sine. IR A passes it unchanged (tap 0); IR B delays it by 27
+// samples, a quarter period at 440 Hz and 48 kHz, so the two outputs differ by up to about 0.57
+// while an equal-power fade between them neither dips nor bumps. A hard swap of the IR into the
+// playing slot jumps straight from one to the other, which is the click. What each check proves:
+//   - through <= 1.5 x steady: no sample step in the change window is larger than the sine's own
+//     steady-state step, so there is no click.
+//   - the minimum 256-sample RMS stays above 0.8 x the steady RMS: the fade does not dip.
+//   - after the fade the output is a direct convolution with IR B (2e-6), and it is not IR A's
+//     output: the change really happened.
+// Both call sizes are checked because the fade length depends on the call size (BUG-02). A hard
+// swap into the playing slot turns the step check red (D-17; the measured ratio of that red run is
+// recorded in the 06-03 SUMMARY).
+// ============================================================================
+
+TEST_CASE ("PartitionedConvolver: an IR change mid-stream is click-free (Spatial-Media-Lab/OpenSpatialDelay#50 dual slots)",
+           "[convolver][osd50]")
+{
+    constexpr double kSampleRate = 48000.0;
+    constexpr size_t kNumSamples = 24576;
+    constexpr size_t kChangeAt = 8192;            // a multiple of 64 and of 512
+    constexpr int kIRLength = 64;
+    constexpr int kQuarterPeriod = 27;            // samples: 48000 / 440 / 4 = 27.3
+    constexpr size_t kFadeFloor = 2048;           // settle margin in samples: a safe upper bound on the crossfade (kHRIRCrossfadeMs is 1024 samples at 48 kHz)
+
+    const std::vector<float> input = sineWave (kNumSamples, 440.0, kSampleRate, 0.5f);
+
+    std::vector<float> irA (static_cast<size_t> (kIRLength), 0.0f);
+    std::vector<float> irB (static_cast<size_t> (kIRLength), 0.0f);
+    irA[0] = 0.8f;
+    irB[static_cast<size_t> (kQuarterPeriod)] = 0.8f;
+
+    const std::vector<double> convA = directConvolve (input, irA);
+    const std::vector<double> convB = directConvolve (input, irB);
+
+    auto run = [&] (size_t callSize)
+    {
+        PartitionedConvolver conv;
+        conv.prepare (static_cast<int> (callSize), kIRLength);
+        conv.setIR (irA.data(), kIRLength);
+
+        std::vector<float> out (kNumSamples, 0.0f);
+        convolveInChunks (conv, input, { static_cast<int> (callSize) }, 0, kChangeAt, &out);
+        conv.setIR (irB.data(), kIRLength);
+        convolveInChunks (conv, input, { static_cast<int> (callSize) }, kChangeAt, kNumSamples, &out);
+
+        const double steady = maxAbsStep (out, 2048, kChangeAt);
+        const double through = maxAbsStep (out, kChangeAt - callSize, kChangeAt + 8192);
+        const double steadyRms = windowRms (out, 2048, kChangeAt);
+        const double lowestRms = minWindowRms (out, kChangeAt, kChangeAt + 8192, 256);
+
+        // The new IR alone from the end of warm-up (one call) plus the fade, with two calls of margin.
+        const size_t settled = kChangeAt + static_cast<size_t> (kIRLength) + kFadeFloor + 2 * callSize;
+        double worstVsB = 0.0;
+        double worstVsA = 0.0;
+        int nonFinite = 0;
+        for (size_t i = 0; i < kNumSamples; ++i)
+        {
+            if (! std::isfinite (out[i]))
+                ++nonFinite;
+            if (i >= settled)
+            {
+                spatialcore_test::accumulateWorstFinite (worstVsB, std::abs (static_cast<double> (out[i]) - convB[i]));
+                worstVsA = std::max (worstVsA, std::abs (static_cast<double> (out[i]) - convA[i]));
+            }
+        }
+
+        CAPTURE (callSize, steady, through, through / steady, steadyRms, lowestRms, lowestRms / steadyRms,
+                 worstVsB, worstVsA);
+        WARN ("Spatial-Media-Lab/OpenSpatialDelay#50 " << callSize << "-sample calls: steady step " << steady << ", step through the change "
+              << through << " (x" << through / steady << " of steady), min 256-sample RMS " << lowestRms
+              << " (x" << lowestRms / steadyRms << " of steady), worst |diff| vs IR B " << worstVsB
+              << ", max |diff| vs IR A " << worstVsA);
+
+        REQUIRE (steady > 0.0);
+        CHECK (nonFinite == 0);
+        CHECK (through <= 1.5 * steady);
+        CHECK (lowestRms >= 0.8 * steadyRms);
+        CHECK (worstVsB <= 2.0e-6);
+        CHECK (worstVsA > 1.0e-3);   // the output really changed from IR A to IR B
+    };
+
+    SECTION ("64-sample calls")  { run (64); }
+    SECTION ("512-sample calls") { run (512); }
+}
+
+// ============================================================================
 // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234), engine level: a moving source must be as
 // smooth at 32, 64 and 128-sample blocks as at 512. The convolver's overlap-add is correct at
 // every block size ([convolver][blocksize]); what made small blocks step harder was its IR
@@ -184,175 +274,206 @@ TEST_CASE ("BUG-02: a moving source is as smooth at 32, 64 and 128-sample blocks
 }
 
 // ============================================================================
-// Transition timing is sample-based (BUG-02). Three pins:
-//   1. 512-sample calls, IR 256: identical to the original call-counted scheme (one warm-up
-//      call, then a four-call fade on cos/sin quarter steps).
-//   2. 32-sample calls, IR 256: warm-up is irLen samples, the fade is the 2048-sample floor.
-//   3. 512-sample calls, IR 558 (> one call): warm-up lasts two calls. This is the one
-//      stated change at 512 and above.
+// Transition timing is counted in samples from TransitionTiming.h, and the gain law is the
+// correlation-compensated crossfade (Spatial-Media-Lab/OpenSpatialDelay#234, O211 / O212).
+//
+// This replaces the Phase 3 BUG-02 pins of the call-counted rule (one warm-up call and at
+// least irLen samples, then max (4 calls, 2048 samples) on per-call cos/sin endpoints). That
+// rule still tied the fade length to the host block at 1024 and above, which OSD's Spatial-Media-Lab/OpenSpatialDelay#234
+// work removed: the warm-up is max (irLen, kHRIRWarmupMinMs) samples and the fade is
+// kHRIRCrossfadeMs (1024 samples at 48 kHz) at every call size, and both may begin or end
+// mid-call. The fade gains are a = 1 - t, b = t, g = 1 / sqrt (a^2 + b^2 + 2 rho a b), with
+// rho the zero-lag correlation of the two slots' IRs (O211's fixed equal-power law gave a
+// +3 dB bump between coherent neighbouring HRIRs, heard as 23-37 Hz pulsing).
+// Pins:
+//   1. IR 256, call sizes 512, 32 and an irregular plan: 256 warm-up samples of the old IR,
+//      then 1024 fade samples that match the expected gains, then the new IR alone.
+//   2. IR 558, 512-sample calls: the warm-up is 558 samples, so the fade starts mid-call.
+//   3. Two coherent IRs (rho near 1): the mid-fade level does not rise (no +3 dB bump).
 // Expected signals come from the double-precision oracle. The incoming slot starts empty at
 // setIR(), so its output is the direct convolution of the input from the setIR point; every
-// comparison below is made at least one IR length after that point, where it equals the
-// convolution of the whole input.
+// comparison below is made at least one IR length after that point.
 // ============================================================================
 
-TEST_CASE ("PartitionedConvolver: transition timing is sample-based and unchanged at 512",
+namespace
+{
+    struct TransitionRun
+    {
+        std::vector<float> out;
+        float rho = 0.0f;
+    };
+
+    TransitionRun runTransition (const std::vector<float>& irA, const std::vector<float>& irB,
+                                 const std::vector<float>& input, const std::vector<int>& plan,
+                                 size_t switchAt)
+    {
+        const int irLength = static_cast<int> (irA.size());
+        PartitionedConvolver conv;
+        conv.prepare (512, irLength, 48000.0);
+        conv.setIR (irA.data(), irLength);
+
+        TransitionRun run;
+        run.out.assign (input.size(), 0.0f);
+        convolveInChunks (conv, input, plan, 0, switchAt, &run.out);
+        conv.setIR (irB.data(), irLength);
+        run.rho = conv.getCrossfadeRho();
+        convolveInChunks (conv, input, plan, switchAt, input.size(), &run.out);
+        return run;
+    }
+
+    // Worst |out - expected| over [from, to), expected = gOut(k) conv(A) + gIn(k) conv(B) inside
+    // the fade, conv(A) before it and conv(B) after it.
+    double worstVsLaw (const TransitionRun& run, const std::vector<double>& convA,
+                       const std::vector<double>& convB, size_t fadeStart, int fadeLength,
+                       size_t from, size_t to)
+    {
+        double worst = 0.0;
+        for (size_t i = from; i < to; ++i)
+        {
+            double expected = 0.0;
+            if (i < fadeStart)
+                expected = convA[i];
+            else if (i >= fadeStart + static_cast<size_t> (fadeLength))
+                expected = convB[i];
+            else
+            {
+                float gOut = 0.0f, gIn = 0.0f;
+                const int k = static_cast<int> (i - fadeStart) + 1;   // 1..fadeLength
+                PartitionedConvolver::computeCrossfadeGains (k, fadeLength, run.rho, gOut, gIn);
+                expected = convA[i] * static_cast<double> (gOut) + convB[i] * static_cast<double> (gIn);
+            }
+            worst = std::max (worst, std::abs (static_cast<double> (run.out[i]) - expected));
+        }
+        return worst;
+    }
+}
+
+TEST_CASE ("PartitionedConvolver: transition timing is counted in samples at every call size, with the correlation-compensated law",
            "[convolver][transition]")
 {
-    constexpr size_t kNumSamples = 16384;
+    // static: makeInput below has no capture list, and MSVC (19.51) rejects a local constexpr used in it
+    // (C3493) that GCC and Clang accept; a static local needs no capture and has the same value.
+    static constexpr size_t kNumSamples = 16384;
     constexpr size_t kSwitchAt = 4096;            // a multiple of 32 and of 512
-    constexpr double kHalfPi = 1.57079632679489661923;
+    const int kFade = hrirTransitionMsToSamples (48000.0, kHRIRCrossfadeMs);
+    const int kWarmupFloor = hrirTransitionMsToSamples (48000.0, kHRIRWarmupMinMs);
+    REQUIRE (kFade == 1024);
+    REQUIRE (kWarmupFloor == 256);
 
-    auto makeInput = [] { return whiteNoise (kNumSamples, 31, 0.5f); };
+    const std::vector<float> input = whiteNoise (kNumSamples, 31, 0.5f);
 
-    SECTION ("512-sample calls, IR 256: one warm-up call, then a four-call cos/sin fade")
+    SECTION ("IR 256: 256 warm-up samples, then a 1024-sample fade, at 512, 32 and irregular calls")
     {
         constexpr int kIRLength = 256;
-        constexpr size_t kCall = 512;
         const std::vector<float> irA = whiteNoise (kIRLength, 32, 0.05f);
         const std::vector<float> irB = whiteNoise (kIRLength, 33, 0.05f);
-        const std::vector<float> input = makeInput();
         const std::vector<double> convA = directConvolve (input, irA);
         const std::vector<double> convB = directConvolve (input, irB);
+        const size_t fadeStart = kSwitchAt + static_cast<size_t> (std::max (kIRLength, kWarmupFloor));
 
-        PartitionedConvolver conv;
-        conv.prepare (512, kIRLength);
-        conv.setIR (irA.data(), kIRLength);
-
-        std::vector<float> out (kNumSamples, 0.0f);
-        convolveInChunks (conv, input, { 512 }, 0, kSwitchAt, &out);
-        conv.setIR (irB.data(), kIRLength);
-        convolveInChunks (conv, input, { 512 }, kSwitchAt, kNumSamples, &out);
-
-        // Call 1 after setIR: warm-up, output is still the old IR.
-        double worstWarmup = 0.0;
-        for (size_t i = kSwitchAt; i < kSwitchAt + kCall; ++i)
-            worstWarmup = std::max (worstWarmup, std::abs (static_cast<double> (out[i]) - convA[i]));
-        INFO ("warm-up call vs conv(A): " << worstWarmup);
-        CHECK (worstWarmup <= 2.0e-6);
-
-        // Calls 2-5: per-sample gains ramp linearly between cos/sin of (k-1)/4 and k/4. The
-        // expectation repeats the convolver's own float arithmetic (the gain is accumulated one
-        // increment per sample, which drifts about 4e-6 from an exact double ramp at 512 samples)
-        // so that this pins the timing and the gain law, not float rounding.
-        double worstFade = 0.0;
-        for (int k = 1; k <= 4; ++k)
+        std::vector<float> reference;
+        for (const std::vector<int>& plan : { std::vector<int> { 512 }, std::vector<int> { 32 },
+                                              std::vector<int> { 37, 64, 1, 300 } })
         {
-            const float halfPi = static_cast<float> (kHalfPi);
-            float gOut = std::cos (static_cast<float> (k - 1) / 4.0f * halfPi);
-            float gIn = std::sin (static_cast<float> (k - 1) / 4.0f * halfPi);
-            const float outEnd = std::cos (static_cast<float> (k) / 4.0f * halfPi);
-            const float inEnd = std::sin (static_cast<float> (k) / 4.0f * halfPi);
-            const float outInc = (outEnd - gOut) / static_cast<float> (kCall);
-            const float inInc = (inEnd - gIn) / static_cast<float> (kCall);
-            const size_t base = kSwitchAt + static_cast<size_t> (k) * kCall;
+            // convolveInChunks clamps the last chunk at kSwitchAt, so every plan starts its
+            // transition on the same sample.
+            const TransitionRun run = runTransition (irA, irB, input, plan, kSwitchAt);
+            INFO ("plan starts at " << plan.front() << ", rho " << run.rho);
+            CHECK (run.rho >= 0.0f);
+            CHECK (run.rho < 0.2f);   // independent noise IRs: near-uncorrelated
 
-            for (size_t i = 0; i < kCall; ++i)
+            const double worst = worstVsLaw (run, convA, convB, fadeStart, kFade, kSwitchAt, kNumSamples);
+            INFO ("worst |diff| vs warm-up / law / new IR: " << worst);
+            CHECK (worst <= 2.0e-6);
+
+            // Half way through the fade the output is neither IR alone.
+            const size_t mid = fadeStart + static_cast<size_t> (kFade / 2);
+            double midFromA = 0.0, midFromB = 0.0;
+            for (size_t i = mid; i < mid + 32; ++i)
             {
-                gOut += outInc;
-                gIn += inInc;
-                const double expected = convA[base + i] * static_cast<double> (gOut)
-                                      + convB[base + i] * static_cast<double> (gIn);
-                worstFade = std::max (worstFade, std::abs (static_cast<double> (out[base + i]) - expected));
+                midFromA = std::max (midFromA, std::abs (static_cast<double> (run.out[i]) - convA[i]));
+                midFromB = std::max (midFromB, std::abs (static_cast<double> (run.out[i]) - convB[i]));
+            }
+            CHECK (midFromA > 1.0e-3);
+            CHECK (midFromB > 1.0e-3);
+
+            // The same transition at every call size, sample for sample.
+            if (reference.empty())
+                reference = run.out;
+            else
+            {
+                double vsReference = 0.0;
+                for (size_t i = kSwitchAt; i < kNumSamples; ++i)
+                    vsReference = std::max (vsReference, static_cast<double> (std::abs (run.out[i] - reference[i])));
+                INFO ("vs the 512-sample plan: " << vsReference);
+                CHECK (vsReference <= 2.0e-6);
             }
         }
-        INFO ("fade calls vs cos/sin expectation: " << worstFade);
-        CHECK (worstFade <= 1.0e-6);
-
-        // From call 6 on the output is the new IR alone.
-        double worstAfter = 0.0;
-        for (size_t i = kSwitchAt + 5 * kCall; i < kNumSamples; ++i)
-            worstAfter = std::max (worstAfter, std::abs (static_cast<double> (out[i]) - convB[i]));
-        INFO ("after the fade vs conv(B): " << worstAfter);
-        CHECK (worstAfter <= 2.0e-6);
     }
 
-    SECTION ("32-sample calls, IR 256: warm-up is irLen samples, the fade is the 2048-sample floor")
-    {
-        constexpr int kIRLength = 256;
-        constexpr size_t kWarmup = 256;
-        constexpr size_t kFade = 2048;
-        const std::vector<float> irA = whiteNoise (kIRLength, 34, 0.05f);
-        const std::vector<float> irB = whiteNoise (kIRLength, 35, 0.05f);
-        const std::vector<float> input = makeInput();
-        const std::vector<double> convA = directConvolve (input, irA);
-        const std::vector<double> convB = directConvolve (input, irB);
-
-        PartitionedConvolver conv;
-        conv.prepare (512, kIRLength);
-        conv.setIR (irA.data(), kIRLength);
-
-        std::vector<float> out (kNumSamples, 0.0f);
-        convolveInChunks (conv, input, { 32 }, 0, kSwitchAt, &out);
-        conv.setIR (irB.data(), kIRLength);
-        convolveInChunks (conv, input, { 32 }, kSwitchAt, kNumSamples, &out);
-
-        double worstWarmup = 0.0;
-        for (size_t i = kSwitchAt; i < kSwitchAt + kWarmup; ++i)
-            worstWarmup = std::max (worstWarmup, std::abs (static_cast<double> (out[i]) - convA[i]));
-        INFO ("first irLen samples vs conv(A): " << worstWarmup);
-        CHECK (worstWarmup <= 2.0e-6);
-
-        // Half way through the fade the output is neither IR alone.
-        const size_t mid = kSwitchAt + kWarmup + kFade / 2;
-        double midFromA = 0.0;
-        double midFromB = 0.0;
-        for (size_t i = mid; i < mid + 32; ++i)
-        {
-            midFromA = std::max (midFromA, std::abs (static_cast<double> (out[i]) - convA[i]));
-            midFromB = std::max (midFromB, std::abs (static_cast<double> (out[i]) - convB[i]));
-        }
-        INFO ("mid-fade distance from conv(A): " << midFromA << ", from conv(B): " << midFromB);
-        CHECK (midFromA > 1.0e-3);
-        CHECK (midFromB > 1.0e-3);
-
-        // The new IR alone from irLen + 2048 + 64 samples on.
-        double worstAfter = 0.0;
-        for (size_t i = kSwitchAt + kWarmup + kFade + 64; i < kNumSamples; ++i)
-            worstAfter = std::max (worstAfter, std::abs (static_cast<double> (out[i]) - convB[i]));
-        INFO ("after the fade vs conv(B): " << worstAfter);
-        CHECK (worstAfter <= 2.0e-6);
-    }
-
-    SECTION ("512-sample calls, IR 558: warm-up lasts two calls")
+    SECTION ("IR 558, 512-sample calls: the warm-up is 558 samples, so the fade starts mid-call")
     {
         constexpr int kIRLength = 558;
-        constexpr size_t kCall = 512;
         const std::vector<float> irA = whiteNoise (kIRLength, 36, 0.05f);
         const std::vector<float> irB = whiteNoise (kIRLength, 37, 0.05f);
-        const std::vector<float> input = makeInput();
         const std::vector<double> convA = directConvolve (input, irA);
         const std::vector<double> convB = directConvolve (input, irB);
 
-        PartitionedConvolver conv;
-        conv.prepare (512, kIRLength);
-        conv.setIR (irA.data(), kIRLength);
+        const TransitionRun run = runTransition (irA, irB, input, { 512 }, kSwitchAt);
+        const size_t fadeStart = kSwitchAt + kIRLength;   // 46 samples into the second call
 
-        std::vector<float> out (kNumSamples, 0.0f);
-        convolveInChunks (conv, input, { 512 }, 0, kSwitchAt, &out);
-        conv.setIR (irB.data(), kIRLength);
-        convolveInChunks (conv, input, { 512 }, kSwitchAt, kNumSamples, &out);
+        const double worst = worstVsLaw (run, convA, convB, fadeStart, kFade, kSwitchAt, kNumSamples);
+        INFO ("worst |diff| vs warm-up / law / new IR: " << worst);
+        CHECK (worst <= 2.0e-6);
 
-        // Calls 1 and 2: 512 samples is shorter than the 558-sample IR, so call 2 is still warm-up.
-        double worstWarmup = 0.0;
-        for (size_t i = kSwitchAt; i < kSwitchAt + 2 * kCall; ++i)
-            worstWarmup = std::max (worstWarmup, std::abs (static_cast<double> (out[i]) - convA[i]));
-        INFO ("two warm-up calls vs conv(A): " << worstWarmup);
-        CHECK (worstWarmup <= 2.0e-6);
+        // The sample after the warm-up is already a fade sample.
+        CHECK (std::abs (static_cast<double> (run.out[fadeStart + 8]) - convA[fadeStart + 8]) > 1.0e-6);
+    }
 
-        // Call 3 is the first fade call: neither IR alone.
-        double fromA = 0.0;
-        for (size_t i = kSwitchAt + 2 * kCall; i < kSwitchAt + 3 * kCall; ++i)
-            fromA = std::max (fromA, std::abs (static_cast<double> (out[i]) - convA[i]));
-        INFO ("first fade call distance from conv(A): " << fromA);
-        CHECK (fromA > 1.0e-3);
+    SECTION ("coherent IRs (rho near 1): the mid-fade level does not rise")
+    {
+        constexpr int kIRLength = 256;
+        const std::vector<float> irA = whiteNoise (kIRLength, 38, 0.05f);
+        const std::vector<float> wobble = whiteNoise (kIRLength, 39, 0.005f);
+        std::vector<float> irB (irA);
+        for (size_t i = 0; i < irB.size(); ++i)
+            irB[i] += wobble[i];
+        const std::vector<double> convA = directConvolve (input, irA);
+        const std::vector<double> convB = directConvolve (input, irB);
 
-        // Four fade calls (3-6), then the new IR alone from call 7.
-        double worstAfter = 0.0;
-        for (size_t i = kSwitchAt + 6 * kCall; i < kNumSamples; ++i)
-            worstAfter = std::max (worstAfter, std::abs (static_cast<double> (out[i]) - convB[i]));
-        INFO ("after the fade vs conv(B): " << worstAfter);
-        CHECK (worstAfter <= 2.0e-6);
+        const TransitionRun run = runTransition (irA, irB, input, { 64 }, kSwitchAt);
+        INFO ("rho " << run.rho);
+        CHECK (run.rho > 0.98f);
+
+        const size_t fadeStart = kSwitchAt + kIRLength;
+        CHECK (worstVsLaw (run, convA, convB, fadeStart, kFade, kSwitchAt, kNumSamples) <= 2.0e-6);
+
+        auto rms = [] (const std::vector<float>& x, size_t from, size_t n)
+        {
+            double acc = 0.0;
+            for (size_t i = from; i < from + n; ++i)
+                acc += static_cast<double> (x[i]) * static_cast<double> (x[i]);
+            return std::sqrt (acc / static_cast<double> (n));
+        };
+        const size_t window = 256;
+        const double before = rms (run.out, kSwitchAt - 2 * window, window);
+        const double mid = rms (run.out, fadeStart + static_cast<size_t> (kFade / 2) - window / 2, window);
+        const double riseDb = 20.0 * std::log10 (mid / before);
+        INFO ("mid-fade level vs before: " << riseDb << " dB (O211 equal-power: about +3 dB)");
+        CHECK (std::abs (riseDb) < 0.5);
+
+        // The law itself: at rho 1 the mid-fade gains are 0.5 / 0.5 (equal-gain, no bump), at
+        // rho 0 they are 1 / sqrt (2) each (constant power for uncorrelated outputs).
+        float gOut = 0.0f, gIn = 0.0f;
+        PartitionedConvolver::computeCrossfadeGains (512, 1024, 1.0f, gOut, gIn);
+        CHECK (std::abs (gOut - 0.5f) < 1.0e-6f);
+        CHECK (std::abs (gIn - 0.5f) < 1.0e-6f);
+        PartitionedConvolver::computeCrossfadeGains (512, 1024, 0.0f, gOut, gIn);
+        CHECK (std::abs (gOut - 0.70710678f) < 1.0e-6f);
+        CHECK (std::abs (gIn - 0.70710678f) < 1.0e-6f);
+        PartitionedConvolver::computeCrossfadeGains (1024, 1024, 0.5f, gOut, gIn);
+        CHECK (gOut == 0.0f);
+        CHECK (gIn == 1.0f);
     }
 }
 

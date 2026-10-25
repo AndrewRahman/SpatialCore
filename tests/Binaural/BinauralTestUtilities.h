@@ -117,7 +117,10 @@ inline bool fingerprintMatches (const HRIRFingerprint& actual, const HRIRFingerp
                                 std::string* whyNot = nullptr)
 {
     constexpr double kDelayTol = 1.0e-4;
-    constexpr double kRelTol   = 1.0e-5;
+    // static: relOk below is a lambda with no capture list, and MSVC (19.51, Visual Studio 2026)
+    // rejects a use of a local constexpr there (C3493) that GCC, Clang and Apple Clang accept. A
+    // static local needs no capture; the value and every comparison are unchanged.
+    static constexpr double kRelTol   = 1.0e-5;
 
     auto fail = [&] (const char* field, double a, double e)
     {

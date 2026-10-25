@@ -2,8 +2,10 @@
 
 #include <juce_dsp/juce_dsp.h>
 #include <SpatialCore/Binaural/SharedFFTCache.h>
+#include <SpatialCore/Binaural/TransitionTiming.h>
 #include <vector>
 #include <memory>
+#include <cmath>
 
 namespace spatialcore
 {
@@ -17,22 +19,25 @@ class PartitionedConvolver
 public:
     PartitionedConvolver() = default;
 
-    /** Prepare the convolver for a given max block size and IR length. */
-    void prepare (int maxBlockSize, int irLength);
+    /** Prepare the convolver for a given max block size and IR length.
+        sampleRate only converts the ms-defined transition durations
+        (TransitionTiming.h) to sample counts; invalid values (<= 0, > 1e6)
+        fall back to 48 kHz timing.  Defaulted so existing 2-argument callers
+        compile unchanged. */
+    void prepare (int maxBlockSize, int irLength, double sampleRate = 48000.0);
 
     /** Set or update the impulse response.
-        v1.0.5: Dual-convolver crossfade -- new IR is loaded into the inactive
-        slot and crossfaded using equal-power (cos/sin) gains.  This eliminates
-        overlap-save boundary discontinuities that caused audible pops during
-        HRTF transitions (issue Spatial-Media-Lab/OpenSpatialDelay#50).
-
-        BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): the transition is timed in samples,
-        not calls.  The inactive slot warms up for at least kWarmupBlocks calls and
-        at least irLen samples, then the fade lasts
-        max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples, with
-        callSize taken once when the fade starts.  At 512-sample calls and an IR of
-        512 samples or fewer this is the original one-call warm-up and four-call
-        fade. */
+        v1.0.5: Dual-convolver crossfade (issue Spatial-Media-Lab/OpenSpatialDelay#50) -- the new IR is loaded
+        into the inactive slot, which warms for max(IR length,
+        kHRIRWarmupMinMs) samples and then crossfades over kHRIRCrossfadeMs
+        with correlation-compensated gains (computeCrossfadeGains; Spatial-Media-Lab/OpenSpatialDelay#234
+        "pulsing", O212 -- O211's equal-power curve bumped +3 dB between the
+        highly correlated, time-aligned neighbouring HRIRs).  This eliminates overlap-save boundary
+        discontinuities that caused audible pops during HRTF transitions.
+        v2.0.0 (issue Spatial-Media-Lab/OpenSpatialDelay#234): both durations are counted in SAMPLES (converted
+        from ms at the prepared sample rate), so the transition has the same
+        wall-clock duration -- and is pop-free -- at every host buffer size and
+        sample rate. */
     void setIR (const float* ir, int length);
 
     /** Process one block: convolve input with IR, write to output.
@@ -46,6 +51,30 @@ public:
     void clearAll();
 
     bool isPrepared() const { return fftSize > 0; }
+
+    /** Correlation-compensated crossfade gains (Spatial-Media-Lab/OpenSpatialDelay#234 "pulsing", O212).
+        Progress t = k / C, a = 1 - t, b = t, and
+            g = 1 / sqrt (a^2 + b^2 + 2 rho a b),  fadeOut = a g,  fadeIn = b g,
+        so a blend of two outputs whose IRs have normalised correlation rho
+        keeps constant broadband power: rho = 1 is plain linear (equal-gain),
+        rho = 0 is the sqrt-normalised linear law (equal-power-like).  The
+        endpoints are exact: k = 0 -> (1, 0), k = C -> (0, 1).
+        rho is clamped to [0, 1]. */
+    static void computeCrossfadeGains (int k, int C, float rho, float& fadeOut, float& fadeIn) noexcept
+    {
+        if (C <= 0 || k >= C) { fadeOut = 0.0f; fadeIn = 1.0f; return; }
+        if (k <= 0)           { fadeOut = 1.0f; fadeIn = 0.0f; return; }
+        const double r = rho > 0.0f ? (rho < 1.0f ? static_cast<double> (rho) : 1.0) : 0.0;
+        const double b = static_cast<double> (k) / static_cast<double> (C);
+        const double a = 1.0 - b;
+        const double g = 1.0 / std::sqrt (a * a + b * b + 2.0 * r * a * b);
+        fadeOut = static_cast<float> (a * g);
+        fadeIn  = static_cast<float> (b * g);
+    }
+
+    /** Normalised correlation <h_active, h_new> / (|h_active| |h_new|), clamped
+        to [0, 1], of the transition most recently started (test/diagnostic). */
+    float getCrossfadeRho() const noexcept { return crossfadeRho; }
 
 private:
     std::shared_ptr<juce::dsp::FFT> fft;  // Shared via process-global FFT cache (issue Spatial-Media-Lab/OpenSpatialDelay#131)
@@ -77,15 +106,16 @@ private:
     // waits across calls to accumulate a full block before producing output.
     //
     // That per-call overlap-add is one half of the Spatial-Media-Lab/OpenSpatialDelay#234 small-block fix; the
-    // other half is the sample-based warm-up and crossfade above (BUG-02, Phase 3).
-    // Both are covered by [convolver][blocksize], [bug02][moving] and
-    // [bug02][steady]. Spatial-Media-Lab/OpenSpatialDelay#234 stays open for OSD's
-    // delay line and pitch shifter, which this library does not contain.
+    // other half is the sample-counted warm-up and crossfade of setIR() (TransitionTiming.h,
+    // which replaced Phase 3's BUG-02 call-counted rule). Both are covered by
+    // [convolver][blocksize], [convolver][transition], [bug02][moving] and [bug02][steady].
     struct ConvSlot
     {
         std::vector<float> irFreqDomain;     // IR in frequency domain
         std::vector<float> fftWorkBuf;       // FFT work buffer (this call's own block)
         std::vector<float> overlapAccum;     // Persistent overlap-add accumulator (shifted each call)
+        std::vector<float> irTime;           // Spatial-Media-Lab/OpenSpatialDelay#234 pulsing: time-domain copy of the IR (fftSize, zero-padded) for rho
+        double irEnergy = 0.0;               // sum of irTime^2
     };
 
     ConvSlot slots[2];
@@ -94,28 +124,14 @@ private:
     enum class State { Idle, Warmup, Crossfading };
     State state = State::Idle;
 
-    // BUG-02 (Spatial-Media-Lab/OpenSpatialDelay#234 small-block residual): both timings are in samples with a floor.
-    //   Warmup:      lasts at least kWarmupBlocks calls AND at least irLen samples, so the
-    //                inactive slot's overlap accumulator holds the whole IR tail before it
-    //                is faded in.
-    //   Crossfading: lasts max (kCrossfadeBlocks * callSize, kMinCrossfadeSamples) samples.
-    //                callSize is the size of the call that ended Warmup; the length is fixed
-    //                then (crossfadeLengthSamples) and advanced by elapsed samples, so progress
-    //                never runs backwards when call sizes vary.
-    static constexpr int kCrossfadeBlocks = 4;          // Fade length in calls at the call size the fade starts at
-    static constexpr int kWarmupBlocks = 1;             // Minimum calls the inactive slot warms up for
-    static constexpr int kMinCrossfadeSamples = 2048;   // Floor on the fade length (~43 ms at 48 kHz)
-
+    // Issue Spatial-Media-Lab/OpenSpatialDelay#234: transition timing is counted in samples, derived from the
+    // ms-defined constants in TransitionTiming.h at prepare() time.
     int activeSlot = 0;                          // Index of the currently active slot (0 or 1)
-    int stateBlockCount = 0;                     // Calls elapsed in current state
-    int stateSampleCount = 0;                    // Samples elapsed in current state
-    int crossfadeLengthSamples = 0;              // Fixed when Warmup ends; the fade's length in samples
-
-    // Per-sample gain interpolation for glitch-free crossfade
-    float fadeOutGain = 1.0f;                    // Current fade-out gain (active -> old)
-    float fadeInGain  = 0.0f;                    // Current fade-in gain  (inactive -> new)
-    float prevFadeOutGain = 1.0f;                // Previous block's ending fade-out gain
-    float prevFadeInGain  = 0.0f;               // Previous block's ending fade-in gain
+    int crossfadeSamples = 1024;                 // Crossfade length (21.333 ms)
+    int warmupFloorSamples = 256;                // Warmup floor (5.333 ms), independent of host block size
+    int warmupSamples = 256;                     // Warmup length of the current transition: max(irLen, floor)
+    int stateSampleCount = 0;                    // Samples elapsed in the current Warmup / Crossfading state
+    float crossfadeRho = 0.0f;                   // rho between active and incoming IR, set when a transition starts
 
     // Deferred IR: if setIR() is called mid-transition, store it for later
     std::vector<float> pendingIR;
@@ -130,6 +146,7 @@ private:
     void processSlot (ConvSlot& slot, const float* in, float* out, int numSamples);
     void resetSlot (ConvSlot& slot);
     void loadIRIntoSlot (ConvSlot& slot, const float* ir, int length);
+    static float computeIRCorrelation (const ConvSlot& a, const ConvSlot& b) noexcept;
 };
 
 } // namespace spatialcore

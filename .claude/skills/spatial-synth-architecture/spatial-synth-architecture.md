@@ -24,7 +24,7 @@ Voice 2 → Object 2 → Position (az=240°, el=0°, dist=0.5)
 Voice 11 → Object 11 → Position (az=330°, el=30°, dist=0.7)
 ```
 
-**Max polyphony = 12** (limited by SpatialCore's 12 object slots).
+**Max polyphony = 32** (limited by SpatialCore's 32 object slots, `MAX_SOURCES`).
 
 ### Advantages
 - Simple, predictable
@@ -158,7 +158,7 @@ External systems can reposition synth voices in real-time via ADM-OSC. When a vo
 
 | Concern | Solution |
 |---------|----------|
-| 12 per-source HRTF convolutions | Each PartitionedConvolver runs independently. Budget ~2ms total CPU at 44.1kHz. |
+| Per-source HRTF convolutions (up to 32 sources; the budget below was sized at 12) | Each PartitionedConvolver runs independently. Budget ~2ms total CPU at 44.1kHz. |
 | Position smoothing | Use LinearSmoothedValue (10ms ramp) for all position changes to avoid Doppler pops |
 | Voice allocation | O(1) allocation using fixed-size pool with free-list |
 | Trajectory computation | Evaluate trajectory shapes at block rate (not sample rate) |

@@ -1,0 +1,1 @@
+No external API integration: the only API calls in Phase 6 are one-off GitHub repository administration and CI inspection through the `gh` CLI (reading workflow runs, downloading artifacts, setting branch protection on AndrewRahman/SpatialCore), which is build and repository tooling; SpatialCore itself integrates no external API, SDK or service.
