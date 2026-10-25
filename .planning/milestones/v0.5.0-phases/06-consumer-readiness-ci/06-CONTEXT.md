@@ -122,7 +122,7 @@ CI-01, TEST-01. OSD's own migration lives in the OSD repo and is not part of thi
 ### Phase scope and requirements
 - `.planning/ROADMAP.md` § "Phase 6: Consumer Readiness & CI" — success criteria 1-5, OQ-4
 - `.planning/REQUIREMENTS.md` — INTG-01, INTG-02, CI-01, TEST-01 (and their scope notes D-02/D-08/D-16 amend)
-- `.planning/v1.0.0-MILESTONE-AUDIT.md` — gaps for Phase 6, warnings W1 (opt-in features lack an example), W2 (OSCPortValidation.h not in umbrella), W3 (stale umbrella comment)
+- `.planning/v0.5.0-MILESTONE-AUDIT.md` — gaps for Phase 6, warnings W1 (opt-in features lack an example), W2 (OSCPortValidation.h not in umbrella), W3 (stale umbrella comment)
 - `.planning/PROJECT.md` — External Dependencies: v1 closes when OSD ships on SpatialCore (out of this repo)
 
 ### Prior decisions that bind this phase

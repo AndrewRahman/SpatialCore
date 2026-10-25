@@ -80,7 +80,7 @@
   The D-07 / D-09 sender changes do not change OSD's sound. They change what OSD sends on the wire
   (an initial send, query replies). List them in the same OSD release-note item.
 
-### Gaps closed after the v1.0.0 milestone audit (2026-10-05, `.planning/v1.0.0-MILESTONE-AUDIT.md`)
+### Gaps closed after the v1.0.0 milestone audit (2026-10-05, `.planning/v0.5.0-MILESTONE-AUDIT.md`)
 - **D-15:** **Fix the `-Wunused-parameter` warnings in `ADMOSCReceiver.h`.** The audit lists five such
   warnings (named but unused Listener parameters at `include/SpatialCore/OSC/ADMOSCReceiver.h:45,51`)
   in every OSD translation unit. Phase 4 already edits this file for D-08, so silence them there (e.g.
@@ -637,7 +637,7 @@ The Phase 3 command `--target SpatialCoreTests && ctest ...` must change to the 
 
 ### Primary (HIGH confidence)
 - JUCE 9.0.0 source, read this session: `juce_Font.cpp:85-135,195-235`, `juce_LookAndFeel.cpp:38-56,127-140`, `juce_OSCReceiver.cpp:335-352,415-480`, `juce_OSCReceiver.h:132`, `juce_OSCArgument.cpp:34-95`, `juce_MouseEvent.h:77-89`, `juce_MouseInputSource.h:236-267`, `juce_MessageManager.h:84-105`, `juce_PlatformDefs.h:320-330`, `juce_Initialisation.h:81-92`, `juce_Component.h:1163-1185`
-- Repo files read this session: `CMakeLists.txt`, `tests/CMakeLists.txt`, `include/SpatialCore/OSC/ADMOSCSender.h`, `src/OSC/ADMOSCSender.cpp`, `include/SpatialCore/OSC/ADMOSCReceiver.h`, `src/OSC/ADMOSCReceiver.cpp`, `include/SpatialCore/Trajectory/TrajectoryEngine.h`, `src/Trajectory/TrajectoryEngine.cpp`, `src/UI/SpatialMapComponent.cpp`, `include/SpatialCore/UI/SpatialMapComponent.h`, `src/UI/SMLLookAndFeel.cpp`, `include/SpatialCore/UI/SMLLookAndFeel.h`, `src/UI/PresetBrowser.cpp`, `src/UI/GlobalTapDrawer.cpp`, `include/SpatialCore/Engine/RenderEngine.h` (`RenderSources`, `RenderBlockContext`), `include/SpatialCore/IO/OutputFormat.h`, `tests/Trajectory/TrajectoryTests.cpp`, `tests/OSC/*.cpp`, `tests/Engine/RenderEngineTests.cpp`, `.github/workflows/ci.yml`, `.planning/{REQUIREMENTS,STATE,PROJECT,v1.0.0-MILESTONE-AUDIT}.md`, Phase 3 `03-VALIDATION.md`
+- Repo files read this session: `CMakeLists.txt`, `tests/CMakeLists.txt`, `include/SpatialCore/OSC/ADMOSCSender.h`, `src/OSC/ADMOSCSender.cpp`, `include/SpatialCore/OSC/ADMOSCReceiver.h`, `src/OSC/ADMOSCReceiver.cpp`, `include/SpatialCore/Trajectory/TrajectoryEngine.h`, `src/Trajectory/TrajectoryEngine.cpp`, `src/UI/SpatialMapComponent.cpp`, `include/SpatialCore/UI/SpatialMapComponent.h`, `src/UI/SMLLookAndFeel.cpp`, `include/SpatialCore/UI/SMLLookAndFeel.h`, `src/UI/PresetBrowser.cpp`, `src/UI/GlobalTapDrawer.cpp`, `include/SpatialCore/Engine/RenderEngine.h` (`RenderSources`, `RenderBlockContext`), `include/SpatialCore/IO/OutputFormat.h`, `tests/Trajectory/TrajectoryTests.cpp`, `tests/OSC/*.cpp`, `tests/Engine/RenderEngineTests.cpp`, `.github/workflows/ci.yml`, `.planning/{REQUIREMENTS,STATE,PROJECT,v0.5.0-MILESTONE-AUDIT}.md`, Phase 3 `03-VALIDATION.md`
 - Scratch experiments (not in the worktree): `/tmp/sc-p4-probe/src` (copy of the tree plus `tests/UI/Probe*.cpp`, `examples/demo/Main.cpp`), outputs quoted above
 - `gh issue view 100 --repo Spatial-Media-Lab/OpenSpatialDelay` (OSD#100 title, state CLOSED, body)
 

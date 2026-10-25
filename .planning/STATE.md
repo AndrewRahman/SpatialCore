@@ -1,11 +1,11 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.0.0
+milestone: v0.5.0
 status: Awaiting next milestone
 stopped_at: Phase 06 complete — all phases complete
 last_updated: "2026-10-24T17:19:50.684Z"
 last_activity: 2026-10-24
-last_activity_desc: "Milestone v1.0.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output) recorded"
+last_activity_desc: "Milestone v0.5.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output) recorded"
 state_head: 6c5ae56eec2c9a7ab55719412415c888b95035ce
 progress:
   total_phases: 6
@@ -23,20 +23,20 @@ current_phase: 06
 See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
-**Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or backlog 999.x
+**Milestone:** v0.5.0 shipped and archived 2026-10-24 (labelled v1.0.0 until 2026-10-25; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
+**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or v0.6.0 Phases 7-13 (all 25 open GitHub issues grouped into 7 phases on 2026-10-25; next: /gsd-discuss-phase 7)
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
-- SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness (999.3), #39 7.1.4 below-horizon listening (999.1), #40 gap bridge + DBAP listening (999.2), #41 Simple-mode listening (999.4)
+- SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness, #39 7.1.4 below-horizon listening, #40 gap bridge + DBAP listening, #41 Simple-mode listening (all now in v0.6.0 Phases 7-13; ROADMAP lists the phase for each)
 - Still open: SpatialCore #22, #31, #32 (Ambisonics rotation, missed by the first audit pass)
 - Consumers: AndrewRahman/openspatialdelay#23 (pin bump to 38bd5f5 + migration), AndrewRahman/OpenSpatialPanner#4 (pin bump from ca8c88b to 38bd5f5)
 
 ## Current Position
 
-Phase: Milestone v1.0.0 complete
+Phase: Milestone v0.5.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-10-24 — Milestone v1.0.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output, SpatialCore#32) recorded
+Last activity: 2026-10-24 — Milestone v0.5.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output, SpatialCore#32) recorded
 
 ## Performance Metrics
 
@@ -229,7 +229,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **[Phase 2] CI "green" is test-vacuous.** RESOLVED in Phase 6 (06-01, 06-05): ctest from the build root now finds the tests, `macos-gate` runs the whole suite (416 tests) on an Apple Silicon runner in Release (the arm64 leg), and `linux-tests` runs it on Ubuntu. Original finding: CI passed at `879a8fe`, but its ctest step ran from the build root and found zero tests (no top-level `enable_testing()`).
 - **[Phase 3] `HutubsPP2Tests.cpp:47`** — RESOLVED in Phase 3 (03-02 tolerance fingerprints); Debug and Release 266/266.
 - **[Phase 3] BUG-01** — DirectBinaural elevation and front/back cues are deliberately unasserted in `PanningLawTests.cpp`; Phase 3 adds them.
-- **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
+- **[Phase 2] Listening checks pending** — v0.6.0 Phase 8 (#39 OSD 7.1.4 below-horizon hold; #40 WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
 - **[Phase 2] OSD-side follow-ups** — release notes for the audible changes, four OSD docs describing VBIP as squared gains, delete OSD's local SH/VBAP copies at migration (`02-09-SUMMARY.md`). Tracked in PROJECT.md External Dependencies.
 
 - **[Phase 4] Code review warnings** — RESOLVED 2026-10-05 by `/gsd-code-review 04 --fix` (5 review rounds, ledger 18/18 fixed, `04-REVIEW.md` clean). `wrapAzimuth` is bounded; the Windows branches of both `findFreeUdpPort` copies are uncompiled until Phase 6 CI.
@@ -261,26 +261,26 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 
-Acknowledged at the v1.0.0 milestone close (2026-10-24) through `audit-open acknowledge`; triage per `.planning/milestones/v1.0.0-MILESTONE-AUDIT.md` "Open-artifact triage":
+Acknowledged at the v0.5.0 milestone close (2026-10-24) through `audit-open acknowledge`; triage per `.planning/milestones/v0.5.0-MILESTONE-AUDIT.md` "Open-artifact triage":
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| deferred_items | 01/deferred-items.md: HUTUBS PP2 golden checksum failure | acknowledged; resolved (04ecf6b) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-04 SharedFFTCache leaked-at-exit false positive | acknowledged; accepted (D-08) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-07 skill section 4 16-speaker virtual array | acknowledged; resolved (fixed 2026-10-24) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-07 skill section 1.3 Delaunay wording | acknowledged; resolved (fixed 2026-10-24) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-07 ADMOSCReceiver.h unused-parameter warnings | acknowledged; resolved | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-10 tight test-local tolerances | acknowledged; accepted (informational) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-10 CI has no arm64 / FMA leg | acknowledged; resolved (macos-gate on macos-26) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-10 HUTUBS PP2 golden fails in Debug only | acknowledged; resolved (04ecf6b) | 2026-10-24 | v1.0.0 |
-| deferred_items | 02/deferred-items.md: 02-10 CI test step runs zero tests | acknowledged; resolved (top-level enable_testing plus --no-tests=error) | 2026-10-24 | v1.0.0 |
-| deferred_items | 06/deferred-items.md: one-off [hrtf-switch][churn] failure | acknowledged; accepted (34 passes since; re-check at first RC) | 2026-10-24 | v1.0.0 |
+| deferred_items | 01/deferred-items.md: HUTUBS PP2 golden checksum failure | acknowledged; resolved (04ecf6b) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-04 SharedFFTCache leaked-at-exit false positive | acknowledged; accepted (D-08) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-07 skill section 4 16-speaker virtual array | acknowledged; resolved (fixed 2026-10-24) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-07 skill section 1.3 Delaunay wording | acknowledged; resolved (fixed 2026-10-24) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-07 ADMOSCReceiver.h unused-parameter warnings | acknowledged; resolved | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-10 tight test-local tolerances | acknowledged; accepted (informational) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-10 CI has no arm64 / FMA leg | acknowledged; resolved (macos-gate on macos-26) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-10 HUTUBS PP2 golden fails in Debug only | acknowledged; resolved (04ecf6b) | 2026-10-24 | v0.5.0 |
+| deferred_items | 02/deferred-items.md: 02-10 CI test step runs zero tests | acknowledged; resolved (top-level enable_testing plus --no-tests=error) | 2026-10-24 | v0.5.0 |
+| deferred_items | 06/deferred-items.md: one-off [hrtf-switch][churn] failure | acknowledged; accepted (34 passes since; re-check at first RC) | 2026-10-24 | v0.5.0 |
 
 ## Session Continuity
 
 Last session: 2026-10-24T16:35:22.550Z
-Stopped at: Milestone v1.0.0 complete and archived
-Resume file: None (phase directories archived to .planning/milestones/v1.0.0-phases/)
+Stopped at: Milestone v0.5.0 complete and archived
+Resume file: None (phase directories archived to .planning/milestones/v0.5.0-phases/)
 Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
 ## Operator Next Steps
