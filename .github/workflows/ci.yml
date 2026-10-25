@@ -11,9 +11,10 @@ name: SpatialCore CI
 #   It also runs coverage (scripts/coverage.sh: an instrumented Debug build,
 #   both test executables, a per-area table on the run's summary page and the full report as the
 #   coverage-report artifact). It fails when the engine figure is below scripts/coverage-targets.json.
-#   On a manual run with the realtime input ticked: realtime-nightly (README
-#   "Realtime-safety check", steps 1-5). It has no schedule and never runs on its own; run it
-#   before a release tag (user decision 2026-10-24).
+#   On a manual run with the realtime input ticked, or any manual run started from a v* tag ref
+#   (the job's if: below): realtime-nightly (README "Realtime-safety check", steps 1-5). It has
+#   no schedule and never runs on its own; it belongs to the full tier, run when preparing a
+#   release (README "Local test gate", P7-D01; user decision 2026-10-24).
 #
 # Security posture: the token is read-only, there is no trigger that runs outside code, no secret is used, every action is first-party and pinned to a commit SHA, and
 # values from workflow expressions reach scripts only through env entries.
@@ -490,9 +491,11 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # The realtime-safety check runs only on a manual run of this workflow with the realtime input
-  # on (any branch), before a release tag. There is no schedule and no push trigger: the job
-  # keeps its name so existing references to it still resolve.
+  # The realtime-safety check runs in a manual run of this workflow with the realtime input on
+  # (any branch), and in any manual run started from a v* tag ref (the startsWith test below;
+  # the workflow has no tag-push trigger, so that happens only by hand). It belongs to the full
+  # tier, run when preparing a release. There is no schedule and no push trigger: the job keeps
+  # its name so existing references to it still resolve.
   realtime-nightly:
     name: realtime-nightly
     runs-on: macos-26
