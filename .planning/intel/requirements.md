@@ -86,7 +86,7 @@ inferred.
 
 ## REQ-set-dual-license
 - source: docs/development-roadmap.md (Phase 2: "Set license")
-- description: Set SpatialCore's license to dual GPL-3.0 + Commercial.
+- description: Set SpatialCore's license to GPL-3.0 (not dual-licensed; no commercial licence).
 - acceptance: (absent — source specifies no acceptance criteria)
 - scope: licensing, public release
 

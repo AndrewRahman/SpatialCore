@@ -488,7 +488,7 @@ void RenderEngine::claimReadyRenderer (bool hrtfPathThisBlock)
 //==============================================================================
 // prepare() — engine-owned DSP setup slice of the pre-move
 // OpenSpatialDelayProcessor::prepareToPlay (verbatim behavior, transplanted
-// scope only: LFE filter, NFC-HOA filters, binaural renderers, crossfade
+// scope only: LFE filter, binaural renderers, crossfade
 // buffers, direct-binaural accumulation buffers).
 //==============================================================================
 void RenderEngine::prepare (double sampleRate, int maxBlockSize)
@@ -531,29 +531,6 @@ void RenderEngine::prepare (double sampleRate, int maxBlockSize)
     *lfeFilter.coefficients = *juce::dsp::IIR::Coefficients<double>::makeLowPass (sampleRate, 120.0);
     lfeFilter.prepare (spec);
     lfeFilter.reset();
-
-    // v0.5: Prepare NFC-HOA filters (per-object, per-SH-order, Ambisonics output only)
-    //
-    // Same ordering rule as the LFE filter above: every NFC update installs
-    // FIRST-order coefficients, so the placeholder must be first-order too and
-    // be assigned BEFORE prepare()/reset() sizes the state. A second-order
-    // placeholder (the former 1 kHz all-pass) made Filter::check() reallocate on
-    // the audio thread when an order that became active after the distance
-    // settled was first processed (SpatialCore#21). Identity is an exact
-    // pass-through until the first NFC update replaces it.
-    for (int obj = 0; obj < MAX_SOURCES; ++obj)
-    {
-        for (int n = 0; n < kMaxAmbiOrder; ++n)
-        {
-            *nfcFilters[obj][n].coefficients =
-                juce::dsp::IIR::Coefficients<float> (1.0f, 0.0f, 1.0f, 0.0f);
-            nfcFilters[obj][n].prepare (spec);
-            nfcFilters[obj][n].reset();
-        }
-        prevNfcDistance[obj] = -1.0f;  // Force coefficient update on first block
-        smoothedNfcDistance[obj] = 0.0f;
-    }
-    lastNfcAmbiOrder_ = -1;
 
     // SC-20: a fresh prepare has played nothing, so the first block takes the
     // published layout without a fade and no fade-in is owed.
@@ -1673,8 +1650,14 @@ void RenderEngine::renderStereoVariant (const RenderSources& sources,
 }
 
 //==============================================================================
-// renderAmbisonicsOutput — verbatim-transplanted (max-rE weighting +
-// NFC-HOA per-order shelf filters, now engine-owned state).
+// renderAmbisonicsOutput — plain AmbiX SN3D (SpatialCore#32).
+//
+// Every live object contributes evalSH (acn, az, el) x signal x the block's
+// distance gain x tap fade to the Ambisonics channels, with the SH coefficients
+// interpolated linearly per block. Nothing else is applied: IEM-style decoders
+// assume a plane-wave encoding and apply their own max-rE, so the stream carries
+// no per-order weighting and no near-field filter. Weighting for a decode belongs
+// where SpatialCore itself decodes (AmbisonicsAlgorithm).
 //==============================================================================
 void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
                                              const RenderBlockContext& blockCtx,
@@ -1684,71 +1667,6 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
     const int ambiOrder = blockCtx.ambiOrder;
     const int numAmbiCh = std::min ((ambiOrder + 1) * (ambiOrder + 1), kMaxAmbiChannels);
 
-    // Max-rE weights per SH order for perceptual quality (Zotter & Frank 2012)
-    if (ambiOrder != cachedMaxrEOrder)
-    {
-        const float maxrEDenom = 2.0f * static_cast<float> (ambiOrder) + 2.0f;
-        for (int n = 0; n <= ambiOrder; ++n)
-            cachedMaxrE[n] = std::cos (static_cast<float> (n) * juce::MathConstants<float>::pi / maxrEDenom);
-        cachedMaxrEOrder = ambiOrder;
-    }
-
-    // --- NFC-HOA: Update filter coefficients when distance changes (block-rate) ---
-    constexpr float nfcSmoothAlpha = 0.15f;
-    // Sample rate for the NFC pole/zero computation matches the pre-move
-    // code's direct read of currentSampleRate — threaded through
-    // RenderBlockContext per-block (D-02: renderBlock stays a pure function
-    // of its inputs, no hidden dependency on prepare()'s cached rate).
-    const double sr = blockCtx.sampleRate;
-
-    // An order change activates (or deactivates) filters whose coefficients
-    // were last written under a different order, and the distance gate below
-    // would not rewrite them while the distance stays settled. Invalidate
-    // every object's last-written distance so this block's update recomputes
-    // every active order (SpatialCore#21). No allocation: the update below
-    // assigns four floats into the coefficient storage the prepare() placeholder
-    // already sized (capacity of at least 8 floats, so assignImpl never
-    // reallocates). It builds no temporary Coefficients object: that temporary
-    // allocated on the audio thread (Phase 5 RESEARCH F1). The stored values are
-    // bit-identical to the old construction (D-10, pinned by [nfc][d10]).
-    if (ambiOrder != lastNfcAmbiOrder_)
-    {
-        for (int t = 0; t < MAX_SOURCES; ++t)
-            prevNfcDistance[t] = -1.0f;
-        lastNfcAmbiOrder_ = ambiOrder;
-    }
-
-    for (int t = 0; t < MAX_SOURCES; ++t)
-    {
-        if (! sources.objectLive[t]) continue;
-        float distMeters = sources.objects[t].distance * 10.0f;  // 0..1 -> 0..10m
-
-        smoothedNfcDistance[t] += nfcSmoothAlpha * (distMeters - smoothedNfcDistance[t]);
-
-        if (std::abs (smoothedNfcDistance[t] - prevNfcDistance[t]) > 0.01f)
-        {
-            for (int ord = 0; ord < ambiOrder && ord < kMaxAmbiOrder; ++ord)
-            {
-                int n = ord + 1;  // SH order (1-based)
-                constexpr float c = 343.0f;  // speed of sound, m/s
-                float r = std::max (0.05f, smoothedNfcDistance[t]);
-                float fPole = static_cast<float> (n) * c / (2.0f * juce::MathConstants<float>::pi * r);
-                float fZero = static_cast<float> (n) * c / (2.0f * juce::MathConstants<float>::pi * kNfcReferenceRadius);
-                float maxFreq = static_cast<float> (sr) * 0.25f;
-                fPole = std::min (fPole, maxFreq);
-                fZero = std::min (fZero, maxFreq);
-                float wPole = std::tan (juce::MathConstants<float>::pi * fPole / static_cast<float> (sr));
-                float wZero = std::tan (juce::MathConstants<float>::pi * fZero / static_cast<float> (sr));
-                float b0 = (1.0f + wZero);
-                float b1 = (wZero - 1.0f);
-                float a0 = (1.0f + wPole);
-                float a1 = (wPole - 1.0f);
-                *nfcFilters[t][ord].coefficients = std::array<float, 4> { b0 / a0, b1 / a0, 1.0f, a1 / a0 };
-            }
-            prevNfcDistance[t] = smoothedNfcDistance[t];
-        }
-    }
-
     // Pre-compute SH coefficients per enabled tap (block-rate)
     float objSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
     for (int t = 0; t < MAX_SOURCES; ++t)
@@ -1757,7 +1675,7 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
         float azRad = juce::degreesToRadians (sources.objects[t].azimuthDeg);
         float elRad = juce::degreesToRadians (sources.objects[t].elevationDeg);
         for (int c = 0; c < numAmbiCh; ++c)
-            objSHCoeffs[t][c] = evalSH (c, azRad, elRad) * cachedMaxrE[acnToOrder (c)];
+            objSHCoeffs[t][c] = evalSH (c, azRad, elRad);
     }
 
     // SC-20: the fade-in block of a format switch starts at its own targets.
@@ -1782,21 +1700,10 @@ void RenderEngine::renderAmbisonicsOutput (const RenderSources& sources,
             float dist = (sources.distGainPerSample[t] != nullptr) ? sources.distGainPerSample[t][s] : 1.0f;
             float scaledMono = objMono * dist * tapFade;
 
-            // Order 0 (W channel): no NFC needed
-            float sh0 = prevSHCoeffs[t][0] + frac * (objSHCoeffs[t][0] - prevSHCoeffs[t][0]);
-            ambiAccum[0] += scaledMono * sh0;
-
-            // Orders 1+: apply NFC-HOA per-order shelf filter
-            for (int ord = 0; ord < ambiOrder && ord < kMaxAmbiOrder; ++ord)
+            for (int c = 0; c < numAmbiCh; ++c)
             {
-                float nfcMono = nfcFilters[t][ord].processSample (scaledMono);
-                int startACN = (ord + 1) * (ord + 1);
-                int endACN = (ord + 2) * (ord + 2);
-                for (int c = startACN; c < endACN && c < numAmbiCh; ++c)
-                {
-                    float shc = prevSHCoeffs[t][c] + frac * (objSHCoeffs[t][c] - prevSHCoeffs[t][c]);
-                    ambiAccum[c] += nfcMono * shc;
-                }
+                const float shc = prevSHCoeffs[t][c] + frac * (objSHCoeffs[t][c] - prevSHCoeffs[t][c]);
+                ambiAccum[c] += scaledMono * shc;
             }
         }
 

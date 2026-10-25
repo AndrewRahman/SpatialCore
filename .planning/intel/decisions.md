@@ -84,10 +84,10 @@ stated declaratively by the SPEC (highest-precedence source present) and by the 
 - decision: All public types and functions are declared inside `namespace spatialcore` (DSP utilities nested in `spatialcore::DSP`).
 - scope: public API, naming
 
-## DR-12: Dual license GPL-3.0 + commercial
+## DR-12: License GPL-3.0 (not dual-licensed)
 - source: docs/development-roadmap.md (Phase 2, "Set license"); restated in CLAUDE.md ("License")
 - status: proposed
-- decision: SpatialCore is dual-licensed GPL-3.0 + Commercial.
+- decision: SpatialCore is licensed GPL-3.0 (not dual-licensed). It is open source and not sold; there is no commercial licence.
 - scope: licensing, public release
 
 ## DR-13: Publish under the Spatial-Media-Lab organization with fresh squashed history

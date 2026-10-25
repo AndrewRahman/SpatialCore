@@ -5,7 +5,7 @@ status: Awaiting next milestone
 stopped_at: Phase 06 complete — all phases complete
 last_updated: "2026-10-24T17:19:50.684Z"
 last_activity: 2026-10-24
-last_activity_desc: Milestone v1.0.0 completed and archived
+last_activity_desc: "Milestone v1.0.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output) recorded"
 state_head: 6c5ae56eec2c9a7ab55719412415c888b95035ce
 progress:
   total_phases: 6
@@ -36,7 +36,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 Phase: Milestone v1.0.0 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-10-24 — Milestone v1.0.0 completed and archived
+Last activity: 2026-10-24 — Milestone v1.0.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output, SpatialCore#32) recorded
 
 ## Performance Metrics
 
@@ -210,6 +210,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: D-18 (user decision 2026-10-24): the full realtime-safety check (README "Realtime-safety check" steps 2-5: the ThreadSanitizer tree, the [tsan] subset ~17 min, the whole suite under TSan ~32 min, ~100 min on GitHub) runs ONLY before a release tag, or by choice after a large change to audio-thread code; not at every phase end and not nightly. The 20-second [rt] allocation-and-lock trap (step 1) stays in the everyday Release ctest gate. ci.yml loses its `schedule:` trigger; `realtime-nightly` runs on a manual dispatch with the `realtime` input only. Supersedes Phase 5 05-08's "phase-end" wording and D-10's nightly; reasoning is written in README "Why it exists and when to run it". Last full pass: CI run 39058330902, 2026-10-17
 - [Phase 06]: 06-10: Phase 6 goes onto main only after phase verification passes, and the push to main needs the user's go-ahead (it would start a GitHub build); no branch protection for now — User decision 2026-10-24 (no cloud builds). README and CLAUDE.md say main has no branch protection yet; origin/main was merged locally and the local gate passes on the merged tree (Release ctest 418 of 418, Debug 401 + 17 cases)
 - [Phase 06]: D-19 (user decision 2026-10-24): during development the everyday gate is the Release build + `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes, includes the 20 s [rt] trap) and `python3 -I scripts/coverage-report.py --self-test`. The full Debug run of both executables, the coverage build and the realtime-safety check (D-18) run only when preparing a public release. Recorded in README "Local test gate" and CLAUDE.md
+- [Quick 261024-qlw]: P999.5-D01: the Ambisonics output-format stream is plain AmbiX SN3D (evalSH x signal x distance and tap gains): the near-field shelf (inverted against Daniel 2003) and the encoder-side max-rE (applied twice by IEM decoders) are removed; max-rE stays in AmbisonicsAlgorithm, [ambi-pin] and the codec; per-block SH interpolation and the public API are unchanged (SpatialCore#32 open until openspatialdelay#22 ships; closed SpatialCore#21 guarded by [sc19])
 
 ### Pending Todos
 
@@ -234,6 +235,12 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **[Phase 4] Code review warnings** — RESOLVED 2026-10-05 by `/gsd-code-review 04 --fix` (5 review rounds, ledger 18/18 fixed, `04-REVIEW.md` clean). `wrapAzimuth` is bounded; the Windows branches of both `findFreeUdpPort` copies are uncompiled until Phase 6 CI.
 
 Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-spatialcore-submodule) that has no SpatialCore phase by design.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261024-qlw | Make SpatialCore's Ambisonics output plain AmbiX SN3D (SpatialCore#32) | 2026-10-24 | 4855f71 | [261024-qlw-make-spatialcore-s-ambisonics-output-pla](./quick/261024-qlw-make-spatialcore-s-ambisonics-output-pla/) |
 
 ## Deferred Items
 

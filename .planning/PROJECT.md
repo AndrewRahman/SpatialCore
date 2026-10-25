@@ -20,7 +20,7 @@ so the only audio code they write is their own effect.
 ## Business Context
 
 - **Customer**: Spatial Media Lab plugin authors first; third-party plugin developers after public release.
-- **Revenue model**: Dual license — GPL-3.0 for open use, commercial license for closed-source plugins.
+- **Revenue model**: None. SpatialCore is open source (GPL-3.0) and is not sold.
 - **Success metric**: Number of shipping plugins built on SpatialCore (target for v2: two).
 
 ## Milestones
@@ -159,7 +159,7 @@ can be measured — the earlier "~5%" was never a real measurement. Modules with
 - **Realtime**: No malloc, locks, or logging in any function reachable from `processBlock`. Algorithms are stateless; all computation state lives in context structs. Layout changes use dual-buffered atomic swap.
 - **Frozen API**: The `SpatializationAlgorithm` interface cannot change without a major version bump. Same for anything else consumers link against.
 - **Scale limits**: `MAX_SOURCES = 32` (SC-1), `MAX_SPEAKERS = 16`, `MAX_AMBI_ORDER = 6` (49 channels).
-- **Licensing**: GPL-3.0 + commercial dual license.
+- **Licensing**: GPL-3.0. Not dual-licensed; no commercial licence.
 - **Backward compatibility**: OpenSpatialDelay must keep working across every SpatialCore change.
 
 ## Open Questions
@@ -213,7 +213,7 @@ normal planning decision.
 | DR-9 | Consumers integrate via git submodule + CMake `add_subdirectory()` | ✓ Good — proven by the consumer harness (INTG-01, Phase 6) |
 | DR-10 | JUCE 9.0.0 / C++17 / CMake 3.22+ / libmysofa 1.3.2 / zlib / Catch2 3.7.1 | ✓ Good — corrected 2026-08-10; DR-10 originally said JUCE 8, tree is pinned 9.0.0 at `CMakeLists.txt:33` |
 | DR-11 | All library code lives in `namespace spatialcore` (DSP utilities in `spatialcore::DSP`) | ✓ Good |
-| DR-12 | Dual license GPL-3.0 + commercial | — Pending — LICENSE file lands in v3 |
+| DR-12 | License GPL-3.0 (not dual-licensed; no commercial licence) | — Pending — LICENSE file lands in v3 |
 | DR-13 | Publish under Spatial-Media-Lab with fresh squashed history | — Pending — gated on proof, not on a date. See the "Remote topology" decision row below. |
 | DR-14 | Extraction sequenced after OpenSpatialDelay v1.0 ships | ⚠️ Revisit — the PRD's 2026-03-31 OSD deadline has passed and extraction is well underway; the sequencing assumption no longer holds |
 | DR-15 | SpatialCore ships no BinaryData; consumers supply HRTF data | ✗ **Superseded by DR-5** — closed by user ruling |
@@ -235,8 +235,9 @@ normal planning decision.
 | D-VER | Milestone label v1.0.0 is not the library version: SpatialCore stays `0.x` (0.5.0) and becomes `1.0.0` when OpenSpatialDelay 2.0.0 ships on it; no git tag at milestone close | ✓ Decided 2026-10-24 |
 | D-BP | `main` has no branch protection; the local gate is the only check before a push, and a push to `main` waits for the user's go-ahead | ✓ Decided 2026-10-24 |
 | P6-DR9 | DR-9 (git submodule + `add_subdirectory`) proven by `examples/harness/`, a throwaway consumer built from a real submodule at a pushed commit | ✓ Good — Phase 6 (run on a release-tag or manual CI run) |
+| P999.5-D01 | The Ambisonics output-format stream is plain AmbiX SN3D: `evalSH` x signal x the block's distance gain x tap fade. No near-field shelf and no max-rE on that stream; max-rE stays in SpatialCore's own decode (`AmbisonicsAlgorithm`, `[ambi-pin]`). Per-block SH interpolation kept; public API source-compatible. Why: the shelf was inverted against Daniel 2003 (low-frequency gain r / 1.5, no per-order power) and max-rE was applied a second time by IEM decoders; research in `.planning/quick/261024-mhh-re-check-the-ambisonics-maths-end-to-end/research/`. References SpatialCore#32 (open until openspatialdelay#22 ships and the pre-release speaker check passes) and the closed SpatialCore#21 (the order-change defect of the very filters now removed; its `[sc19]` tests stay as order-change guards). | ✓ Decided 2026-10-24, quick 261024-qlw |
 
 </decisions>
 
 ---
-*Last updated: 2026-10-24 after v1.0.0 milestone*
+*Last updated: 2026-10-24 after v1.0.0 milestone and quick task 261024-qlw (plain AmbiX Ambisonics output)*

@@ -58,5 +58,17 @@ Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25
 **Follow-ups:**
 - [ ] After Phase 3 lands: in OSD Simple binaural mode, move a sound from ahead to overhead and from front to back; confirm each is audible and the ear-level front sound is close to before
 
+### Phase 999.5: Ambisonics end-to-end re-check (BACKLOG)
+
+**Goal:** Confirm the Ambisonics maths is still accurate end to end: each source is heard and seen where the map puts it, at every order
+**Source phase:** 02
+**Deferred at:** 2026-10-24, after SpatialCore#32 (a suspected sound-field rotation in OSD v1.0.0 and the OSD dev build that did not reproduce on a recheck with the IEM EnergyVisualizer; closed as not planned)
+**Follow-ups:**
+- [x] The Phase 2 `[ambi]` / `[ambi-pin]` tests still pass — done 2026-10-24, quick task 261024-mhh
+- [x] A test encodes sources at 0°, +90°, 180° and -90° and asserts the first-order channel signs match AmbiX (W, Y, Z, X; Y > 0 on the left, X > 0 in front) — done 2026-10-24, quick task 261024-mhh
+- [ ] Speaker-rig listening check at the pre-release review (20-speaker ring, 6th order, OSD as AU and VST3), after the two fixes below
+- [x] SpatialCore: Ambisonics output becomes plain AmbiX SN3D — drop the inverted NFC shelf and the encoder-side max-rE (SpatialCore#32) — done 2026-10-24, quick task 261024-qlw; SpatialCore#32 stays open until openspatialdelay#22 ships and the speaker check passes
+- [ ] OSD: AU accepts a 50-channel output; visible warning on any format fallback; re-resolve on bus change; wiki azimuth sign (openspatialdelay#22)
+
 ---
 *Roadmap rewritten 2026-08-10 against branch `gsd-remap`, after the original was found to have been planned against a branch missing 42 commits.*

@@ -40,6 +40,7 @@ add_executable(SpatialCoreTests
     Engine/ControlRouteTests.cpp
     Engine/RealtimeSafetyTests.cpp
     Engine/MultiInstanceTests.cpp
+    Engine/AmbisonicsRenderDirectionTests.cpp
     Engine/UnsuppliedGainsTests.cpp
 )
 

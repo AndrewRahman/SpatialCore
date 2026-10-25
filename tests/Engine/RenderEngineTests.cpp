@@ -808,7 +808,7 @@ TEST_CASE ("RenderEngine: a first-ever non-finite position renders exactly like 
     }
 }
 
-TEST_CASE ("RenderEngine: a NaN distance never reaches the NFC-HOA filter state; output matches the last good distance (D-19ii, F7)",
+TEST_CASE ("RenderEngine: a NaN distance leaves the Ambisonics output finite and equal to the last good distance (D-19ii, F7)",
            "[engine][sanitize]")
 {
     auto a = std::make_unique<SanitizeRig> (SanitizePath::AmbisonicsHOA, OutputFormat::AmbisonicsHOA);
@@ -1748,17 +1748,16 @@ TEST_CASE ("RenderEngine: a render thread always sees one of the formats a write
 }
 
 // ============================================================================
-// SC-19 / SpatialCore#21 — a mid-stream Ambisonics order change must filter
-// the newly active orders exactly like an engine that started at that order,
-// and no NFC filter may change order (reallocate state) on the audio thread.
+// SC-19 / SpatialCore#21 — a mid-stream Ambisonics order change must render
+// the newly active orders exactly like an engine that started at that order.
+// The stream is plain AmbiX (SpatialCore#32) with no per-order filter state,
+// so these cases stay as order-change guards.
 // ============================================================================
 namespace
 {
-    // The NFC update is deliberately gated on the smoothed distance moving by
-    // more than 0.01 m, so even a fresh engine's coefficients lag the settled
-    // distance by up to 0.01 m: at 5 m that is 0.01 / 5 = 2e-3 relative DC
-    // gain, which the engine under comparison shares. 5e-3 is that bound with
-    // margin; the placeholder defect this guards against was ~70% relative.
+    // The stream is exact (no filter, no smoothing), so the two engines under
+    // comparison agree far inside this bound. 5e-3 stays as generous margin;
+    // the order-change defect this guards against was ~70% relative.
     constexpr float kSc19RelTolerance = 5e-3f;
 
     // One live object (azimuth 30, elevation 20, distance 0.5 = 5 m, DC 0.5)

@@ -14,7 +14,7 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 | **Simple Binaural** | 2ch headphones | Woodworth ITD+ILD model (low CPU, no convolution) |
 | **Stereo Variants** | 2ch monitors | 5 mic simulation modes (Equal Power, VBAP, XY, MS, Blumlein) |
 | **Discrete Surround** | 4-16ch speakers | Algorithm-based speaker gain computation (VBAP, VBIP, KNN, DBAP, MDAP) |
-| **Ambisonics Output** | 4-49ch HOA | Spherical harmonic encoding (1st through 6th order, AmbiX: ACN channel order, SN3D, no Condon-Shortley phase) |
+| **Ambisonics Output** | 4-49ch HOA | Plain AmbiX spherical harmonic encoding (1st through 6th order: ACN channel order, SN3D, no Condon-Shortley phase), with no near-field filter and no max-rE weighting |
 
 ## Components
 
@@ -25,7 +25,7 @@ SpatialCore takes audio objects with 3D positions (azimuth, elevation, distance)
 - **KNN** — K-Nearest Neighbor (inverse-distance-squared weighting)
 - **DBAP** — Distance-Based Amplitude Panning (Lossius et al., ICMC 2009; effective rolloff 12.04 dB, no spatial blur)
 - **MDAP** — Multiple-Direction Amplitude Panning (Pulkki, WASPAA 1999, source spread)
-- **Ambisonics** — 3rd-order HOA with max-rE weighting (ACN/SN3D, no Condon-Shortley phase)
+- **Ambisonics** — 3rd-order HOA speaker decode with max-rE weighting (ACN/SN3D, no Condon-Shortley phase). The max-rE belongs to this speaker decode; the Ambisonics output formats are plain AmbiX and carry no weighting
 - **Direct Binaural** — Woodworth ITD+ILD (internal, for Simple profile)
 
 ### HRTF Binaural Rendering
@@ -220,9 +220,7 @@ The consumer builds whatever commit its submodule pointer references — editing
 
 ## License
 
-Dual-licensed:
-- **[GPL-3.0](LICENSE)** — free for open-source use
-- **Commercial License** — available from [Spatial Media Lab](https://spatialmedialab.org)
+Licensed under **[GPL-3.0](LICENSE)**. SpatialCore is open source and is not sold; there is no commercial licence.
 
 HRTF data from third-party sources under their respective licenses (MIT, Apache 2.0, CC BY, Public Domain).
 

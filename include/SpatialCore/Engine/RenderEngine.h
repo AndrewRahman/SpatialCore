@@ -40,7 +40,7 @@ namespace spatialcore
 // Doppler/pitch-shifted (the OSD-owned delay-line / feedback / Doppler /
 // phase-vocoder pitch-shift engine stays OUTSIDE the engine, in the consumer).
 // The engine does ONLY the spatialization step: HRTF convolution, binaural/
-// stereo gain panning, ambisonics SH encode + NFC-HOA, or discrete-surround
+// stereo gain panning, ambisonics SH encode (plain AmbiX SN3D), or discrete-surround
 // gain application — reproducing the EXACT 5-branch dispatch structure
 // currently in OpenSpatialDelayProcessor::processBlock (D-09 — do not "clean
 // up" or reorder the dispatch). The engine is latency-neutral: it introduces
@@ -154,11 +154,9 @@ struct RenderBlockContext
     // object (algorithm->computeGains output, up to MAX_SPEAKERS=16).
     float objChannelGains[MAX_SOURCES][MAX_SPEAKERS] = {};
 
-    // Ambisonics path inputs. Sample rate is required by the NFC-HOA per-order
-    // shelf-filter pole/zero recompute (matches the pre-move code's direct
-    // read of currentSampleRate) — supplied per-block rather than cached at
-    // prepare() time so the engine has no hidden dependency on prepare()
-    // having been called with the "right" rate if it ever changes.
+    // Ambisonics path inputs. The Ambisonics stream is plain AmbiX SN3D
+    // (SpatialCore#32) and no longer reads sampleRate; the field stays for
+    // the other paths and for source compatibility.
     int ambiOrder = 0;
     double sampleRate = 48000.0;
 
@@ -621,11 +619,6 @@ public:
 private:
     class HRTFProfileLoader;   // defined in RenderEngine.cpp; a nested class sees the private state below
 
-    // TEST-ONLY seam (IN-07): SpatialCore's own tests define this struct to read the engine's
-    // stored NFC filter coefficients. A friend declaration adds no public method and changes no
-    // layout, and no consumer defines the struct.
-    friend struct RenderEngineTestAccess;
-
     //--------------------------------------------------------------------------
     // The 5 render paths (verbatim-transplanted bodies, Task 2). Internal —
     // renderBlock() is the only public entry point, matching the pre-move
@@ -723,17 +716,6 @@ private:
     //--------------------------------------------------------------------------
     const RenderSources& sanitizeSources (const RenderSources& sources);
     void resetLastGoodPositions();
-
-    // ACN channel index -> SH order lookup (verbatim from
-    // OpenSpatialDelayProcessor::acnToOrder, moved because it is used only by
-    // renderAmbisonicsOutput's max-rE weighting).
-    static constexpr int acnToOrder (int acn)
-    {
-        if (acn < 1)  return 0;  if (acn < 4)  return 1;
-        if (acn < 9)  return 2;  if (acn < 16) return 3;
-        if (acn < 25) return 4;  if (acn < 36) return 5;
-        return 6;
-    }
 
     //==========================================================================
     // ENGINE-OWNED STATE — every field below is a required carry-forward of
@@ -853,17 +835,12 @@ private:
     float prevStereoGainR[MAX_SOURCES] = {};
     float prevChannelGains[MAX_SOURCES][MAX_SPEAKERS] = {};
 
-    // --- Ambisonics NFC-HOA + max-rE weighting state ---
+    // --- Ambisonics state: the output is plain AmbiX (SpatialCore#32), so the
+    //     only state is the previous block's SH coefficients (per-block
+    //     interpolation). No near-field filter, no max-rE weights. ---
     static constexpr int kMaxAmbiOrder = 6;
     static constexpr int kMaxAmbiChannels = (kMaxAmbiOrder + 1) * (kMaxAmbiOrder + 1);
-    static constexpr float kNfcReferenceRadius = 1.5f; // meters (typical studio monitoring distance)
     float prevSHCoeffs[MAX_SOURCES][kMaxAmbiChannels] = {};
-    juce::dsp::IIR::Filter<float> nfcFilters[MAX_SOURCES][kMaxAmbiOrder]; // MAX_SOURCES objects x 6 orders
-    float smoothedNfcDistance[MAX_SOURCES] = {};
-    float prevNfcDistance[MAX_SOURCES] = {};
-    int   lastNfcAmbiOrder_ = -1;  // order the NFC filters were last updated for (SpatialCore#21)
-    int   cachedMaxrEOrder = -1;
-    float cachedMaxrE[kMaxAmbiOrder + 1] = {};
 
     // --- Discrete-surround LFE generation filter (stateful IIR — persists
     //     across blocks, must live with the render path that uses it).
