@@ -122,6 +122,13 @@ Alternatively drop "Escape" from the header comment and the guide table until th
 
 **Fix:** Align the guide wording with the header: "One separator goes before the first user entry that follows a factory entry in that category."
 
+## Fixes applied
+
+- WR-01: fixed in `120044a` (`nameEditor.onEscapeKey` dismisses the overlay; new `tests/UI/PresetSaveOverlayTests.cpp`).
+- IN-01: fixed in `2599f3d` (README now says 25 of 69 cases in the default build).
+- IN-02: not changed; covered by the pre-merge full ctest.
+- IN-03: fixed in `a0736e8` (guide now says when the separator is drawn).
+
 ---
 
 _Reviewed: 2026-10-25_
