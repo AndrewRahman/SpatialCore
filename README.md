@@ -150,7 +150,7 @@ area=Binaural; ./build-release/tests/SpatialCoreTests --filenames-as-tags "$(for
 | `UI/` | `cmake --build build-release --target SpatialCoreUITests -j8`, then `./build-release/tests/SpatialCoreUITests` (the whole UI executable) |
 | `CMakeLists.txt`, an umbrella header (`SpatialCore.h`, `SpatialCoreUI.h`) or code several areas use | the full Release `ctest` of the next section |
 
-The area tags (`[binaural]`, `[engine]`, `[io]` and the like) are not on every case in their folder: `[binaural]` is on 25 of the 70 cases in `tests/Binaural/` (counted 2026-10-25), so a tag run can miss the test that covers your change. Use the file tags.
+The area tags (`[binaural]`, `[engine]`, `[io]` and the like) are not on every case in their folder: `[binaural]` is on 25 of the 69 cases in `tests/Binaural/` in the default build (counted 2026-10-25; one more case compiles only when `SPATIALCORE_EMBED_ALL_HRTF` is OFF), so a tag run can miss the test that covers your change. Use the file tags.
 
 #### Before merging or pushing to `main`
 
