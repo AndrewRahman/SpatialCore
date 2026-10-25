@@ -442,10 +442,11 @@ TEST_CASE ("BinauralRenderer: KEMAR's 558-sample IR is prepared off the audio th
 // RTSF-01 (Phase 5, D-03, D-04): the two scratch-too-small guards never allocate.
 //
 // A scratch smaller than needed is reachable only when a caller renders more than prepare() was
-// given, or (here) through shrinkScratchForTesting(). The guard then skips just that work, keeps
-// the last good sound and counts the event; Debug builds also assert. Each case compares the
-// renderer that took the hit with a twin built identically that never saw the bad call, bit for
-// bit, so "nothing moved" is proven rather than assumed.
+// given, or (here) through shrinkScratchForTesting(). The guard then skips just that work and
+// counts the event (renderSourceBuffers outputs silence for that call, updateSourceHRIR keeps
+// the previous HRIR); Debug builds also assert. Each case compares the renderer that took the
+// hit with a twin built identically that never saw the bad call, bit for bit, so "nothing
+// moved" is proven rather than assumed.
 //
 // A Debug assert allocates (JUCE logs through a juce::String), and in a Debug tree libmysofa
 // printf()s on every HRIR lookup, so the allocation and lock checks run in Release only; the
@@ -517,7 +518,7 @@ namespace
     }
 }
 
-TEST_CASE ("BinauralRenderer: renderSourceBuffers with a scratch that is too small skips, counts and keeps the last good sound",
+TEST_CASE ("BinauralRenderer: renderSourceBuffers with a scratch that is too small skips, counts and outputs silence",
            "[renderer][rt][scratch]")
 {
     auto hit = makeKemarRenderer();
@@ -545,7 +546,7 @@ TEST_CASE ("BinauralRenderer: renderSourceBuffers with a scratch that is too sma
     CHECK (std::all_of (outL.begin(), outL.end(), [] (float v) { return v == 0.0f; }));
     CHECK (std::all_of (outR.begin(), outR.end(), [] (float v) { return v == 0.0f; }));
 
-    // Keep the last good sound: the next normal blocks equal a renderer that never saw the call.
+    // Nothing moved: the next normal blocks equal a renderer that never saw the call.
     const StereoSignal fromHit = renderNormalBlocks (*hit);
     const StereoSignal fromTwin = renderNormalBlocks (*twin);
     CHECK (peakMagnitude (fromTwin) > 1.0e-3f);
