@@ -23,7 +23,7 @@ current_phase: 06
 See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
-**Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0, no git tag)
+**Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
 **Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or backlog 999.x
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
@@ -257,7 +257,7 @@ Also open: v1 cannot close without OpenSpatialDelay-side work (REQ-osd-consume-s
 | Docs | spatial-audio-dsp skill §4 virtual 16-speaker array and §1.3 "Delaunay" wording describe code that does not exist | Open — next docs pass | Phase 02 (02-07) |
 | Build | `ADMOSCReceiver.h` five `-Wunused-parameter` warnings in OSD builds | Resolved — Phase 4 (04-03) | Phase 02 (02-07) |
 | Tests | Milestone audit: no test sets all three engine flags on one binaural block; Binaural→non-binaural switch during an HRTF renderer crossfade is untested | Resolved — Phase 5 (05-03): [rt][switch][tracer], [rt][switch][audit] | v1.0.0 audit |
-| Planning | 01-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`); 02-VALIDATION.md validated 2026-10-17 | Open | v1.0.0 audit |
+| Planning | 01-VALIDATION.md still `status: draft` (optional `/gsd-validate-phase 1`); 02-VALIDATION.md validated 2026-10-17 | Resolved: 01-VALIDATION.md is `status: validated`; Phase 6 validated 2026-10-25 (all six phases Nyquist-compliant) | v1.0.0 audit |
 | Binaural | libmysofa's own HDF5 parse allocates from declared dimensions before SpatialCore's pre-validation; bounded by the 256 MB file cap except zlib inflation | Accepted residual | Phase 03 (review) |
 | API | `setLoaderFailureForTesting` is public in `RenderEngine.h` (marked TEST-ONLY; a compile guard would make the class layout differ between SpatialCore and consumers) | Accepted | Phase 03 (review) |
 
