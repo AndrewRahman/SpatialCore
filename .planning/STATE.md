@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-milestone: v0.5.0
-status: Awaiting next milestone
-stopped_at: Phase 06 complete — all phases complete
-last_updated: "2026-10-24T17:19:50.684Z"
-last_activity: 2026-10-24
-last_activity_desc: "Milestone v0.5.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output) recorded"
-state_head: 6c5ae56eec2c9a7ab55719412415c888b95035ce
+milestone: v0.6.0
+status: Phase 7 context gathered
+stopped_at: Phase 7 context gathered
+last_updated: "2026-10-25T07:51:10.871Z"
+last_activity: 2026-10-25
+last_activity_desc: "Phase 7 context gathered; #24 and #9 closed"
+state_head: 50af971838bbf743a80e2ebe086f7b7a4e7b2f8f
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 52
   completed_plans: 52
 milestone_name: milestone
-current_phase: 06
+current_phase: 07
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v0.5.0 shipped and archived 2026-10-24 (labelled v1.0.0 until 2026-10-25; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or v0.6.0 Phases 7-13 (all 25 open GitHub issues grouped into 7 phases on 2026-10-25; next: /gsd-discuss-phase 7)
+**Current focus:** Milestone v0.6.0 Phase 7 (process, docs and consumer close-out): context gathered 2026-10-25; next: /gsd-plan-phase 7
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
 - SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness, #39 7.1.4 below-horizon listening, #40 gap bridge + DBAP listening, #41 Simple-mode listening (all now in v0.6.0 Phases 7-13; ROADMAP lists the phase for each)
@@ -33,10 +33,10 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 ## Current Position
 
-Phase: Milestone v0.5.0 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-10-24 — Milestone v0.5.0 completed and archived; quick task 261024-qlw (plain AmbiX Ambisonics output, SpatialCore#32) recorded
+Phase: 07 (Process, docs and consumer close-out) — milestone v0.6.0
+Plan: — (not planned yet)
+Status: Context gathered (07-CONTEXT.md)
+Last activity: 2026-10-25 — Phase 7 context gathered: two test tiers decided (light while iterating, full Release ctest before main, full tier before a release); #24 and #9 closed
 
 ## Performance Metrics
 
@@ -278,9 +278,9 @@ Acknowledged at the v0.5.0 milestone close (2026-10-24) through `audit-open ackn
 
 ## Session Continuity
 
-Last session: 2026-10-24T16:35:22.550Z
-Stopped at: Milestone v0.5.0 complete and archived
-Resume file: None (phase directories archived to .planning/milestones/v0.5.0-phases/)
+Last session: 2026-10-25T07:51:10.857Z
+Stopped at: Phase 7 context gathered
+Resume file: .planning/phases/07-process-docs-consumer-closeout/07-CONTEXT.md
 Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
 ## Operator Next Steps
