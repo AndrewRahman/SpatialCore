@@ -1,7 +1,7 @@
 ---
 phase: 07-process-docs-consumer-closeout
 verified: 2026-10-25T10:10:00Z
-status: human_needed
+status: passed
 score: 9/9 must-haves verified
 covered_files:
   - ".claude/skills/cross-platform-builds/REFERENCE.md"
@@ -30,7 +30,12 @@ covered_files:
   - "tests/UI/PresetSaveOverlayTests.cpp"
 covered_digest: "v3:sha256:c8e7f22e99883a81151d10a087c3b0ef7dab47ef372c2a6f9435cd3195e36d14"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+overrides:
+  - must_have: "No change to PresetBrowser behaviour or API: src/UI/PresetBrowser.cpp is not edited"
+    reason: "Review fix WR-01 wires nameEditor.onEscapeKey to dismiss() so the documented Escape behaviour is true; no API change, covered by tests/UI/PresetSaveOverlayTests.cpp"
+    accepted_by: "Andrew Rahman (maintainer, in session)"
+    accepted_at: "2026-10-25T10:51:37Z"
 re_verification:
   previous_status: passed
   previous_score: 9/9
@@ -47,7 +52,7 @@ human_verification:
 
 **Phase Goal:** Everyday changes run a light test tier and the full tier runs only before a release; no doc states a stale fact; tickets whose SpatialCore half has shipped are closed or handed to the consumer
 **Verified:** 2026-10-25
-**Status:** human_needed
+**Status:** passed (one override accepted by the maintainer 2026-10-25T10:51:37Z: WR-01 fix to src/UI/PresetBrowser.cpp kept)
 **Re-verification:** Yes, after review fixes (commits 120044a, 2599f3d, a0736e8, 06563a9 on top of 5382a3f). The earlier report (passed, 9/9) was stale because README.md and docs/integration-guide.md changed.
 
 All nine truths still hold. One plan prohibition no longer holds by its letter and needs a maintainer decision, so the status is `human_needed`, not `passed`.
