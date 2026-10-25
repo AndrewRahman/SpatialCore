@@ -1,7 +1,7 @@
 ---
 phase: 07-process-docs-consumer-closeout
-verified: 2026-10-25T09:30:00Z
-status: passed
+verified: 2026-10-25T10:10:00Z
+status: human_needed
 score: 9/9 must-haves verified
 covered_files:
   - ".claude/skills/cross-platform-builds/REFERENCE.md"
@@ -24,20 +24,48 @@ covered_files:
   - "include/SpatialCore/Core/BinauralGains.h"
   - "include/SpatialCore/Core/SourcePosition.h"
   - "include/SpatialCore/UI/PresetBrowser.h"
+  - "src/UI/PresetBrowser.cpp"
   - "tests/Binaural/BinauralRendererTests.cpp"
-covered_digest: "v3:sha256:e4b8de433e61a86235005cf67fd8f4034ad60a8fc8670436a4597da0115fbd62"
+  - "tests/CMakeLists.txt"
+  - "tests/UI/PresetSaveOverlayTests.cpp"
+covered_digest: "v3:sha256:c8e7f22e99883a81151d10a087c3b0ef7dab47ef372c2a6f9435cd3195e36d14"
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: passed
+  previous_score: 9/9
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+human_verification:
+  - test: "Accept or reject the one-line behaviour change in src/UI/PresetBrowser.cpp (review fix WR-01) against the Plan 07-03 prohibition 'src/UI/PresetBrowser.cpp is not edited'."
+    expected: "Maintainer confirms the change is wanted (it makes the code match the Escape contract the phase documents), and records it as an override; or asks for it to move to a separate change."
+    why_human: "The prohibition is test-tier and its check (git diff 91c0f30 -- src/UI/PresetBrowser.cpp is empty) now fails by the letter. Only the maintainer can accept a deviation from a plan prohibition; a verifier may not self-grant an override."
 ---
 
 # Phase 7: Process, docs and consumer close-out Verification Report
 
 **Phase Goal:** Everyday changes run a light test tier and the full tier runs only before a release; no doc states a stale fact; tickets whose SpatialCore half has shipped are closed or handed to the consumer
 **Verified:** 2026-10-25
-**Status:** passed
-**Re-verification:** No, initial verification
+**Status:** human_needed
+**Re-verification:** Yes, after review fixes (commits 120044a, 2599f3d, a0736e8, 06563a9 on top of 5382a3f). The earlier report (passed, 9/9) was stale because README.md and docs/integration-guide.md changed.
+
+All nine truths still hold. One plan prohibition no longer holds by its letter and needs a maintainer decision, so the status is `human_needed`, not `passed`.
 
 ROADMAP.md lists no separate Success Criteria for Phase 7, only the goal and the work items. The truths below are the three goal clauses plus the plan must-haves and decisions D-01..D-14.
+
+## Re-verification scope
+
+`git diff 5382a3f..HEAD` touches: README.md (one line), docs/integration-guide.md (one line), src/UI/PresetBrowser.cpp (3 lines), tests/CMakeLists.txt (1 line), tests/UI/PresetSaveOverlayTests.cpp (new), 07-REVIEW.md. Truths that the diff cannot affect (3, 4, 5, 6, 7, and the issue states in 9) were carried forward from the earlier report; items 5 and 9 got a cheap spot re-check anyway.
+
+## Review-fix verification
+
+| Fix | Check | Result |
+|-----|-------|--------|
+| WR-01: Escape in the name field closes the save overlay | JUCE source (`build-release/_deps/juce-src/.../juce_TextEditor.cpp`): `keyPressed` calls `escapePressed()` (posts `escapeKeyMessageId`) and returns `consumeEscAndReturnKeys` (L1914-1919); `handleCommandMessage` then invokes `onEscapeKey` (L2028-2032), the same path `onReturnKey` already uses to call `dismiss()`. So `nameEditor.onEscapeKey = [this]{ dismiss(); }` is the right hook and no new re-entrancy pattern. `dismiss()` exits modal state, removes from desktop, clears the name, never calls `onSave`. | CORRECT |
+| WR-01 test | `PresetSaveOverlayTests.cpp` is in `SpatialCoreUITests` (tests/CMakeLists.txt). Binary (built 09:56) lists it with tags `[preset][ui]`; `"[preset]"` run: 1 case, 6 assertions passed; whole `SpatialCoreUITests`: 18 cases, 158 assertions passed. The test checks the callback is wired, that the editor consumes Escape, and that firing the callback clears the name with `saveCalls == 0`. It calls the callback directly, because UI tests do not pump the message loop, so it proves the wiring and not JUCE's posting; the posting is confirmed by the JUCE source read above. | PASS (limit noted) |
+| IN-01: README "25 of the 69 cases ... in the default build" | Source `^TEST_CASE` count over `tests/Binaural/*.cpp` is 70; the one case at `HRTFEmbeddedTests.cpp:570-595` sits under `#if ! SPATIALCORE_EMBEDS_ALL_HRTF`. Built binary: file-tag list over all Binaural files gives 69 cases; `"[binaural]"` gives 25. The README now says both correctly, and no longer disagrees with the 69 the earlier report measured. | CORRECT |
+| IN-03: guide "separator drawn before the first user entry only when a factory entry comes before it in that category" | `PresetBrowser.cpp:224-225`: `if (! p.isFactory && ! hasUserInSub && hasFactoryInSub) addSeparator();` | CORRECT |
 
 ## Goal Achievement
 
@@ -45,15 +73,15 @@ ROADMAP.md lists no separate Success Criteria for Phase 7, only the goal and the
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Test tiers (none for doc-only, light, full Release ctest before main, full tier for release) are written once in README "Local test gate" (D-01, D-02, D-03) | VERIFIED | README.md L113-188: headings "No test run", "Light tier", "Before merging or pushing to main", "Full tier: only when preparing a release" (7 items: Debug both executables, Release ctest, build-tsan, coverage, harness, speaker/DAW checks, manual CI with go-ahead). Matches CONTEXT D-01. |
-| 2 | The light-tier commands actually select and pass real tests | VERIFIED | Run by the verifier on build-release: `--filenames-as-tags "[#BinauralRendererTests]~[.]"` passed (414 assertions, 10 cases); the per-folder `area=Core` loop passed (42 cases); `area=Binaural` selects 69 cases (README says 70, a one-case difference that is hidden-case exclusion by `~[.]`, not a defect); `SpatialCoreUITests` passed (17 cases); `"[binaural]"` passed (25 cases). |
-| 3 | CLAUDE.md "Build System", the handoff Done-when lists and the integration guide point at README instead of repeating the gate (D-03) | VERIFIED | CLAUDE.md Tests bullet names the tiers and says "README 'Local test gate' is the one place ... follow it, not a copy"; HANDOFF-ambisonics-fix.md Done-when L25 and L52 now ask for the light tier / OSD-owned tests; docs/integration-guide.md Testing paragraph points at README. |
-| 4 | PROJECT.md records P7-D01 (tiers, supersedes D-19 everyday wording; D-18 and release-only D-19 stand) and P7-D02 (landing order, handoffs) | VERIFIED | PROJECT.md decision table rows P7-D01 and P7-D02 present; D-19 row annotated as superseded; D-20 and CI-01 amended. |
-| 5 | No live doc says a tag push starts CI; ci.yml is described as manual-only (D-04) | VERIFIED | `git grep` for release tag / tag push / v* / everyday gate outside dated history: only hits are ci.yml comments that correctly say "no ... tag push", README L188 and CLAUDE.md saying no tag push starts it, PROJECT.md D-20, and dated history (MILESTONES v0.5.0 body, RETROSPECTIVE, ROADMAP #35 which already says a tag push starts nothing). ci.yml diff vs base touches comment lines only (non-comment diff is empty), so the `on:` block and the `realtime-nightly` `if:` are unchanged. The README claim that a manual run started from a `v*` tag ref runs realtime-nightly matches the `if: startsWith(github.ref, 'refs/tags/v')` line. |
-| 6 | Landing order and handoff rule are written (D-05, D-06) | VERIFIED | README L274 "Landing order and handoffs (decision P7-D02)"; CLAUDE.md Consumer Plugins sentence; no OSD or OSP path in the phase diff. |
-| 7 | #37 stale facts fixed (D-07..D-10) | VERIFIED | development-roadmap.md: submodule URL is AndrewRahman/SpatialCore.git, 23 formats / 15 layouts, dated update banner, historical banner kept (the remaining `Spatial-Media-Lab/SpatialCore` at L139 is the "create org repo" post-proof row, correct). BinauralGains.h and SourcePosition.h cite commit 0b35e55, which exists (2026-07-05, "extract Types/... from OSD main"); no `.planning/phases` path remains under include/, src/, tests/, examples/. SKILL.md row now "dated 2026-04-12 figure, not re-measured for 32 sources". Test renamed "...skips, counts and outputs silence"; comments at old :446 and :548 fixed; the comment-stripped diff of the test file differs only in that title; the renamed case runs and passes (`"*outputs silence"`, 15 assertions). |
-| 8 | #13 PresetBrowser contract documented accurately and header change is comment-only (D-11) | VERIFIED | PresetBrowser.h class comments and docs/integration-guide.md "PresetBrowser contract" read against src/UI/PresetBrowser.cpp: grouping by run of equal category, separator before first user entry after a factory entry, empty category not shown (flush guard), item ID `originalIndex + 1`, `result > 0` gate, always-present "User" submenu with disabled "(empty)", trim and non-empty check in onSave, Escape / Cancel / outside-click dismiss without onSave. Header diff contains only comment edits (declarations unchanged); `git diff 91c0f30 HEAD -- src` is empty. Not recorded as unsuitable. |
-| 9 | #24 and #9 closed with evidence; #42/#37/#13 deliberately still open with a correct close-out file (D-12, D-13, D-14) | VERIFIED | Read-only `gh`: #24 CLOSED 07:50:56Z, #9 CLOSED 07:50:59Z; #42, #37, #13 OPEN. openspatialdelay main pins 2f16bae and OpenSpatialPanner main pins ca8c88b (match P7-D02 and CLOSEOUT). 07-CLOSEOUT.md contains five `gh` commands (close 42, 37, 13; comment on OpenSpatialPanner#4 and openspatialdelay#27), each parsing to a well-formed 8-argument call after `<merge-sha>` substitution with no apostrophe breakage; comment bodies match what was actually delivered; no command dispatches a workflow, pushes or tags. openspatialdelay#27 and OpenSpatialPanner#4 exist and are open; neither has a comment posted yet (correct, post-merge). |
+| 1 | Test tiers (none for doc-only, light, full Release ctest before main, full tier for release) are written once in README "Local test gate" (D-01, D-02, D-03) | VERIFIED | README "Local test gate": No test run, Light tier, Before merging or pushing to main, Full tier headings present. The only change since the last report is the corrected case count (IN-01), which is now accurate. |
+| 2 | The light-tier commands actually select and pass real tests | VERIFIED | Carried forward: file-tag run (10 cases), `area=Core` loop (42), `[binaural]` (25). Re-checked now: Binaural folder lists 69 cases in the default build (README now says 69); `SpatialCoreUITests` passes 18 cases (17 plus the new one). |
+| 3 | CLAUDE.md, handoff Done-when lists and the integration guide point at README instead of repeating the gate (D-03) | VERIFIED | Carried forward; no touched file in the new diff. |
+| 4 | PROJECT.md records P7-D01 and P7-D02 | VERIFIED | Carried forward; PROJECT.md not in the new diff. |
+| 5 | No live doc says a tag push starts CI; ci.yml is manual-only (D-04) | VERIFIED | Carried forward; re-checked: the non-comment diff of ci.yml against 91c0f30 is empty. |
+| 6 | Landing order and handoff rule are written (D-05, D-06) | VERIFIED | Carried forward. |
+| 7 | #37 stale facts fixed (D-07..D-10) | VERIFIED | Carried forward; the new diff touches none of those files. |
+| 8 | #13 PresetBrowser contract documented accurately (D-11) | VERIFIED | The contract text now matches the code more closely: the separator rule is exact (IN-03) and the Escape promise ("Cancel, Escape or a click outside ... nothing on Escape" in the header comment and the guide table row) is now true when the name field has focus, because of the WR-01 fix. Header declarations are unchanged from base. The earlier claim "`git diff 91c0f30 HEAD -- src` is empty" is no longer true (see Prohibitions). |
+| 9 | #24 and #9 closed with evidence; #42/#37/#13 deliberately open with a correct close-out file (D-12..D-14) | VERIFIED | Re-checked with read-only `gh`: #24 CLOSED, #9 CLOSED, #42, #37, #13 OPEN. Newest Actions run is 2026-10-24T16:09Z, before the phase base. 07-CLOSEOUT.md not in the new diff. |
 
 **Score:** 9/9 truths verified (0 present, behavior-unverified)
 
@@ -61,21 +89,34 @@ ROADMAP.md lists no separate Success Criteria for Phase 7, only the goal and the
 
 | Prohibition | Tier | Status | Evidence |
 |-------------|------|--------|----------|
-| No GitHub Actions run started | judgment | RESOLVED | `gh run list` newest run is 2026-10-24T16:09Z, before the phase base commit (2026-10-25T08:52+01:00). |
-| No edits in OSD / OSP repos | judgment | RESOLVED | Phase diff touches only this repository; no consumer comments posted. |
-| No engine/API/test logic change | test | RESOLVED | No change under src/ or include/SpatialCore/Engine; the comment-stripped diffs show the shim headers identical, PresetBrowser.h declarations unchanged, and the test file differing only in the one title. |
+| No GitHub Actions run started | judgment | RESOLVED | Newest run predates the phase base commit. |
+| No edits in OSD / OSP repos | judgment | RESOLVED | Diff touches only this repository. |
 | PresetBrowser not recorded as unsuitable | judgment | RESOLVED | Contract documented as is. |
+| 07-03: "No change to PresetBrowser behaviour or API ... src/UI/PresetBrowser.cpp is not edited" (check: `git diff 91c0f30 -- src/UI/PresetBrowser.cpp` is empty) | test | **FLAGGED: not satisfied by its letter** | The WR-01 fix adds three lines to `src/UI/PresetBrowser.cpp` (one statement, `nameEditor.onEscapeKey = [this] { dismiss(); };`, plus a comment). The public API and header declarations are unchanged (header diff is comments only; `PresetSaveOverlay::dismiss` is existing), but the behaviour of the overlay changes: Escape in the name field now dismisses it. This was the review's own recommended fix (07-REVIEW.md WR-01, option 1) and it makes the code match the contract the phase documents, so it serves the "no doc states a stale fact" clause. It is still a deliberate departure from a stated plan prohibition, so it is routed to the maintainer, not absorbed. |
+| 07-01..04: no engine/API/test-logic change | test | RESOLVED | Nothing under `src/Engine` or `include/SpatialCore/Engine`. The only new test is additive; the one existing-test change (the title in BinauralRendererTests.cpp) is unchanged since the last report. |
+
+**This looks intentional.** To accept the deviation, add to the frontmatter:
+
+```yaml
+overrides:
+  - must_have: "No change to PresetBrowser behaviour or API: src/UI/PresetBrowser.cpp is not edited"
+    reason: "Review fix WR-01 wires nameEditor.onEscapeKey to dismiss() so the documented Escape behaviour is true; no API change, covered by tests/UI/PresetSaveOverlayTests.cpp"
+    accepted_by: "{maintainer}"
+    accepted_at: "{ISO timestamp}"
+```
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| README.md | `#### Light tier` and the other tier headings | VERIFIED | Present, wired (referenced by CLAUDE.md, integration guide, ci.yml header, handoffs). |
-| CLAUDE.md | P7-D01 pointer, landing-order sentence | VERIFIED | Present. |
-| .planning/PROJECT.md | `\| P7-D01 \|`, `\| P7-D02 \|` | VERIFIED | Present. |
-| .planning/HANDOFF-ambisonics-fix.md | light-tier Done-when | VERIFIED | Present. |
-| PresetBrowser.h / integration-guide.md | contract | VERIFIED | Present and consistent with the .cpp. |
-| 07-CLOSEOUT.md | `gh issue close 42` and the rest | VERIFIED | Present. |
+| README.md | tier headings, correct counts | VERIFIED | Present; case count now correct. |
+| CLAUDE.md | P7-D01 pointer, landing-order sentence | VERIFIED | Carried forward. |
+| .planning/PROJECT.md | P7-D01, P7-D02 rows | VERIFIED | Carried forward. |
+| .planning/HANDOFF-ambisonics-fix.md | light-tier Done-when | VERIFIED | Carried forward. |
+| PresetBrowser.h / integration-guide.md | contract | VERIFIED | Consistent with the .cpp, including Escape and the separator rule. |
+| src/UI/PresetBrowser.cpp | Escape wiring | VERIFIED | `onEscapeKey` set at L49, in the constructor before `addAndMakeVisible`. |
+| tests/UI/PresetSaveOverlayTests.cpp | registered, runs, passes | VERIFIED | In CMake, listed in the binary, passes. Not a stub: it asserts the wiring and the no-save outcome. |
+| 07-CLOSEOUT.md | the five `gh` commands | VERIFIED | Carried forward. |
 
 ### Key Link Verification
 
@@ -86,37 +127,44 @@ ROADMAP.md lists no separate Success Criteria for Phase 7, only the goal and the
 | integration-guide Testing | README "Local test gate" | Testing paragraph | WIRED |
 | ci.yml header | README "Local test gate" | comment | WIRED |
 | CLOSEOUT comments | PROJECT.md P7-D01/P7-D02 | cited decision ids | WIRED |
+| PresetSaveOverlayTests.cpp | tests/CMakeLists.txt `SpatialCoreUITests` | source list | WIRED |
+| nameEditor.onEscapeKey | PresetSaveOverlay::dismiss | constructor lambda | WIRED |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| File-tag light tier | `SpatialCoreTests --filenames-as-tags "[#BinauralRendererTests]~[.]"` | 414 assertions, 10 cases passed | PASS |
-| Folder loop | README `area=Core` loop | 42 cases passed | PASS |
-| UI light tier | `SpatialCoreUITests` | 17 cases passed | PASS |
-| Renamed test | `SpatialCoreTests "*outputs silence"` | 1 case passed | PASS |
-| Full Release ctest | not re-run by the verifier | orchestrator reports 426/426 after wave 1 | accepted as supplied |
+| New Escape test | `SpatialCoreUITests "[preset]"` | 1 case, 6 assertions | PASS |
+| UI suite | `SpatialCoreUITests` | 18 cases, 158 assertions | PASS |
+| Binaural default-build count | `--filenames-as-tags --list-tests` over `tests/Binaural/*.cpp` | 69 cases; `[binaural]` 25 | PASS |
+| Full Release ctest | not re-run by the verifier | orchestrator reports 427/427 after the fixes | accepted as supplied |
 
 ### Anti-Patterns Found
 
-No TBD/FIXME/XXX markers introduced by the phase in the modified code files; changes are comments and docs.
+No TBD/FIXME/XXX introduced by the new diff.
 
 | File | Pattern | Severity | Impact |
 |------|---------|----------|--------|
-| .planning/PROJECT.md D-18 row | still says the `[rt]` trap "stays in the everyday Release gate" | Info | The row is a dated decision that P7-D01 explicitly keeps (its text says the trap runs in the pre-main ctest); wording is loosely stale but not a false fact. |
-| .planning/RETROSPECTIVE.md L33, MILESTONES.md L63/L73 | "everyday gate" | Info | Dated history, excluded by the plan's own sweep scope. |
+| .planning/PROJECT.md D-18 row | says the `[rt]` trap "stays in the everyday Release gate" | Info | Dated decision that P7-D01 keeps; loosely stale wording, not a false fact. |
+| .planning/RETROSPECTIVE.md, MILESTONES.md | "everyday gate" | Info | Dated history, outside the sweep scope. |
 
 ### Requirements Coverage
 
-No REQUIREMENTS.md exists. Issue and decision coverage: #42 (D-01..D-06) covered by truths 1-6; #37 (D-07..D-10) truth 7; #13 (D-11) truth 8; #24, #9 (D-12, D-13) and D-14 truth 9. No orphaned items.
+No REQUIREMENTS.md exists. Issue and decision coverage is unchanged: #42 (D-01..D-06) truths 1-6; #37 (D-07..D-10) truth 7; #13 (D-11) truth 8; #24, #9 (D-12, D-13) and D-14 truth 9. No orphaned items.
 
 ### Human Verification Required
 
-None. The post-merge close-out (running the five commands in 07-CLOSEOUT.md with the merge SHA) is a planned follow-up step (D-14), not a verification gap.
+### 1. Accept the PresetBrowser.cpp edit as a recorded deviation
+
+**Test:** Read the three-line change in `src/UI/PresetBrowser.cpp` (L47-49) and decide whether it stays in Phase 7.
+**Expected:** Either accept it (add the override above, status becomes `passed`) or move it out of the phase.
+**Why human:** A plan prohibition with a test-tier check now fails by its letter; deviations from a prohibition are the maintainer's call. Automated checks otherwise all pass, and the change is small, correct against the JUCE source, and tested.
+
+The post-merge close-out (running the five commands in 07-CLOSEOUT.md with the merge SHA) remains a planned follow-up (D-14), not a verification gap.
 
 ### Gaps Summary
 
-No gaps. The phase goal is achieved in the codebase: the tier policy is written once and its commands work, the CI wording and stale facts are corrected, the PresetBrowser contract matches the code, #24 and #9 are closed, and the post-merge commands for the remaining tickets and the two consumer notes are ready and well formed.
+No gaps. The phase goal is achieved: the tier policy is written once and its commands work, the CI wording and stale facts are corrected, the PresetBrowser contract now matches the code (the Escape promise is true after WR-01, the separator rule and the case count are exact), #24 and #9 are closed, and the post-merge commands for the remaining tickets and consumer notes are ready. The only open item is the maintainer's acceptance of the one deliberate `src/UI/PresetBrowser.cpp` edit.
 
 ---
 
