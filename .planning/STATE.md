@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or backlog 999.x
+**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or v1.1 Phases 7-13 (all 25 open GitHub issues grouped into 7 phases on 2026-10-25; next: /gsd-discuss-phase 7)
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
 - SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness (999.3), #39 7.1.4 below-horizon listening (999.1), #40 gap bridge + DBAP listening (999.2), #41 Simple-mode listening (999.4)
