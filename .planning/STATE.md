@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v0.6.0
 milestone_name: Pre-release follow-up
-current_phase: 07
+current_phase: 7
 current_phase_name: Process, docs and consumer close-out
-status: Phase 7 context gathered
+status: executing
 stopped_at: Phase 7 context gathered
-last_updated: "2026-10-25T08:28:11.430Z"
+last_updated: "2026-10-25T08:37:17.987Z"
 last_activity: 2026-10-25
-last_activity_desc: "Phase 7 context gathered; #24 and #9 closed"
-state_head: 91c0f30fcf9d392b3abd83169ec7c0ec12b3eb35
+last_activity_desc: Phase 7 execution started
+state_head: d164f5743a3d3a71a73ab44e9aad39afedda08ff
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 4
   completed_plans: 52
-  percent: 0
+  percent: 86
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v0.5.0 shipped and archived 2026-10-24 (labelled v1.0.0 until 2026-10-25; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Milestone v0.6.0 Phase 7 (process, docs and consumer close-out): context gathered 2026-10-25; next: /gsd-plan-phase 7
+**Current focus:** Phase 7 — Process, docs and consumer close-out
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
 - SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness, #39 7.1.4 below-horizon listening, #40 gap bridge + DBAP listening, #41 Simple-mode listening (all now in v0.6.0 Phases 7-13; ROADMAP lists the phase for each)
@@ -35,10 +35,10 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 ## Current Position
 
-Phase: 07 (Process, docs and consumer close-out) — READY TO EXECUTE
-Plan: — (not planned yet)
-Status: Context gathered (07-CONTEXT.md)
-Last activity: 2026-10-25 — Phase 7 context gathered: two test tiers decided (light while iterating, full Release ctest before main, full tier before a release); #24 and #9 closed
+Phase: 7 (Process, docs and consumer close-out) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 7
+Last activity: 2026-10-25 — Phase 7 execution started
 
 ## Performance Metrics
 
