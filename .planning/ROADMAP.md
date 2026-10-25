@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0.0 SpatialCore v1.0.0 extraction milestone** — Phases 1-6 (shipped 2026-10-24; milestone label only, library version stays 0.5.0, no git tag)
-- 🚧 **v1.1 Post-extraction follow-up** — Phases 7-13 (planned 2026-10-25; milestone label only, the library stays 0.x)
+- 🚧 **v0.6.0 Pre-release follow-up** — Phases 7-13 (planned 2026-10-25; nothing is released yet, so SpatialCore stays 0.x until OpenSpatialDelay 2.0.0 ships on it)
 
 ## Phases
 
@@ -17,9 +17,13 @@
 - [x] Phase 5: Realtime Safety Hardening (8/8 plans) — completed 2026-10-17
 - [x] Phase 6: Consumer Readiness & CI (10/10 plans) — completed 2026-10-24
 
-Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25): `.planning## 🚧 v1.1 Post-extraction follow-up (Phases 7-13)
+Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25): `.planning/milestones/v1.0.0-REQUIREMENTS.md`. Audit (tech_debt): `.planning/milestones/v1.0.0-MILESTONE-AUDIT.md`.
 
-Built from all 25 GitHub issues open on 2026-10-25. Phases are grouped by kind of work and sized to roughly 6-11 hours of agent work each (about 62 hours in total); hours are estimates, and owner listening time is not counted. Order: process first, because it sets the gate every later phase runs; release candidate last.
+</details>
+
+## 🚧 v0.6.0 Pre-release follow-up (Phases 7-13)
+
+Built from all 25 GitHub issues open on 2026-10-25. Still open to intake: new issues filed from OpenSpatialDelay or OpenSpatialPanner go into the matching phase below rather than a new one. Phases are grouped by kind of work and sized to roughly 6-11 hours of agent work each (about 62 hours in total); hours are estimates, and owner listening time is not counted. Order: process first, because it sets the gate every later phase runs; release candidate last.
 
 - [ ] Phase 7: Process, docs and consumer close-out (~6 h)
 - [ ] Phase 8: Panning correctness — Ambisonics and VBAP (~9 h)
@@ -102,10 +106,6 @@ Built from all 25 GitHub issues open on 2026-10-25. Phases are grouped by kind o
 - [ ] #35 Engine coverage >= 93% on the merged tree; watch `[hrtf-switch][churn]`; realtime-safety check (TSan + `[rt]`); first CI run since 310fb93; full Debug run; `SPATIALCORE_EMBED_ALL_HRTF=OFF` build. The tag needs the owner's go-ahead (it starts the GitHub build)
 - [ ] #36 Read the first Linux/Windows run; widen or restructure only the tight-tolerance tests and golden hashes that fail; note the reason on the rest
 - [ ] #34 Measure the JUCE fallback FFT `SpinLock` (shared `SharedFFTCache`) with N instances at 48 kHz / 32 samples on Linux and/or Windows; decide accept vs per-instance FFT; update CLAUDE.md, README and `SharedFFTCache.h`
-OSP's own CI workflow runs green (OpenSpatialPanner#4)
-
-Plans:
-- [ ] TBD (promote with /gsd-review-backlog when ready)
 
 ---
 *Roadmap rewritten 2026-08-10 against branch `gsd-remap`, after the original was found to have been planned against a branch missing 42 commits.*

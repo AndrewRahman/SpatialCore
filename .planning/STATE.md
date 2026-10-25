@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v1.0.0 shipped and archived 2026-10-24 (label only; library stays 0.5.0; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or v1.1 Phases 7-13 (all 25 open GitHub issues grouped into 7 phases on 2026-10-25; next: /gsd-discuss-phase 7)
+**Current focus:** Planning next milestone — next options: bump SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or v0.6.0 Phases 7-13 (all 25 open GitHub issues grouped into 7 phases on 2026-10-25; next: /gsd-discuss-phase 7)
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
-- SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness (999.3), #39 7.1.4 below-horizon listening (999.1), #40 gap bridge + DBAP listening (999.2), #41 Simple-mode listening (999.4)
+- SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness, #39 7.1.4 below-horizon listening, #40 gap bridge + DBAP listening, #41 Simple-mode listening (all now in v0.6.0 Phases 7-13; ROADMAP lists the phase for each)
 - Still open: SpatialCore #22, #31, #32 (Ambisonics rotation, missed by the first audit pass)
 - Consumers: AndrewRahman/openspatialdelay#23 (pin bump to 38bd5f5 + migration), AndrewRahman/OpenSpatialPanner#4 (pin bump from ca8c88b to 38bd5f5)
 
@@ -229,7 +229,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - **[Phase 2] CI "green" is test-vacuous.** RESOLVED in Phase 6 (06-01, 06-05): ctest from the build root now finds the tests, `macos-gate` runs the whole suite (416 tests) on an Apple Silicon runner in Release (the arm64 leg), and `linux-tests` runs it on Ubuntu. Original finding: CI passed at `879a8fe`, but its ctest step ran from the build root and found zero tests (no top-level `enable_testing()`).
 - **[Phase 3] `HutubsPP2Tests.cpp:47`** — RESOLVED in Phase 3 (03-02 tolerance fingerprints); Debug and Release 266/266.
 - **[Phase 3] BUG-01** — DirectBinaural elevation and front/back cues are deliberately unasserted in `PanningLawTests.cpp`; Phase 3 adds them.
-- **[Phase 2] Listening checks pending** — ROADMAP backlog 999.1 (OSD 7.1.4 below-horizon hold) and 999.2 (WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
+- **[Phase 2] Listening checks pending** — v0.6.0 Phase 8 (#39 OSD 7.1.4 below-horizon hold; #40 WR-05 gap bridge, WR-08 DBAP broken distance). Need ears, not tests.
 - **[Phase 2] OSD-side follow-ups** — release notes for the audible changes, four OSD docs describing VBIP as squared gains, delete OSD's local SH/VBAP copies at migration (`02-09-SUMMARY.md`). Tracked in PROJECT.md External Dependencies.
 
 - **[Phase 4] Code review warnings** — RESOLVED 2026-10-05 by `/gsd-code-review 04 --fix` (5 review rounds, ledger 18/18 fixed, `04-REVIEW.md` clean). `wrapAzimuth` is bounded; the Windows branches of both `findFreeUdpPort` copies are uncompiled until Phase 6 CI.
