@@ -25,7 +25,7 @@ Full phase detail: `.planning/milestones/v0.5.0-ROADMAP.md`. Requirements (25/25
 
 Built from all 25 GitHub issues open on 2026-10-25. Still open to intake: new issues filed from OpenSpatialDelay or OpenSpatialPanner go into the matching phase below rather than a new one. Phases are grouped by kind of work and sized to roughly 6-11 hours of agent work each (about 62 hours in total); hours are estimates, and owner listening time is not counted. Order: process first, because it sets the gate every later phase runs; release candidate last.
 
-- [ ] Phase 7: Process, docs and consumer close-out (~6 h) — context gathered 2026-10-25
+- [x] Phase 7: Process, docs and consumer close-out (~6 h) — context gathered 2026-10-25 (completed 2026-10-25)
 - [ ] Phase 8: Panning correctness — Ambisonics and VBAP (~9 h)
 - [ ] Phase 9: Per-object gain parameters — focus, spread, distance curves, metres (~11 h)
 - [ ] Phase 10: Per-object DSP stages — air absorption and doppler (~10 h)
@@ -45,7 +45,7 @@ Built from all 25 GitHub issues open on 2026-10-25. Still open to intake: new is
 - [x] #24 (closed 2026-10-25: openspatialdelay#23 done, OSD main reads `getBlockLayout()` at pin 2f16bae) SpatialCore half shipped (cae34a9, `getBlockLayout()`); hand the rest to OSD (openspatialdelay#23: replace `getActiveLayout()` in `processBlock()` before bumping past `ab60c25`)
 - [x] #9 SpatialCore CI green on JUCE 9.0.0 (runs 39058330902, 39074814315); closed 2026-10-25 on that evidence (user decision); OSP's own CI stays in OpenSpatialPanner#4
 
-**Plans:** 4/4 plans executed (wave 1: 07-01, 07-02, 07-03; wave 2: 07-04)
+**Plans:** 4/4 plans complete (wave 1: 07-01, 07-02, 07-03; wave 2: 07-04)
 
 Plans:
 **Wave 1**
