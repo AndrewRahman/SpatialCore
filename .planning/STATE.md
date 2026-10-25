@@ -5,11 +5,11 @@ milestone_name: Pre-release follow-up
 current_phase: 7
 current_phase_name: Process, docs and consumer close-out
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-10-25T08:40:28.427Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-10-25T08:43:09.798Z"
 last_activity: 2026-10-25
 last_activity_desc: Phase 7 execution started
-state_head: 60544383f727bec00398fbbcbb8c804395c5d748
+state_head: 4868201a0540b468a1571fd90ad993f42b1289d9
 progress:
   total_phases: 7
   completed_phases: 6
@@ -36,7 +36,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 ## Current Position
 
 Phase: 7 (Process, docs and consumer close-out) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-10-25 — Phase 7 execution started
 
@@ -121,6 +121,7 @@ Last activity: 2026-10-25 — Phase 7 execution started
 | Phase 06 P09 | 8 min | 3 tasks | 9 files |
 | Phase 06 P10 | 40 min | 3 tasks | 12 files |
 | Phase 7 P01 | 15 min | 3 tasks | 4 files |
+| Phase 7 P07-02 | 10min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -216,6 +217,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Quick 261024-qlw]: P999.5-D01: the Ambisonics output-format stream is plain AmbiX SN3D (evalSH x signal x distance and tap gains): the near-field shelf (inverted against Daniel 2003) and the encoder-side max-rE (applied twice by IEM decoders) are removed; max-rE stays in AmbisonicsAlgorithm, [ambi-pin] and the codec; per-block SH interpolation and the public API are unchanged (SpatialCore#32 open until openspatialdelay#22 ships; closed SpatialCore#21 guarded by [sc19])
 - [Phase 7]: P7-D01: tests run in tiers chosen by the moment (README Local test gate is the single source)
 - [Phase 7]: P7-D02: SpatialCore lands first, consumers bump pins in their own repos; handoffs are consumer issues using the light tier
+- [Phase 7]: 07-02: processBlock row in spatial-audio-dsp skill labelled a dated 12-source figure, not a measurement (no measurement record exists, D-09)
 
 ### Pending Todos
 
@@ -283,8 +285,8 @@ Acknowledged at the v0.5.0 milestone close (2026-10-24) through `audit-open ackn
 
 ## Session Continuity
 
-Last session: 2026-10-25T08:40:28.410Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-10-25T08:43:09.780Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
 Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
