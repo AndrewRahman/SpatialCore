@@ -1,4 +1,5 @@
 Written 2026-10-24 at the end of the session that found the cause. Run A and B in separate sessions; they don't depend on each other.
+Done-when lists amended 2026-10-25 to the test tiers (P7-D01, P7-D02): they point at README "Local test gate" instead of naming the full gate. Session A had already shipped, as quick task 261024-qlw, under the earlier gate.
 
 ## Session A — SpatialCore (run in a SpatialCore workspace)
 
@@ -21,7 +22,7 @@ Orchestrate only: no file reading, editing, building or test running in the main
 4. Docs: CLAUDE.md, README and any doc describing the HOA path; record the decision in `.planning` (decisions table) referencing #32 and closed #21.
 
 ## Done when
-- Full local gate passes (README "Local test gate": Debug, both executables; Release, `ctest --test-dir build-release/tests`), plus `[rt]` in Release and the `build-tsan` realtime-safety check (README "Realtime-safety check") because the audio path changed.
+- Tests per README "Local test gate": the light tier while iterating (`area=Engine` and `area=IO`, which hold the Ambisonics output and codec tests), then the full Release `ctest` before merging to `main`. The full tier (Debug run, `build-tsan`) is release prep and not part of this handoff.
 - Atomic commits on a new branch from this branch, pushed (pushing a non-main branch starts no CI). Comment the result on #32. Leave #32 open until the OSD fix (openspatialdelay#22) has shipped and the pre-release speaker check passes.
 - Tick the SpatialCore follow-up in ROADMAP Phase 999.5.
 - Report: gate counts in Debug and Release, the fail-on-old-code evidence, the rebaselined tests.
@@ -48,7 +49,7 @@ Orchestrate only: no file reading, editing, building or test running in the main
 
 ## Done when
 - `auval -v` PASS with 2→50 settable, verbatim output captured. Test bundles get a distinct subtype and are removed from ~/Library/Audio/Plug-Ins/Components afterwards; never overwrite an installed dev build.
-- VST3 still builds; OSD's own tests pass.
+- VST3 still builds; OSD's tests for the code you changed pass (the light tier; whether OSD adopts SpatialCore's tiers is OSD's decision, P7-D02).
 - Atomic commits, pushed if pushing that branch starts no CI (check the workflow triggers first; if it would, ask). Comment the result on #22 and on SpatialCore#32.
 - Report: auval before/after, test counts, and the one remaining step for me: the speaker-rig check at the pre-release review.
 ```

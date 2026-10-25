@@ -160,7 +160,7 @@ add_subdirectory(SpatialCore)
 target_link_libraries(MyPlugin PRIVATE SpatialCore SpatialCoreUI)
 ```
 A consumer includes `<SpatialCore/SpatialCore.h>` and, when it links SpatialCoreUI, `<SpatialCore/SpatialCoreUI.h>` (D-02; the individual headers still work). `examples/harness/` is the worked reference: a throwaway consumer built from a real submodule of the GitHub remote at a pushed commit, run by `macos-gate` in a manual CI run (`examples/harness/scripts/build-consumer.sh <commit>`). Never apply `-ffast-math` globally before `add_subdirectory(SpatialCore)` (a compile error on purpose); apply it to the consumer's own targets only.
-A SpatialCore change reaches a consumer only after: commit + push here, then bump the consumer's submodule pointer (`git add SpatialCore && git commit` in the consumer). Consumers today: OpenSpatialDelay (live) and OpenSpatialPanner (next).
+A SpatialCore change reaches a consumer only after: commit + push here, then bump the consumer's submodule pointer (`git add SpatialCore && git commit` in the consumer). Work a consumer must do is handed over as an issue in the consumer's repo, never as edits from here, and its "Done when" asks for the light tier unless the handoff is release prep (P7-D02; README "Updating SpatialCore in a consumer"). Consumers today: OpenSpatialDelay (live) and OpenSpatialPanner (next).
 
 ## Skills
 15 JUCE/DSP skills are available at project level in `.claude/skills/` — they load automatically in this repo.

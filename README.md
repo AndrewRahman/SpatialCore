@@ -271,6 +271,8 @@ A change to SpatialCore only reaches a plugin after you:
 
 The consumer builds whatever commit its submodule pointer references — editing SpatialCore in place without bumping the pointer changes nothing in a clean build (this is what `build_version.sh` and CI both do).
 
+**Landing order and handoffs (decision P7-D02, 2026-10-25).** A change always lands in SpatialCore first: commit and push it here, then each consumer bumps its submodule pin in its own repo, in its own commit. Work a consumer has to do is handed over as an issue in that consumer's repo (as openspatialdelay#23 and OpenSpatialPanner#4 were), never as edits made from a SpatialCore session. The handoff's "Done when" asks for the light tier of "Local test gate" above, or the consumer's own equivalent, unless the handoff is release prep, which asks for the full tier. Whether OpenSpatialDelay and OpenSpatialPanner adopt the same tiers is decided in their own repos.
+
 ## License
 
 Licensed under **[GPL-3.0](LICENSE)**. SpatialCore is open source and is not sold; there is no commercial licence.
