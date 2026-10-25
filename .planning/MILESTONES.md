@@ -1,12 +1,12 @@
 # Milestones
 
-## v1.0.0 SpatialCore v1.0.0 extraction milestone (Shipped: 2026-10-24)
+## v0.5.0 SpatialCore extraction milestone (Shipped: 2026-10-24)
 
 **Phases completed:** 6 phases, 52 plans, 124 tasks
 
-**Delivered:** The shared spatial audio engine, extracted from OpenSpatialDelay and verified: 8 algorithms, 23 output formats, 15 layouts, embedded HRTF data, one-call profile switching, a realtime-safe audio path, a consumer harness and CI. Audit result: tech_debt, 25/25 requirements, 16/16 integration, 6/6 flows (`milestones/v1.0.0-MILESTONE-AUDIT.md`).
+**Delivered:** The shared spatial audio engine, extracted from OpenSpatialDelay and verified: 8 algorithms, 23 output formats, 15 layouts, embedded HRTF data, one-call profile switching, a realtime-safe audio path, a consumer harness and CI. Audit result: tech_debt, 25/25 requirements, 16/16 integration, 6/6 flows (`milestones/v0.5.0-MILESTONE-AUDIT.md`).
 
-**Version note:** v1.0.0 is a milestone label only. The library version stays 0.5.0 until OpenSpatialDelay 2.0.0 ships on SpatialCore, No git tag was made at close; tag `v0.5.0` was added later on main `17224af` (pushed 2026-10-25). It started no CI run, because that commit's message contains `[skip ci]` (a `v*` tag otherwise starts GitHub CI under D-20).
+**Version note:** the milestone label matches the library version, 0.5.0 (relabelled from v1.0.0 on 2026-10-25: nothing is released yet, so SpatialCore stays 0.x until OpenSpatialDelay 2.0.0 ships on it). No git tag was made at close; tag `v0.5.0` was added later on main `17224af` (pushed 2026-10-25). It started no CI run, because that commit's message contains `[skip ci]` (a `v*` tag otherwise starts GitHub CI under D-20).
 
 **Known verification overrides:** 10 newly acknowledged, 0 carried forward from a prior close (see STATE.md Deferred Items; all 10 are phase deferred-items bullets, each fixed or accepted per the audit's "Open-artifact triage"). Closeout type: override_closeout.
 
@@ -14,7 +14,7 @@
 
 **Stats:**
 - 6 phases, 52 plans, 124 tasks
-- Phase dirs archived to `milestones/v1.0.0-phases/`
+- Phase dirs archived to `milestones/v0.5.0-phases/`
 
 **What's next:** bump the SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or work backlog 999.x. First release candidate: push a `v*` tag so CI runs, measure coverage, run the realtime-safety check.
 

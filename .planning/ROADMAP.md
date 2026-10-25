@@ -2,13 +2,13 @@
 
 ## Milestones
 
-- ✅ **v1.0.0 SpatialCore v1.0.0 extraction milestone** — Phases 1-6 (shipped 2026-10-24; milestone label only, library version stays 0.5.0, no git tag)
+- ✅ **v0.5.0 SpatialCore extraction milestone** — Phases 1-6 (shipped 2026-10-24; tag `v0.5.0` on main `17224af`; labelled v1.0.0 until 2026-10-25)
 - 🚧 **v0.6.0 Pre-release follow-up** — Phases 7-13 (planned 2026-10-25; nothing is released yet, so SpatialCore stays 0.x until OpenSpatialDelay 2.0.0 ships on it)
 
 ## Phases
 
 <details>
-<summary>✅ v1.0.0 SpatialCore v1.0.0 extraction milestone (Phases 1-6) — SHIPPED 2026-10-24</summary>
+<summary>✅ v0.5.0 SpatialCore extraction milestone (Phases 1-6) — SHIPPED 2026-10-24</summary>
 
 - [x] Phase 1: Documentation Truth & Contract Freeze (5/5 plans) — completed 2026-08-15
 - [x] Phase 2: Algorithm & Format Verification (10/10 plans) — completed 2026-10-04
@@ -17,7 +17,7 @@
 - [x] Phase 5: Realtime Safety Hardening (8/8 plans) — completed 2026-10-17
 - [x] Phase 6: Consumer Readiness & CI (10/10 plans) — completed 2026-10-24
 
-Full phase detail: `.planning/milestones/v1.0.0-ROADMAP.md`. Requirements (25/25): `.planning/milestones/v1.0.0-REQUIREMENTS.md`. Audit (tech_debt): `.planning/milestones/v1.0.0-MILESTONE-AUDIT.md`.
+Full phase detail: `.planning/milestones/v0.5.0-ROADMAP.md`. Requirements (25/25): `.planning/milestones/v0.5.0-REQUIREMENTS.md`. Audit (tech_debt): `.planning/milestones/v0.5.0-MILESTONE-AUDIT.md`.
 
 </details>
 
@@ -94,7 +94,7 @@ Built from all 25 GitHub issues open on 2026-10-25. Still open to intake: new is
 **Issues:** #38, #41
 **Estimate:** ~10 h, plus owner listening
 **Work:**
-- [ ] #38 "Import..." as the last item of the profile dropdown, copying into a personal library with a display name; a session missing the file plays KEMAR with a warning and keeps the choice; a perceived-loudness standard (pink noise, ear-weighted, all directions) applied to custom and built-in profiles, with an OSD release note; shared `SpatialCoreUI` widget vs per-plugin UI. Constraints: indices never renumbered (D-07); the engine never writes to disk today. Decision record: `.planning/milestones/v1.0.0-phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` "Deferred Ideas"
+- [ ] #38 "Import..." as the last item of the profile dropdown, copying into a personal library with a display name; a session missing the file plays KEMAR with a warning and keeps the choice; a perceived-loudness standard (pink noise, ear-weighted, all directions) applied to custom and built-in profiles, with an OSD release note; shared `SpatialCoreUI` widget vs per-plugin UI. Constraints: indices never renumbered (D-07); the engine never writes to disk today. Decision record: `.planning/milestones/v0.5.0-phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` "Deferred Ideas"
 - [ ] #41 Owner listening on headphones: Simple mode ahead-to-overhead and front-to-back are audible, and ear-level front sounds as before
 
 ### Phase 13: First release candidate and Linux/Windows readiness

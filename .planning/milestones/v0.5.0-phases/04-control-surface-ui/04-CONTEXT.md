@@ -91,7 +91,7 @@ connector, full ADM-OSC query support beyond positions). See Deferred.
   The D-07 / D-09 sender changes do not change OSD's sound. They change what OSD sends on the wire
   (an initial send, query replies). List them in the same OSD release-note item.
 
-### Gaps closed after the v1.0.0 milestone audit (2026-10-05, `.planning/v1.0.0-MILESTONE-AUDIT.md`)
+### Gaps closed after the v1.0.0 milestone audit (2026-10-05, `.planning/v0.5.0-MILESTONE-AUDIT.md`)
 - **D-15:** **Fix the `-Wunused-parameter` warnings in `ADMOSCReceiver.h`.** The audit lists five such
   warnings (named but unused Listener parameters at `include/SpatialCore/OSC/ADMOSCReceiver.h:45,51`)
   in every OSD translation unit. Phase 4 already edits this file for D-08, so silence them there (e.g.
@@ -148,7 +148,7 @@ connector, full ADM-OSC query support beyond positions). See Deferred.
 ### Phase scope and requirements
 - `.planning/ROADMAP.md` §"Phase 4: Control Surface & UI" — goal, 4 success criteria, starting position
 - `.planning/REQUIREMENTS.md` — EXTR-04, EXTR-05, DATA-02 acceptance; DR-16 (abstract Listener, no processor pointer)
-- `.planning/v1.0.0-MILESTONE-AUDIT.md` — Phase 4 gaps (EXTR-04 route, EXTR-05, DATA-02 recording), CI-vacuous blocker, ADMOSCReceiver warnings
+- `.planning/v0.5.0-MILESTONE-AUDIT.md` — Phase 4 gaps (EXTR-04 route, EXTR-05, DATA-02 recording), CI-vacuous blocker, ADMOSCReceiver warnings
 - `.planning/PROJECT.md` — External Dependencies (OSD release-note follow-ups), Key Decisions table
 - `.planning/phases/03-binaural-defects-hrtf-packaging/03-CONTEXT.md` — D-02 "one behaviour, no legacy flag" precedent
 

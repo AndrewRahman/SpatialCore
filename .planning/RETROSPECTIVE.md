@@ -2,7 +2,7 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
-## Milestone: v1.0.0 — SpatialCore v1.0.0 extraction milestone
+## Milestone: v0.5.0 — SpatialCore extraction milestone
 
 **Shipped:** 2026-10-24
 **Phases:** 6 | **Plans:** 52 | **Sessions:** not tracked
@@ -31,7 +31,7 @@
 - Count contracts live in code and fail the build when out of date.
 - Every engine feature that changes behaviour is opt-in and default-off until the consumer migrates.
 - Heavy gates (Debug run, coverage, TSan, GitHub CI) run only for a release candidate; the everyday gate is Release build plus Release ctest (D-18, D-19, D-20).
-- Milestone label and library version are separate: v1.0.0 label, library 0.5.0.
+- Milestone label and library version match: v0.5.0 (labelled v1.0.0 until 2026-10-25; milestone labels stay 0.x until the first public release).
 
 ### Key Lessons
 1. Verify a documented number against the tree before planning on it.
@@ -52,13 +52,13 @@
 
 | Milestone | Sessions | Phases | Key Change |
 |-----------|----------|--------|------------|
-| v1.0.0 | n/a | 6 | Planning re-based on verified tree; heavy gates moved to release time (D-18/19/20) |
+| v0.5.0 | n/a | 6 | Planning re-based on verified tree; heavy gates moved to release time (D-18/19/20) |
 
 ### Cumulative Quality
 
 | Milestone | Tests | Coverage | Zero-Dep Additions |
 |-----------|-------|----------|-------------------|
-| v1.0.0 | 418 (Release, merged tree) | 94.19% engine (CI, 2026-10-17); UI 25.89% report-only | n/a |
+| v0.5.0 | 418 (Release, merged tree) | 94.19% engine (CI, 2026-10-17); UI 25.89% report-only | n/a |
 
 ### Top Lessons (Verified Across Milestones)
 

@@ -30,7 +30,7 @@ decomposed when their milestone opens.
 
 | Milestone | Success metric | Status |
 |-----------|----------------|--------|
-| **v1** | OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions | 🚧 SpatialCore side shipped as milestone v1.0.0 (2026-10-24, archived in `.planning/milestones/`); OSD migration is consumer-repo work and still open |
+| **v1** | OpenSpatialDelay ships on SpatialCore as a submodule with zero regressions | 🚧 SpatialCore side shipped as milestone v0.5.0 (2026-10-24, archived in `.planning/milestones/`); OSD migration is consumer-repo work and still open |
 | **v2** | A second plugin is built on SpatialCore from scratch, proving the API generalizes | 📋 Future |
 | **v3** | Public release under the Spatial-Media-Lab org with docs and a tagged v1.0 | 📋 Future |
 
@@ -38,35 +38,35 @@ decomposed when their milestone opens.
 
 ### Validated
 
-Shipped in milestone v1.0.0 (all 25, closed 2026-10-24). Full acceptance text in
-`.planning/milestones/v1.0.0-REQUIREMENTS.md`.
+Shipped in milestone v0.5.0 (all 25, closed 2026-10-24). Full acceptance text in
+`.planning/milestones/v0.5.0-REQUIREMENTS.md`.
 
-- ✓ **API-01** — algorithm count is 8, derived from `AllAlgorithmTypes` and frozen by `static_assert` — v1.0.0 (Phase 1)
-- ✓ **API-02** — `outputLimiter()` is the shipped tanh soft ceiling — v1.0.0 (Phase 1)
-- ✓ **API-03** — HRTF profile count is 5 — v1.0.0 (Phase 1)
-- ✓ **API-04 / API-05 / BUG-03** — 23 formats / 15 layouts match the tree; CLAUDE.md accurate; cross-repo issue references qualified — v1.0.0 (Phase 1)
-- ✓ **EXTR-01** — all 8 algorithms verified against independent oracles (textbook VBAP/VBIP/DBAP, ear 2.1.0); below-horizon VBAP follows ITU-R BS.2127 (EAR); VBIP is textbook DAFx-98; non-finite input never crashes playback — v1.0.0 (Phase 2)
-- ✓ **EXTR-03** — 23 formats resolve, 15 layouts populated, Ambisonics round-trips to order 6 with corrected SN3D at orders 4-6 and one decoder — v1.0.0 (Phase 2)
-- ✓ **VERIFY-01** — Ambisonics convention is AmbiX (ACN, SN3D, no Condon-Shortley phase), stated in code and docs — v1.0.0 (Phase 2)
-- ✓ **EXTR-02** — binaural rendering (HRTFDatabase, PartitionedConvolver, BinauralRenderer) measured-correct; sample-based crossfades — v1.0.0 (Phase 3)
-- ✓ **DATA-01** — five SOFA profiles embedded as BinaryData (Git LFS), resolved by shared folder, then embedded copy, then a reported error; one-call `setHRTFProfile` — v1.0.0 (Phase 3)
-- ✓ **BUG-01** — Simple binaural path separates front, rear, up and down through a cue bank; ear-level front half unchanged — v1.0.0 (Phase 3)
-- ✓ **BUG-02** — no artifacts at host blocks below 256 samples (sample-counted warm-up and crossfade) — v1.0.0 (Phase 3)
-- ✓ **EXTR-04** — ADM-OSC (all five address forms over real UDP), the self-clocked 30 Hz sender with query replies, and all 13 trajectory shapes forward and reverse each move a `RenderEngine` object — v1.0.0 (Phase 4)
-- ✓ **EXTR-05** — `SpatialMapComponent` drag, rings and elevation brightness proven in `SpatialCoreUITests` and through `RenderEngine`; demo screenshots approved at review — v1.0.0 (Phase 4)
-- ✓ **DATA-02** — the map loads its own embedded fonts and every embedded font equals its source file; the SAVE PRESET title keeps its original bold font by user ruling (D-22 rejected) — v1.0.0 (Phase 4)
-- ✓ **RTSF-01** — no allocation on the audio thread in Release, proven by the `[rt]` trap — v1.0.0 (Phase 5)
-- ✓ **RTSF-02** — `TrajectoryEngine` final positions are lock-free atomics — v1.0.0 (Phase 5)
-- ✓ **RTSF-03** — `HRTFDatabase` handle access thread-safe on the `setHRTFProfile` route (legacy route is detection-only) — v1.0.0 (Phase 5)
-- ✓ **RTSF-05** — audio path verified lock-free and realtime-safe (macOS Apple Silicon, in-process) — v1.0.0 (Phase 5)
-- ✓ **VERIFY-02** — `SharedFFTCache` safe across concurrent instances, TSan-clean (macOS Apple Silicon) — v1.0.0 (Phase 5)
-- ✓ **INTG-01** — a consumer can submodule, link and build against SpatialCore; throwaway consumer harness — v1.0.0 (Phase 6)
-- ✓ **INTG-02** — `getUnsuppliedGainsBlockCount()` stops `engineComputesGains` from silently no-opping — v1.0.0 (Phase 6)
-- ✓ **CI-01** — CI-verified against JUCE 9.0.0 (macos-gate, Linux tests, Windows build); runs on a `v*` tag or by hand (D-20) — v1.0.0 (Phase 6)
-- ✓ **TEST-01** — coverage tooling and a 93% engine rule in `scripts/coverage-targets.json` (94.19% measured on CI; not yet re-measured on the merged tree) — v1.0.0 (Phase 6)
+- ✓ **API-01** — algorithm count is 8, derived from `AllAlgorithmTypes` and frozen by `static_assert` — v0.5.0 (Phase 1)
+- ✓ **API-02** — `outputLimiter()` is the shipped tanh soft ceiling — v0.5.0 (Phase 1)
+- ✓ **API-03** — HRTF profile count is 5 — v0.5.0 (Phase 1)
+- ✓ **API-04 / API-05 / BUG-03** — 23 formats / 15 layouts match the tree; CLAUDE.md accurate; cross-repo issue references qualified — v0.5.0 (Phase 1)
+- ✓ **EXTR-01** — all 8 algorithms verified against independent oracles (textbook VBAP/VBIP/DBAP, ear 2.1.0); below-horizon VBAP follows ITU-R BS.2127 (EAR); VBIP is textbook DAFx-98; non-finite input never crashes playback — v0.5.0 (Phase 2)
+- ✓ **EXTR-03** — 23 formats resolve, 15 layouts populated, Ambisonics round-trips to order 6 with corrected SN3D at orders 4-6 and one decoder — v0.5.0 (Phase 2)
+- ✓ **VERIFY-01** — Ambisonics convention is AmbiX (ACN, SN3D, no Condon-Shortley phase), stated in code and docs — v0.5.0 (Phase 2)
+- ✓ **EXTR-02** — binaural rendering (HRTFDatabase, PartitionedConvolver, BinauralRenderer) measured-correct; sample-based crossfades — v0.5.0 (Phase 3)
+- ✓ **DATA-01** — five SOFA profiles embedded as BinaryData (Git LFS), resolved by shared folder, then embedded copy, then a reported error; one-call `setHRTFProfile` — v0.5.0 (Phase 3)
+- ✓ **BUG-01** — Simple binaural path separates front, rear, up and down through a cue bank; ear-level front half unchanged — v0.5.0 (Phase 3)
+- ✓ **BUG-02** — no artifacts at host blocks below 256 samples (sample-counted warm-up and crossfade) — v0.5.0 (Phase 3)
+- ✓ **EXTR-04** — ADM-OSC (all five address forms over real UDP), the self-clocked 30 Hz sender with query replies, and all 13 trajectory shapes forward and reverse each move a `RenderEngine` object — v0.5.0 (Phase 4)
+- ✓ **EXTR-05** — `SpatialMapComponent` drag, rings and elevation brightness proven in `SpatialCoreUITests` and through `RenderEngine`; demo screenshots approved at review — v0.5.0 (Phase 4)
+- ✓ **DATA-02** — the map loads its own embedded fonts and every embedded font equals its source file; the SAVE PRESET title keeps its original bold font by user ruling (D-22 rejected) — v0.5.0 (Phase 4)
+- ✓ **RTSF-01** — no allocation on the audio thread in Release, proven by the `[rt]` trap — v0.5.0 (Phase 5)
+- ✓ **RTSF-02** — `TrajectoryEngine` final positions are lock-free atomics — v0.5.0 (Phase 5)
+- ✓ **RTSF-03** — `HRTFDatabase` handle access thread-safe on the `setHRTFProfile` route (legacy route is detection-only) — v0.5.0 (Phase 5)
+- ✓ **RTSF-05** — audio path verified lock-free and realtime-safe (macOS Apple Silicon, in-process) — v0.5.0 (Phase 5)
+- ✓ **VERIFY-02** — `SharedFFTCache` safe across concurrent instances, TSan-clean (macOS Apple Silicon) — v0.5.0 (Phase 5)
+- ✓ **INTG-01** — a consumer can submodule, link and build against SpatialCore; throwaway consumer harness — v0.5.0 (Phase 6)
+- ✓ **INTG-02** — `getUnsuppliedGainsBlockCount()` stops `engineComputesGains` from silently no-opping — v0.5.0 (Phase 6)
+- ✓ **CI-01** — CI-verified against JUCE 9.0.0 (macos-gate, Linux tests, Windows build); runs on a `v*` tag or by hand (D-20) — v0.5.0 (Phase 6)
+- ✓ **TEST-01** — coverage tooling and a 93% engine rule in `scripts/coverage-targets.json` (94.19% measured on CI; not yet re-measured on the merged tree) — v0.5.0 (Phase 6)
 
 RTSF-04 was struck 2026-08-10 as a non-finding (`ADMOSCReceiver` already bounds-checks) and is not counted.
-Milestone v1.0.0 is a milestone label; the library stays 0.5.0 until OpenSpatialDelay 2.0.0 ships on it.
+Milestone v0.5.0 matches the library version (labelled v1.0.0 until 2026-10-25); SpatialCore stays 0.x until OpenSpatialDelay 2.0.0 ships on it.
 
 ### Active
 
@@ -232,7 +232,7 @@ normal planning decision.
 | D-18 | The coverage build and the realtime-safety check (`build-tsan`, `[rt]` trap) run only when preparing a public release; the 20 s `[rt]` trap stays in the everyday Release gate | ✓ Good — decided 2026-10-24 (user) |
 | D-19 | The full Debug run of both executables runs only when preparing a public release; the everyday gate is Release build plus Release `ctest` | ✓ Good — decided 2026-10-24 (user) |
 | D-20 | GitHub builds run only on a `v*` release tag or by hand; a branch push or pull request starts none, so `ci.yml` has had no run since 310fb93 | ✓ Decided 2026-10-24 — first real run waits for the first release candidate |
-| D-VER | Milestone label v1.0.0 is not the library version: SpatialCore stays `0.x` (0.5.0) and becomes `1.0.0` when OpenSpatialDelay 2.0.0 ships on it; no git tag at milestone close | ✓ Decided 2026-10-24 |
+| D-VER | Milestone labels follow the library version and stay `0.x` (first milestone v0.5.0, relabelled from v1.0.0 on 2026-10-25; next v0.6.0). SpatialCore becomes `1.0.0` when OpenSpatialDelay 2.0.0 ships on it | ✓ Decided 2026-10-24, amended 2026-10-25 |
 | D-BP | `main` has no branch protection; the local gate is the only check before a push, and a push to `main` waits for the user's go-ahead | ✓ Decided 2026-10-24 |
 | P6-DR9 | DR-9 (git submodule + `add_subdirectory`) proven by `examples/harness/`, a throwaway consumer built from a real submodule at a pushed commit | ✓ Good — Phase 6 (run on a release-tag or manual CI run) |
 | P999.5-D01 | The Ambisonics output-format stream is plain AmbiX SN3D: `evalSH` x signal x the block's distance gain x tap fade. No near-field shelf and no max-rE on that stream; max-rE stays in SpatialCore's own decode (`AmbisonicsAlgorithm`, `[ambi-pin]`). Per-block SH interpolation kept; public API source-compatible. Why: the shelf was inverted against Daniel 2003 (low-frequency gain r / 1.5, no per-order power) and max-rE was applied a second time by IEM decoders; research in `.planning/quick/261024-mhh-re-check-the-ambisonics-maths-end-to-end/research/`. References SpatialCore#32 (open until openspatialdelay#22 ships and the pre-release speaker check passes) and the closed SpatialCore#21 (the order-change defect of the very filters now removed; its `[sc19]` tests stay as order-change guards). | ✓ Decided 2026-10-24, quick 261024-qlw |
@@ -240,4 +240,4 @@ normal planning decision.
 </decisions>
 
 ---
-*Last updated: 2026-10-24 after v1.0.0 milestone and quick task 261024-qlw (plain AmbiX Ambisonics output)*
+*Last updated: 2026-10-24 after v0.5.0 milestone and quick task 261024-qlw (plain AmbiX Ambisonics output)*
