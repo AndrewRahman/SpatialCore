@@ -597,7 +597,7 @@ Follow the OpenSpatialDelay pattern:
 **Rules for the entry list**
 
 - Group entries by category. A category split across the list shows up twice.
-- Put factory entries before user entries within a category. One separator goes before the first user entry.
+- Put factory entries before user entries within a category. A separator is drawn before the first user entry only when a factory entry comes before it in that category.
 - Give every entry a non-empty category. An entry with an empty category is not shown.
 - Make `originalIndex` unique and 0 or more. The popup item ID is `originalIndex + 1`, and JUCE reserves 0 for "nothing picked" (an index of -1 asserts in Debug).
 
