@@ -5,11 +5,11 @@ milestone_name: Pre-release follow-up
 current_phase: 7
 current_phase_name: Process, docs and consumer close-out
 status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-10-25T08:37:17.987Z"
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-10-25T08:40:28.427Z"
 last_activity: 2026-10-25
 last_activity_desc: Phase 7 execution started
-state_head: d164f5743a3d3a71a73ab44e9aad39afedda08ff
+state_head: 60544383f727bec00398fbbcbb8c804395c5d748
 progress:
   total_phases: 7
   completed_phases: 6
@@ -36,8 +36,8 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 ## Current Position
 
 Phase: 7 (Process, docs and consumer close-out) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 7
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-10-25 — Phase 7 execution started
 
 ## Performance Metrics
@@ -120,6 +120,7 @@ Last activity: 2026-10-25 — Phase 7 execution started
 | Phase 06 P08 | 1 min | 2 tasks | 1 files |
 | Phase 06 P09 | 8 min | 3 tasks | 9 files |
 | Phase 06 P10 | 40 min | 3 tasks | 12 files |
+| Phase 7 P01 | 15 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -213,6 +214,8 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 06]: 06-10: Phase 6 goes onto main only after phase verification passes, and the push to main needs the user's go-ahead (it would start a GitHub build); no branch protection for now — User decision 2026-10-24 (no cloud builds). README and CLAUDE.md say main has no branch protection yet; origin/main was merged locally and the local gate passes on the merged tree (Release ctest 418 of 418, Debug 401 + 17 cases)
 - [Phase 06]: D-19 (user decision 2026-10-24): during development the everyday gate is the Release build + `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes, includes the 20 s [rt] trap) and `python3 -I scripts/coverage-report.py --self-test`. The full Debug run of both executables, the coverage build and the realtime-safety check (D-18) run only when preparing a public release. Recorded in README "Local test gate" and CLAUDE.md
 - [Quick 261024-qlw]: P999.5-D01: the Ambisonics output-format stream is plain AmbiX SN3D (evalSH x signal x distance and tap gains): the near-field shelf (inverted against Daniel 2003) and the encoder-side max-rE (applied twice by IEM decoders) are removed; max-rE stays in AmbisonicsAlgorithm, [ambi-pin] and the codec; per-block SH interpolation and the public API are unchanged (SpatialCore#32 open until openspatialdelay#22 ships; closed SpatialCore#21 guarded by [sc19])
+- [Phase 7]: P7-D01: tests run in tiers chosen by the moment (README Local test gate is the single source)
+- [Phase 7]: P7-D02: SpatialCore lands first, consumers bump pins in their own repos; handoffs are consumer issues using the light tier
 
 ### Pending Todos
 
@@ -280,9 +283,9 @@ Acknowledged at the v0.5.0 milestone close (2026-10-24) through `audit-open ackn
 
 ## Session Continuity
 
-Last session: 2026-10-25T07:51:10.857Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-process-docs-consumer-closeout/07-CONTEXT.md
+Last session: 2026-10-25T08:40:28.410Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
 Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
 ## Operator Next Steps
