@@ -165,6 +165,8 @@ Local, this Mac; no GitHub run started:
 
 CI-only rows (Linux tests, Windows build, ThreadSanitizer in realtime-nightly) are green from the recorded CI runs named in each row, re-read with `gh run view` on 2026-10-25. Those runs predate the later merges; the Phase 6 `ci.yml` has not run on GitHub since `310fb93` and runs on the first `v*` tag whose commit does not carry `[skip ci]` (#35).
 
+Re-check on main `f13ee59` (after PR #44, the plain AmbiX Ambisonics output, SpatialCore#32), same day: Release build exit 0; `ctest --test-dir build-release/tests --output-on-failure` exit 0, `100% tests passed out of 426`, 125 s; `[rt]` 2521 assertions in 47 cases, exit 0; coverage self-test exit 0. Coverage build and harness not re-run.
+
 ## Validation Audit 2026-10-25
 
 | Metric | Count |
