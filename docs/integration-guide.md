@@ -582,3 +582,66 @@ Follow the OpenSpatialDelay pattern:
 - Use `PresetData` struct with JSON serialization
 - Factory presets in C++ source, installed via build-time CLI tool
 - User presets in `User/` subfolder, never overwritten
+
+### PresetBrowser contract
+
+`spatialcore::PresetBrowser` (`<SpatialCore/UI/PresetBrowser.h>`, in `SpatialCoreUI`) is menu chrome only (SpatialCore#13, 2026-10-25). It shows a category and preset popup built from a list you give it, tells you which entry the user picked, and owns a `PresetSaveOverlay` that asks for a name. It stores no presets and keeps no state, so it has no state format, no save or load hook and no versioning: where presets live, how they are written and read, and how an old preset file is upgraded are your plugin's. OpenSpatialPanner's position presets will share a state format through SpatialCore in ROADMAP Phase 11 (SpatialCore#2), built on this contract. The header comments are the full statement; this section is the summary.
+
+| You supply | You get back |
+|------------|--------------|
+| A `std::vector<PresetBrowser::Entry>` (`category`, `name`, `originalIndex`, `isFactory`) | `onSelect (originalIndex)` once, after the user picks an entry, and nothing if the menu is dismissed |
+| The `originalIndex` of the active preset, or a value no entry uses | That entry ticked, or no entry ticked |
+| A target component and a look-and-feel | The menu, opened below the component |
+| `getSaveOverlay().onSave` and a call to `getSaveOverlay().show (currentName, editor)` | `onSave (name)` with the trimmed, non-empty name after Save or Return, and nothing on Cancel, Escape or a click outside |
+
+**Rules for the entry list**
+
+- Group entries by category. A category split across the list shows up twice.
+- Put factory entries before user entries within a category. One separator goes before the first user entry.
+- Give every entry a non-empty category. An entry with an empty category is not shown.
+- Make `originalIndex` unique and 0 or more. The popup item ID is `originalIndex + 1`, and JUCE reserves 0 for "nothing picked" (an index of -1 asserts in Debug).
+
+A "User" submenu is always shown, with one disabled "(empty)" item when no entry has the category `User`.
+
+**Threading and lifetime**
+
+- Message thread only. Never call it from `processBlock`.
+- `showMenu` returns at once, and `onSelect` runs later on the message thread.
+- The open menu keeps only a copy of `onSelect` and does not watch your editor for deletion. Capture a `juce::Component::SafePointer` to the editor in `onSelect` (or call `juce::PopupMenu::dismissAllActiveMenus()` in the editor's destructor), and keep the `PresetBrowser` as a member of the editor.
+- The overlay checks only for an empty name and writes nothing. Clean the name (strip path separators and characters your file system rejects) before you use it in a file path.
+
+```cpp
+class YourEditor : public juce::AudioProcessorEditor
+{
+    spatialcore::PresetBrowser presetBrowser;
+    juce::TextButton presetButton { "Presets" }, saveButton { "Save" };
+
+    // currentPresetIndex, currentPresetName, loadPreset() and savePresetAs()
+    // are your plugin's own; SpatialCore knows nothing about them.
+
+    void wirePresets()
+    {
+        presetButton.onClick = [this]
+        {
+            // Your own preset list, already sorted by category, factory first.
+            std::vector<spatialcore::PresetBrowser::Entry> entries;
+            // ... fill entries ...
+
+            presetBrowser.showMenu (entries, currentPresetIndex, presetButton, getLookAndFeel(),
+                                    [safe = juce::Component::SafePointer<YourEditor> (this)] (int index)
+                                    {
+                                        if (safe != nullptr)
+                                            safe->loadPreset (index);
+                                    });
+        };
+
+        // onSave may capture this: the overlay is owned by the editor's PresetBrowser and closes with it.
+        presetBrowser.getSaveOverlay().onSave = [this] (const juce::String& name) { savePresetAs (name); };
+
+        saveButton.onClick = [this]
+        {
+            presetBrowser.getSaveOverlay().show (currentPresetName, this);
+        };
+    }
+};
+```
