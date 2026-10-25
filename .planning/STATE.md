@@ -4,12 +4,11 @@ milestone: v0.6.0
 milestone_name: Pre-release follow-up
 current_phase: 08
 current_phase_name: Panning correctness — Ambisonics and VBAP
-status: planning
+status: "Phase 07 shipped — PR #51"
 stopped_at: Phase 7 complete, ready to plan Phase 08
-last_updated: "2026-10-25T10:51:44.429Z"
+last_updated: "2026-10-25T15:36:33.865Z"
 last_activity: 2026-10-25
-last_activity_desc: Phase 7 complete, transitioned to Phase 08
-state_head: a1d6793b36c22ed59142f0878f14ce7f0b459927
+state_head: c92b38f4988f0aedde4ac8434b0555e08a0f71ad
 progress:
   total_phases: 7
   completed_phases: 6
@@ -37,8 +36,8 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 Phase: 08 — Panning correctness — Ambisonics and VBAP
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-10-25 — Phase 7 complete, transitioned to Phase 08
+Status: Phase 07 shipped — PR #51
+Last activity: 2026-10-25
 
 ## Performance Metrics
 
