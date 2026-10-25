@@ -112,18 +112,51 @@ cmake --build build --config Release
 
 ### Local test gate
 
-There are two test executables: `SpatialCoreTests` (DSP, I/O, OSC, trajectories, engine) and `SpatialCoreUITests` (the map and its fonts; the only target that links `SpatialCoreUI`). The gate builds every target in Debug and runs both executables, then builds every target in Release and runs `ctest`:
+There are two test executables: `SpatialCoreTests` (DSP, I/O, OSC, trajectories, engine) and `SpatialCoreUITests` (the map and its fonts; the only target that links `SpatialCoreUI`).
 
-**Which part to run when (decision D-19, 2026-10-24).** During development the everyday gate is the Release part only: build `build-release` and run `ctest --test-dir build-release/tests --output-on-failure` (about 2 minutes; it includes the 20-second `[rt]` trap). The Debug part (both executables, about 8 minutes for `SpatialCoreTests`), the coverage build and the realtime-safety check below run only when you prepare a public release.
+**Which tests to run when (decision P7-D01, 2026-10-25).** The moment decides the tier: quick checks while you work, the whole Release suite before `main`, and everything else once, when you prepare a release. This section is the one place the tiers and their commands are written; CLAUDE.md, the integration guide and the planning handoffs point here. P7-D01 replaces the everyday-gate wording of D-19 (2026-10-24); D-18 and the release-only part of D-19 stand.
+
+#### No test run: documentation and planning changes
+
+A change that touches only Markdown, `.planning/` files or other documentation needs no test run. A comment edit inside a `.h` or `.cpp` file still compiles, so it takes the light tier.
+
+#### Light tier: while iterating
+
+Build the Release tree, then run only the tests for the area you changed. It is much quicker than the whole suite.
 
 ```bash
-# Debug
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j8
-./build/tests/SpatialCoreTests
-./build/tests/SpatialCoreUITests
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release   # first time only
+cmake --build build-release --target SpatialCoreTests -j8
+./build-release/tests/SpatialCoreTests --filenames-as-tags "[#BinauralRendererTests]~[.]"
+```
 
-# Release
+`--filenames-as-tags` gives every test case a tag made from its file name (its short form `-#` is not used because zsh with EXTENDED_GLOB treats it as a pattern), so `[#BinauralRendererTests]` selects the cases in `tests/Binaural/BinauralRendererTests.cpp`. Several files are joined with commas, each with its own `~[.]`. `~[.]` keeps hidden capture cases out, because a filter that names a hidden case's file runs it, and the `[.][ambi-maxre-capture]` case fails without its `SC_CAPTURE_FILE` variable.
+
+To run every test file of one folder:
+
+```bash
+area=Binaural; ./build-release/tests/SpatialCoreTests --filenames-as-tags "$(for f in tests/$area/*.cpp; do printf '[#%s]~[.],' "$(basename "$f" .cpp)"; done | sed 's/,$//')"
+```
+
+| You changed | Run |
+|-------------|-----|
+| `Algorithms/` | `area=Algorithms` |
+| `Binaural/` | `area=Binaural` |
+| `Core/` | `area=Core` |
+| `Engine/` | `area=Engine` (it includes the 20-second `[rt]` trap) |
+| `IO/` | `area=IO` |
+| `OSC/` | `area=OSC`, or `"[osc]"`, which is on every case in `tests/OSC/` |
+| `Trajectory/` | `area=Trajectory` |
+| `UI/` | `cmake --build build-release --target SpatialCoreUITests -j8`, then `./build-release/tests/SpatialCoreUITests` (the whole UI executable) |
+| `CMakeLists.txt`, an umbrella header (`SpatialCore.h`, `SpatialCoreUI.h`) or code several areas use | the full Release `ctest` of the next section |
+
+The area tags (`[binaural]`, `[engine]`, `[io]` and the like) are not on every case in their folder: `[binaural]` is on 25 of the 70 cases in `tests/Binaural/` (counted 2026-10-25), so a tag run can miss the test that covers your change. Use the file tags.
+
+#### Before merging or pushing to `main`
+
+Run the whole Release suite. `main` has no CI run and no branch protection, so this is the only check that catches a break in an area you did not touch. It takes about 2 minutes, including the 20-second `[rt]` trap.
+
+```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release -j8
 ctest --test-dir build-release/tests --output-on-failure
@@ -131,6 +164,26 @@ ctest --test-dir build-release/tests -N | grep 'ui:'
 ```
 
 The last command is a listing check: it must print tests whose names start with `ui:` (CTest drops the space after the prefix), which proves the UI executable is in the run. Build every target before `ctest`. A Catch2 target that has not been built registers a failing `_NOT_BUILT` test, so a partial build fails for the wrong reason.
+
+#### Full tier: only when preparing a release
+
+Run all of these once, when you prepare a release (a release candidate or the final release):
+
+1. The Debug build with both executables (about 8 minutes for `SpatialCoreTests`):
+
+   ```bash
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+   cmake --build build -j8
+   ./build/tests/SpatialCoreTests
+   ./build/tests/SpatialCoreUITests
+   ```
+
+2. The Release `ctest` above (it includes the `[rt]` trap).
+3. The realtime-safety check below, steps 2-5 (the `build-tsan` tree).
+4. Coverage ("Coverage" below).
+5. The consumer harness ("Consumer harness" below; the commit must be pushed first).
+6. The speaker-rig and DAW listening checks, by ear (the open ones are listed in `.planning/ROADMAP.md`).
+7. With the user's go-ahead, a manual CI run (next paragraph).
 
 CI (`.github/workflows/ci.yml`) runs this same gate only for a public release: on its own when a release tag is pushed (a release candidate such as `v1.0.0-rc1`, or the final `v1.0.0`), or when started by hand (Actions, "SpatialCore CI", Run workflow). A push to a branch or a pull request starts no GitHub build (D-20, 2026-10-24): `macos-gate` on GitHub's Apple Silicon Mac (it also builds and runs the consumer harness, see "Consumer harness" below), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases report skipped there), `windows-build` (an MSVC build of every target, no test run) and `coverage` (see "Coverage" below). Run the local gate before you push anyway, because a failure is quicker to fix here. `ctest --test-dir build-release` from the build root now finds the tests too (the `build-release/tests` form above still works). `main` has no branch protection yet, so nothing on GitHub stops a push whose CI would fail: this local gate is the safety net before every push to `main`, which is pushed to directly as before. Protection that requires the CI jobs may be added later.
 
