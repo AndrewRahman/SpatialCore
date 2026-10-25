@@ -1,7 +1,7 @@
 name: SpatialCore CI
 
 # What runs when:
-#   On a release tag push or a manual run only (D-20; no build on a branch push or pull request): macos-gate, the same gate as the
+#   On a manual run only (D-20; no build on a branch push, a tag push or a pull request): macos-gate, the same gate as the
 #   local one (README "Local test gate"): Debug build with both test executables run, Release
 #   build with ctest from the build root, the ui: listing check, then the consumer harness
 #   (a real git submodule of this repository at the commit under test) and its sound check.
@@ -11,20 +11,17 @@ name: SpatialCore CI
 #   It also runs coverage (scripts/coverage.sh: an instrumented Debug build,
 #   both test executables, a per-area table on the run's summary page and the full report as the
 #   coverage-report artifact). It fails when the engine figure is below scripts/coverage-targets.json.
-#   On a release tag push, or a manual run with the realtime input ticked: realtime-nightly (README
+#   On a manual run with the realtime input ticked: realtime-nightly (README
 #   "Realtime-safety check", steps 1-5). It has no schedule and never runs on its own; run it
 #   before a release tag (user decision 2026-10-24).
 #
 # Security posture: the token is read-only, there is no trigger that runs outside code, no secret is used, every action is first-party and pinned to a commit SHA, and
 # values from workflow expressions reach scripts only through env entries.
 
-# Release builds only (user decision D-20, 2026-10-24): a push to a branch or a pull request never
-# starts a GitHub build. The whole workflow, the realtime-safety check included, runs on its own
-# only when a release tag is pushed: a release candidate (v1.0.0-rc1) or the final release (v1.0.0).
-# It can also be started by hand (Actions, "SpatialCore CI", Run workflow).
+# Manual only (2026-10-25): no automatic runs until a release candidate. Out of Actions minutes. Dispatch: gh workflow run ci.yml
+# Nothing starts this workflow on its own: no branch push, tag push, pull request, schedule or
+# workflow_run. It runs only when started by hand (Actions, "SpatialCore CI", Run workflow, or gh).
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       realtime:
