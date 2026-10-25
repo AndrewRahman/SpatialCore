@@ -40,8 +40,8 @@ decisions:
 
 The orchestrator narrowed the gate mid-task. The runs below are **Release only**:
 
-- Debug test runs: deferred to the pre-release check. The only Debug run is the BASELINE on the untouched tree (before any change), shown below. Debug was built once at baseline; no Debug test ran on the fix.
-- build-tsan (ThreadSanitizer realtime-safety check): deferred to the pre-release realtime-safety check (CLAUDE.md: runs at phase end and before a release tag, not on every edit). No TSan tree was configured or run, so there is no TSan evidence for this change. The `[rt]` trap in Release is the only realtime evidence.
+- Debug test runs: deferred to the pre-release check per D-19 (SpatialCore#42). The only Debug run is the BASELINE on the untouched tree (before any change), shown below. Debug was built once at baseline; no Debug test ran on the fix.
+- build-tsan (ThreadSanitizer realtime-safety check): deferred to the pre-release realtime-safety check (D-18/D-19, SpatialCore#42: the Debug run of both executables and the TSan realtime-safety check run only when preparing a public release, not per fix or at phase end). No TSan tree was configured or run, so there is no TSan evidence for this change. The `[rt]` trap in Release is the only realtime evidence.
 - The red run on the old code used `build-release` (old `src/` and `include/`, commit fe23cba).
 
 ## Commits
