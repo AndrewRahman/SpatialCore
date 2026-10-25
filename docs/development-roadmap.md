@@ -2,6 +2,7 @@
 
 > **⚠️ Status note (superseded — pre-extraction planning doc):** This document dates from before the extraction. As of the `spatialcore-v2-extraction` branch, SpatialCore is fully extracted and implemented — 8 spatialization algorithms, HRTF/SOFA rendering, the `RenderEngine` facade, embedded HRTF BinaryData with a shared-folder override (Phase 3, DATA-01), and the DSP/UI target split. Sections below describing "stubs" or unchecked extraction deliverables are **historical and no longer accurate**. For current truth see `CLAUDE.md`, `README.md`, and `docs/integration-guide.md`. OpenSpatialPanner (listed here as "future") is the committed next consumer.
 > Counts and completion status in this document are a dated snapshot and are not maintained; the current roadmap and phase status live in `.planning/ROADMAP.md` (rewritten 2026-08-10). In particular, the "What Does NOT Exist Yet" section lists five extraction requirements as missing that are in fact implemented and test-covered.
+> Updated 2026-10-25 (SpatialCore#37): the submodule example now uses the development remote (DR-18), and the format and layout counts read 23 and 15. Every other count in this document (for example the 7 algorithms, now 8) is still the dated snapshot.
 
 Last updated: 2026-03-22
 
@@ -23,7 +24,7 @@ SpatialCore has a **complete scaffolding** with public API headers, stub impleme
   - Core/ (Types, SourcePosition, BinauralGains)
   - Algorithms/ (SpatializationAlgorithm base + 7 implementations)
   - Binaural/ (HRTFDatabase, PartitionedConvolver, BinauralRenderer)
-  - IO/ (OutputFormat, OutputFormatRegistry with 22 formats, SpeakerLayout, AmbisonicsCodec)
+  - IO/ (OutputFormat, OutputFormatRegistry with 23 formats, SpeakerLayout, AmbisonicsCodec)
   - OSC/ (ADMOSCReceiver, ADMOSCSender)
   - Trajectory/ (TrajectoryEngine with 13 shapes)
   - DSP/ (softClip, outputLimiter — inline)
@@ -72,7 +73,7 @@ SpatialCore extraction happens **after** OpenSpatialDelay v1.0 ships (deadline: 
 |---|---|---|
 | **Algorithms/** | PluginProcessor.h/cpp | VBAP, VBIP, KNN, DBAP, MDAP, Ambisonics, DirectBinaural — all 7 SpatializationAlgorithm implementations |
 | **Binaural/** | PluginProcessor.h/cpp | HRTFDatabase (SOFA/libmysofa), PartitionedConvolver (FFT overlap-save), BinauralRenderer (one convolver per source, up to 32) |
-| **IO/** | PluginProcessor.h/cpp | OutputFormatRegistry (22 formats), SpeakerLayout (13 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
+| **IO/** | PluginProcessor.h/cpp | OutputFormatRegistry (23 formats), SpeakerLayout (15 ITU-R layouts), AmbisonicsCodec (SH eval, decode matrices) |
 | **OSC/** | PluginProcessor.cpp | ADM-OSC Receive (parse /adm/obj/N/), ADM-OSC Send (30Hz broadcast) |
 | **Trajectory/** | PluginProcessor.cpp | 13 shapes, origin-point architecture, forward/reverse |
 | **DSP/** | PluginProcessor.cpp | softClip(), outputLimiter() |
@@ -90,7 +91,7 @@ SpatialCore (~68% reusable framework)
 ### Consumer Integration Model
 ```bash
 # Plugin adds SpatialCore as git submodule
-git submodule add https://github.com/Spatial-Media-Lab/SpatialCore.git SpatialCore
+git submodule add https://github.com/AndrewRahman/SpatialCore.git SpatialCore
 ```
 ```cmake
 # Plugin's CMakeLists.txt
