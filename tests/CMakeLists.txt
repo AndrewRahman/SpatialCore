@@ -93,6 +93,7 @@ add_executable(SpatialCoreUITests
     UI/SpatialMapComponentTests.cpp
     UI/FontProvenanceTests.cpp
     UI/MultiMapTests.cpp
+    UI/PresetSaveOverlayTests.cpp
     UI/UmbrellaUITests.cpp
 )
 
