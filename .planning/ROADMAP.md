@@ -45,7 +45,7 @@ Built from all 25 GitHub issues open on 2026-10-25. Still open to intake: new is
 - [x] #24 (closed 2026-10-25: openspatialdelay#23 done, OSD main reads `getBlockLayout()` at pin 2f16bae) SpatialCore half shipped (cae34a9, `getBlockLayout()`); hand the rest to OSD (openspatialdelay#23: replace `getActiveLayout()` in `processBlock()` before bumping past `ab60c25`)
 - [x] #9 SpatialCore CI green on JUCE 9.0.0 (runs 39058330902, 39074814315); closed 2026-10-25 on that evidence (user decision); OSP's own CI stays in OpenSpatialPanner#4
 
-**Plans:** 3/4 plans executed (wave 1: 07-01, 07-02, 07-03; wave 2: 07-04)
+**Plans:** 4/4 plans executed (wave 1: 07-01, 07-02, 07-03; wave 2: 07-04)
 
 Plans:
 **Wave 1**
@@ -54,7 +54,7 @@ Plans:
 - [x] 07-03-PLAN.md — #13 PresetBrowser contract in the header and the integration guide; guide testing and CI wording
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 07-04-PLAN.md — last stale CI surfaces, repo-wide sweep, #24 and #9 verified closed, post-merge close-out file (close #42, #37, #13; consumer notes)
+- [x] 07-04-PLAN.md — last stale CI surfaces, repo-wide sweep, #24 and #9 verified closed, post-merge close-out file (close #42, #37, #13; consumer notes)
 
 ### Phase 8: Panning correctness — Ambisonics and VBAP
 

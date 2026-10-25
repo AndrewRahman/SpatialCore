@@ -4,12 +4,12 @@ milestone: v0.6.0
 milestone_name: Pre-release follow-up
 current_phase: 7
 current_phase_name: Process, docs and consumer close-out
-status: executing
-stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-10-25T08:45:11.265Z"
+status: verifying
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-10-25T08:47:37.295Z"
 last_activity: 2026-10-25
 last_activity_desc: Phase 7 execution started
-state_head: 0636bcb0dede511d35360b9ac60de7cfa09df9ea
+state_head: 3bbb72dbbb3454d5590ba54c6c0b83a385d7a044
 progress:
   total_phases: 7
   completed_phases: 6
@@ -37,7 +37,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 Phase: 7 (Process, docs and consumer close-out) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-25 — Phase 7 execution started
 
 ## Performance Metrics
@@ -123,6 +123,7 @@ Last activity: 2026-10-25 — Phase 7 execution started
 | Phase 7 P01 | 15 min | 3 tasks | 4 files |
 | Phase 7 P07-02 | 10min | 2 tasks | 5 files |
 | Phase 7 P07-03 | 15 min | 3 tasks | 2 files |
+| Phase 7 P07-04 | 10min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -220,6 +221,7 @@ Full log in PROJECT.md Key Decisions. Affecting current work:
 - [Phase 7]: P7-D02: SpatialCore lands first, consumers bump pins in their own repos; handoffs are consumer issues using the light tier
 - [Phase 7]: 07-02: processBlock row in spatial-audio-dsp skill labelled a dated 12-source figure, not a measurement (no measurement record exists, D-09)
 - [Phase 7]: PresetBrowser documented as it is (menu chrome only, no state/format/versioning), not recorded as unsuitable (D-11)
+- [Phase 7]: 07-04: ci.yml changed in comment lines only; #42/#37/#13 close post-merge via 07-CLOSEOUT.md (D-14)
 
 ### Pending Todos
 
@@ -287,8 +289,8 @@ Acknowledged at the v0.5.0 milestone close (2026-10-24) through `audit-open ackn
 
 ## Session Continuity
 
-Last session: 2026-10-25T08:45:11.247Z
-Stopped at: Completed 07-03-PLAN.md
+Last session: 2026-10-25T08:47:37.278Z
+Stopped at: Completed 07-04-PLAN.md
 Resume file: None
 Next command: `/gsd-new-milestone` (when ready; push to main waits for the user's go-ahead)
 
