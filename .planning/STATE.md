@@ -1,19 +1,21 @@
 ---
 gsd_state_version: "1.0"
 milestone: v0.6.0
+milestone_name: Pre-release follow-up
+current_phase: 07
+current_phase_name: Process, docs and consumer close-out
 status: Phase 7 context gathered
 stopped_at: Phase 7 context gathered
-last_updated: "2026-10-25T07:51:10.871Z"
+last_updated: "2026-10-25T08:28:11.430Z"
 last_activity: 2026-10-25
 last_activity_desc: "Phase 7 context gathered; #24 and #9 closed"
-state_head: 50af971838bbf743a80e2ebe086f7b7a4e7b2f8f
+state_head: 91c0f30fcf9d392b3abd83169ec7c0ec12b3eb35
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 6
-  total_plans: 52
+  total_plans: 4
   completed_plans: 52
-milestone_name: milestone
-current_phase: 07
+  percent: 0
 ---
 
 # Project State
@@ -33,7 +35,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 ## Current Position
 
-Phase: 07 (Process, docs and consumer close-out) — milestone v0.6.0
+Phase: 07 (Process, docs and consumer close-out) — READY TO EXECUTE
 Plan: — (not planned yet)
 Status: Context gathered (07-CONTEXT.md)
 Last activity: 2026-10-25 — Phase 7 context gathered: two test tiers decided (light while iterating, full Release ctest before main, full tier before a release); #24 and #9 closed
