@@ -70,10 +70,11 @@ Milestone v0.5.0 matches the library version (labelled v1.0.0 until 2026-10-25);
 
 ### Active
 
-Next milestone not yet defined. Candidates: bump the SpatialCore pins in OpenSpatialDelay and
-OpenSpatialPanner, or pick up backlog 999.1-999.4 and the v2 items in the closed-out requirements
-archive. At the first release candidate: push a `v*` tag so CI runs, re-measure coverage on the
-merged tree, run the realtime-safety check.
+Milestone v0.6.0 Pre-release follow-up (Phases 7-13, planned 2026-10-25) holds all 25 GitHub issues
+open on that date, grouped into seven phases of roughly 6-11 hours each; see ROADMAP.md. New issues
+filed from OpenSpatialDelay or OpenSpatialPanner go into the matching phase. No requirements file
+yet (`/gsd-new-milestone` not run). Phase 13 is the first release candidate: start CI by hand
+(manual dispatch only since PR #46), re-measure coverage on the merged tree, run the realtime-safety check.
 
 ### Out of Scope
 

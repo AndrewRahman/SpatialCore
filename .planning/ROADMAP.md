@@ -103,7 +103,7 @@ Built from all 25 GitHub issues open on 2026-10-25. Still open to intake: new is
 **Issues:** #35, #36, #34
 **Estimate:** ~7 h, plus CI time
 **Work:**
-- [ ] #35 Engine coverage >= 93% on the merged tree; watch `[hrtf-switch][churn]`; realtime-safety check (TSan + `[rt]`); first CI run since 310fb93; full Debug run; `SPATIALCORE_EMBED_ALL_HRTF=OFF` build. The tag needs the owner's go-ahead (it starts the GitHub build)
+- [ ] #35 Engine coverage >= 93% on the merged tree; watch `[hrtf-switch][churn]`; realtime-safety check (TSan + `[rt]`); first CI run since 310fb93; full Debug run; `SPATIALCORE_EMBED_ALL_HRTF=OFF` build. Needs the owner's go-ahead: since PR #46 (2026-10-25) CI runs only when started by hand (`gh workflow run ci.yml`), and a tag push starts nothing
 - [ ] #36 Read the first Linux/Windows run; widen or restructure only the tight-tolerance tests and golden hashes that fail; note the reason on the rest
 - [ ] #34 Measure the JUCE fallback FFT `SpinLock` (shared `SharedFFTCache`) with N instances at 48 kHz / 32 samples on Linux and/or Windows; decide accept vs per-instance FFT; update CLAUDE.md, README and `SharedFFTCache.h`
 

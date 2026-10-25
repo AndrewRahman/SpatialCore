@@ -16,7 +16,7 @@
 - 6 phases, 52 plans, 124 tasks
 - Phase dirs archived to `milestones/v0.5.0-phases/`
 
-**What's next:** bump the SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or work backlog 999.x. First release candidate: push a `v*` tag so CI runs, measure coverage, run the realtime-safety check.
+**What's next:** bump the SpatialCore pins in OpenSpatialDelay and OpenSpatialPanner, or work backlog 999.x (superseded 2026-10-25: the backlog and all open issues became milestone v0.6.0, Phases 7-13). First release candidate: push a `v*` tag so CI runs, measure coverage, run the realtime-safety check.
 
 **Key accomplishments:**
 - Froze the 23/15/8 count contract (output formats, speaker layouts, algorithms) in code via three compile-time `static_assert`s and a runtime Catch2 `[counts]` backstop, correcting CLAUDE.md's I/O row to match.
