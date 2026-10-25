@@ -1,6 +1,6 @@
 # Phase 7 close-out (prepared 2026-10-25)
 
-This file holds the outward actions of Phase 7. Nothing in it has been run. Plan 07-04 only prepared it.
+This file holds the outward actions of Phase 7. Plan 07-04 prepared it; sections 2 and 3 were run on 2026-10-25 after PR #51 merged as `3a03e2b` (#42, #37 and #13 closed; notes posted on OpenSpatialPanner#4 and openspatialdelay#27).
 
 ## 1. Run after the merge to main
 

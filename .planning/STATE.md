@@ -4,7 +4,7 @@ milestone: v0.6.0
 milestone_name: Pre-release follow-up
 current_phase: 08
 current_phase_name: Panning correctness — Ambisonics and VBAP
-status: "Phase 07 shipped — PR #51"
+status: planning
 stopped_at: Phase 7 complete, ready to plan Phase 08
 last_updated: "2026-10-25T15:36:33.865Z"
 last_activity: 2026-10-25
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 **Core value:** A Spatial Media Lab plugin author gets production-grade spatial rendering by linking one library, so the only audio code they write is their own effect.
 **Milestone:** v0.5.0 shipped and archived 2026-10-24 (labelled v1.0.0 until 2026-10-25; tag `v0.5.0` on main `17224af`, pushed 2026-10-25, started no CI run because that commit carries `[skip ci]`)
-**Current focus:** Phase 7 — Process, docs and consumer close-out
+**Current focus:** Phase 8 — Panning correctness, Ambisonics and VBAP (Phase 7 merged 2026-10-25, PR #51)
 
 **Milestone closed; remaining work is tracked in GitHub issues.** Follow-up issues (filed 2026-10-24):
 - SpatialCore: #34 FFT SpinLock contention, #35 first RC checklist, #36 tight test tolerances, #37 stale docs, #38 custom HRTF import + loudness, #39 7.1.4 below-horizon listening, #40 gap bridge + DBAP listening, #41 Simple-mode listening (all now in v0.6.0 Phases 7-13; ROADMAP lists the phase for each)
@@ -36,7 +36,7 @@ See: .planning/PROJECT.md (updated 2026-10-24)
 
 Phase: 08 — Panning correctness — Ambisonics and VBAP
 Plan: Not started
-Status: Phase 07 shipped — PR #51
+Status: Phase 07 merged to main as 3a03e2b (PR #51); #42, #37, #13 closed 2026-10-25. Phase 08 not started
 Last activity: 2026-10-25
 
 ## Performance Metrics
