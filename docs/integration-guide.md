@@ -182,7 +182,7 @@ Then, outside the audio thread, call `engine.setHRTFProfile (n)` to change the H
 
 **If you choose (B),** a block on which every active object's gains on the rendered path are exactly zero is counted by `engine.getUnsuppliedGainsBlockCount()`, and the first one asserts in a Debug build. In Release it is only counted and plays what you supplied, which is silence: the engine never fills gains in for you. The direct-binaural HRTF path, the Ambisonics formats and a block with no active object are never counted. Assert in your plugin's own tests that the count is 0 after you render your real configurations; that is how the mistake behind SpatialCore#14 (gains neither computed nor supplied, so silence) gets caught.
 
-The worked example of this whole set is `examples/harness/src/HarnessPlugin.cpp`, with a short comment on why each call is there. `examples/harness/` builds in CI on a release-tag or manual run, from a real submodule of the GitHub remote.
+The worked example of this whole set is `examples/harness/src/HarnessPlugin.cpp`, with a short comment on why each call is there. `examples/harness/` builds in CI in a manual run (CI has only a `workflow_dispatch` trigger since PR #46, 2026-10-25), from a real submodule of the GitHub remote.
 
 ### Wiring OSC, trajectories and the map into RenderEngine
 
@@ -573,7 +573,7 @@ add_executable(YourPluginTests tests/YourTests.cpp)
 target_link_libraries(YourPluginTests PRIVATE Catch2::Catch2WithMain SpatialCore)
 ```
 
-SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Its local gate is in the README, and CI runs it only for a public release, on a release tag push or by hand (a branch push starts nothing): `macos-gate` (the same gate, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`; `realtime-nightly` runs the realtime-safety check on a manual run only, before a release. Run the local gate before you push. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
+SpatialCore's own tests are two executables, `SpatialCoreTests` and `SpatialCoreUITests` (the only one that links `SpatialCoreUI`). Which of them to run when (no test run for a doc-only change, the light tier while iterating, the full Release `ctest` before merging to `main`, the full tier before a release) is written once, in the README's "Local test gate" (P7-D01, 2026-10-25). CI runs only when started by hand (`workflow_dispatch`, since PR #46): `macos-gate` (the Debug and Release parts of the full tier, plus the consumer harness), `linux-tests` (the Release suite on Ubuntu; the allocation-trap cases skip there), `windows-build` (an MSVC build, no test run) and `coverage`, plus `realtime-nightly` when the `realtime` input is ticked; no push, tag or pull request starts it. In your own tests, assert `engine.getUnsuppliedGainsBlockCount() == 0` after rendering your real configurations.
 
 ## Preset System
 
